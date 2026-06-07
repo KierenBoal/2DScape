@@ -1,13 +1,13 @@
-package com.example;
+package com.runelitegreeter.npcsnap;
 
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public class ExamplePluginTest
+public class NpcSnapPluginTest
 {
 	public static void main(String[] args) throws Exception
 	{
-		ExternalPluginManager.loadBuiltin(ExamplePlugin.class);
+		ExternalPluginManager.loadBuiltin(NpcSnapPlugin.class);
 		RuneLite.main(args);
 	}
 }
