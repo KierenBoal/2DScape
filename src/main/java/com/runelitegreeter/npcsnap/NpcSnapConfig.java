@@ -82,7 +82,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default boolean applyToGroundItems()
 	{
-		return false;
+		return true;
 	}
 
 	@Range(
@@ -102,7 +102,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 32
+		max = 8
 	)
 	@ConfigItem(
 		keyName = "numberOfPitchRotationAngles",
@@ -128,7 +128,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 64
+		max = 60
 	)
 	@ConfigItem(
 		keyName = "animationFrameCount",
@@ -148,6 +148,17 @@ public interface NpcSnapConfig extends Config
 		section = billboardSection
 	)
 	default boolean enable2dBillboardSprites()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardCombatSnapping",
+		name = "Enable combat snapping",
+		description = "Lock mutually interacting NPC and player billboards to combat-facing pitch and yaw",
+		section = billboardSection
+	)
+	default boolean enableBillboardCombatSnapping()
 	{
 		return true;
 	}
@@ -175,12 +186,12 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardRadiusTiles()
 	{
-		return 50;
+		return 90;
 	}
 
 	@Range(
 		min = 1,
-		max = 500
+		max = 1000
 	)
 	@ConfigItem(
 		keyName = "billboardMaxEntities",
@@ -190,12 +201,12 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardMaxEntities()
 	{
-		return 25;
+		return 64;
 	}
 
 	@Range(
 		min = 2,
-		max = 4096
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "billboardPaletteSize",
@@ -205,12 +216,12 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardPaletteSize()
 	{
-		return 256;
+		return 128;
 	}
 
 	@Range(
 		min = 1,
-		max = 32
+		max = 64
 	)
 	@ConfigItem(
 		keyName = "BillboardColorBands",
@@ -220,7 +231,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardColorBands()
 	{
-		return 8;
+		return 16;
 	}
 
 	@Range(
@@ -235,6 +246,6 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardLightBoostPercent()
 	{
-		return 200;
+		return 180;
 	}
 }

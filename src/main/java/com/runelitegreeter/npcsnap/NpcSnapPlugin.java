@@ -10,11 +10,16 @@ import net.runelite.api.Animation;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.GameObject;
+import net.runelite.api.GroundObject;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
+import net.runelite.api.Scene;
 import net.runelite.api.TileItem;
+import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ItemDespawned;
@@ -162,6 +167,57 @@ public class NpcSnapPlugin extends Plugin
 
 		if (renderable instanceof NPC)
 		{
+			return true;
+		}
+
+		if (renderable instanceof Player)
+		{
+			return true;
+		}
+
+		if (renderable instanceof Projectile)
+		{
+			return !config.applyToProjectiles() || !billboardOverlay.shouldHideProjectile((Projectile) renderable);
+		}
+
+		if (renderable instanceof TileItem)
+		{
+			return !config.applyToGroundItems() || !billboardOverlay.shouldHideGroundItem((TileItem) renderable);
+		}
+
+		return true;
+	}
+
+	@Override
+	public boolean drawObject(Scene scene, TileObject tileObject)
+	{
+		if (!config.enable2dBillboardSprites())
+		{
+			return true;
+		}
+
+		if (tileObject instanceof GameObject)
+		{
+			return shouldDrawObjectRenderable(((GameObject) tileObject).getRenderable());
+		}
+
+		if (tileObject instanceof GroundObject)
+		{
+			return shouldDrawObjectRenderable(((GroundObject) tileObject).getRenderable());
+		}
+
+		if (tileObject instanceof ItemLayer)
+		{
+			return shouldDrawItemLayer((ItemLayer) tileObject);
+		}
+
+		return true;
+	}
+
+	private boolean shouldDrawObjectRenderable(Renderable renderable)
+	{
+		if (renderable instanceof NPC)
+		{
 			return !config.applyToNpcs() || !billboardOverlay.shouldHideNpc((NPC) renderable);
 		}
 
@@ -170,11 +226,18 @@ public class NpcSnapPlugin extends Plugin
 			return !config.applyToPlayers() || !billboardOverlay.shouldHidePlayer((Player) renderable);
 		}
 
-		if (renderable instanceof Projectile)
-		{
-			return !config.applyToProjectiles() || !billboardOverlay.shouldHideProjectile((Projectile) renderable);
-		}
+		return true;
+	}
 
+	private boolean shouldDrawItemLayer(ItemLayer itemLayer)
+	{
+		return shouldDrawItemLayerRenderable(itemLayer.getBottom())
+			&& shouldDrawItemLayerRenderable(itemLayer.getMiddle())
+			&& shouldDrawItemLayerRenderable(itemLayer.getTop());
+	}
+
+	private boolean shouldDrawItemLayerRenderable(Renderable renderable)
+	{
 		if (renderable instanceof TileItem)
 		{
 			return !config.applyToGroundItems() || !billboardOverlay.shouldHideGroundItem((TileItem) renderable);

@@ -1,13 +1,14 @@
 # 2DScape
 
-Experimental RuneLite plugin for RuneScape Classic-inspired graphics using
-render-time animation frame snapping and 2D-style billboard rendering.
+A plugin that I've wanted to make for many years, but haven't really found the motivation to re-learn Java, and now that I am incorperating AI into my personal projects, I can now bring goofy ideas like this to life; so have fun!
+
+Feel free to fork, copy/paste this, make it into a shader, it's yours to develop; use it as a base, or just as a concept. If you feel so inclined, toss credit my way
 
 ## Requirements
 
 - Java 11
 - RuneLite-compatible Gradle environment
-- A RuneLite development client login flow that supports Jagex Accounts
+- A RuneLite development client login flow that supports Jagex Accounts (ask ChatGPT how to do this, it's suprisingly easy to get into plugin development now; a link to a real document is below though too.)
 
 ## Running Locally
 
@@ -71,3 +72,4 @@ Only test manually in-game. Do not use automation or scripted input.
   a public setter for live actor world rotation.
 - The plugin should not inject input, automate gameplay, or modify outgoing game
   actions.
+- This plugin was heavily vibe coded; there was some manual tweaking/tuning, but the vast majority was created with Codex using Chat GPT 5.4 medium thinking, and on a few particularly trick situations Chat GPT 5.5 medium; I corrected many logic bugs and suggested many optimisations that made this somewhat viable to run despite being a horribly performance 2D CPU renderer

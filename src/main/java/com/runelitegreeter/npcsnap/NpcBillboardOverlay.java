@@ -116,7 +116,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint.plus(-(LOCAL_TILE_SIZE / 2), -(LOCAL_TILE_SIZE / 2))));
+		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint));
 	}
 
 	void untrackGroundItem(TileItem item)
@@ -237,7 +237,7 @@ class NpcBillboardOverlay extends Overlay
 		float[] spriteY = new float[vertexCount];
 		float[] spriteDepth = new float[vertexCount];
 		int relativeYaw = relativeYaw(actor);
-		int relativePitch = relativePitch();
+		int relativePitch = relativePitch(actor);
 		for (int i = 0; i < vertexCount; i++)
 		{
 			double[] yawRotated = rotateYaw(verticesX[i], verticesZ[i], relativeYaw);
@@ -407,7 +407,7 @@ class NpcBillboardOverlay extends Overlay
 		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
 		int distanceHeight = scaledSize(bounds.height, perspectiveScale);
 		int projectedHeight = projectedHeight(basePoint, topPoint);
-		int targetHeight = projectedHeight > 0 ? projectedHeight : distanceHeight;
+		int targetHeight = distanceHeight > 0 ? distanceHeight : projectedHeight;
 		int targetWidth = aspectWidth(bounds, targetHeight);
 		if (!isUsableCanvasCoordinate(basePoint.getX()) || !isUsableCanvasCoordinate(basePoint.getY()))
 		{
@@ -527,22 +527,12 @@ class NpcBillboardOverlay extends Overlay
 
 	boolean shouldHideNpc(NPC npc)
 	{
-		if (!shouldBillboardNpc(npc))
-		{
-			return false;
-		}
-
-		return !isMouseNearShape(npc.getConvexHull()) && !isMouseNearShape(npc.getCanvasTilePoly());
+		return shouldBillboardNpc(npc);
 	}
 
 	boolean shouldHidePlayer(Player player)
 	{
-		if (!shouldBillboardPlayer(player))
-		{
-			return false;
-		}
-
-		return !isMouseNearShape(player.getConvexHull()) && !isMouseNearShape(player.getCanvasTilePoly());
+		return shouldBillboardPlayer(player);
 	}
 
 	boolean shouldHideProjectile(Projectile projectile)
@@ -552,18 +542,7 @@ class NpcBillboardOverlay extends Overlay
 
 	boolean shouldHideGroundItem(TileItem item)
 	{
-		if (!shouldBillboardGroundItem(item))
-		{
-			return false;
-		}
-
-		GroundItemBillboard groundItem = groundItems.get(item);
-		if (groundItem == null)
-		{
-			return false;
-		}
-
-		return !isMouseNearShape(Perspective.getCanvasTilePoly(client, groundItem.localPoint));
+		return shouldBillboardGroundItem(item);
 	}
 
 	private List<RenderableBillboard> getVisibleBillboards(WorldView worldView)
@@ -925,8 +904,8 @@ class NpcBillboardOverlay extends Overlay
 	{
 		
 		int bands = config.billboardColorBands();
-		float minBrightness = 0.25f;
-		float maxBrightness = 0.8f;
+		float minBrightness = 0.1f;
+		float maxBrightness = 0.9f;
 		
 		bands = Math.max(1, bands);
 
@@ -1072,29 +1051,6 @@ class NpcBillboardOverlay extends Overlay
 			client.getViewportWidth(),
 			client.getViewportHeight()
 		);
-	}
-
-	private boolean isMouseNearShape(Shape shape)
-	{
-		if (shape == null)
-		{
-			return false;
-		}
-
-		Point mouse = client.getMouseCanvasPosition();
-		if (mouse == null)
-		{
-			return false;
-		}
-
-		if (shape.contains(mouse.getX(), mouse.getY()))
-		{
-			return true;
-		}
-
-		Rectangle expandedBounds = shape.getBounds();
-		expandedBounds.grow(6, 6);
-		return expandedBounds.contains(mouse.getX(), mouse.getY());
 	}
 
 	private List<FaceDraw> buildFaces(
@@ -1345,19 +1301,11 @@ class NpcBillboardOverlay extends Overlay
 		return Math.max(0.0f, Math.min(255.0f, channel));
 	}
 
-	private static int snapJau(int jau, int degrees)
-	{
-		int snappedDegrees = Math.max(1, degrees);
-		int step = Math.max(1, FULL_CIRCLE * snappedDegrees / 360);
-		int normalized = Math.floorMod(jau, FULL_CIRCLE);
-		return Math.floorMod(((normalized + (step / 2)) / step) * step, FULL_CIRCLE);
-	}
-
 	private int relativeYaw(Actor actor)
 	{
 		//int rawRelativeYaw = actor.getCurrentOrientation() - client.getCameraYaw();
 		int rawRelativeYaw = client.getCameraYaw() + actor.getCurrentOrientation();
-		if (isInCombatWithLocalPlayer(actor))
+		if (shouldCombatSnap(actor))
 		{
 			return combatYaw(rawRelativeYaw);
 		}
@@ -1393,17 +1341,20 @@ class NpcBillboardOverlay extends Overlay
 		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
 	}
 
-	private boolean isInCombatWithLocalPlayer(Actor actor)
+	private boolean shouldCombatSnap(Actor actor)
 	{
-		return false;
-		/*
-		Player localPlayer = client.getLocalPlayer();
-		if (localPlayer == null)
+		return config.enableBillboardCombatSnapping() && isMutuallyInteracting(actor);
+	}
+
+	private boolean isMutuallyInteracting(Actor actor)
+	{
+		if (actor == null)
 		{
 			return false;
 		}
 
-		return actor.getInteracting() == localPlayer || localPlayer.getInteracting() == actor;*/
+		Actor interacting = actor.getInteracting();
+		return interacting != null && interacting.getInteracting() == actor;
 	}
 
 	private static int combatYaw(int rawRelativeYaw)
@@ -1431,6 +1382,16 @@ class NpcBillboardOverlay extends Overlay
 		int res = snapPitchByAngles(rawPitch, 0, config.numberOfPitchRotationAngles());
 		//invert as NPCs rotate negatively to look upwards
 		return -res;
+	}
+
+	private int relativePitch(Actor actor)
+	{
+		if (shouldCombatSnap(actor))
+		{
+			return 0;
+		}
+
+		return relativePitch();
 	}
 
 	private static int snapJauByAngles(int jau, int angleCount)
