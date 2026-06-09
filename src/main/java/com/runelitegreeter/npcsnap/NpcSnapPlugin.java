@@ -20,6 +20,8 @@ import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
+import net.runelite.api.Texture;
+import net.runelite.api.TextureProvider;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ItemDespawned;
@@ -29,6 +31,7 @@ import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.DrawManager;
@@ -44,8 +47,12 @@ public class NpcSnapPlugin extends Plugin
 {
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
 	private final Map<Integer, Integer> animationFrameCache = new HashMap<>();
+	private final Map<Integer, int[]> originalTexturePixels = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
 	private boolean groundItemsSeeded;
+	private boolean textureBandingApplied;
+	private boolean textureBandingPending = true;
+	private int appliedTextureBands = -1;
 
 	@Inject
 	private Client client;
@@ -63,11 +70,15 @@ public class NpcSnapPlugin extends Plugin
 	private NpcBillboardOverlay billboardOverlay;
 
 	@Inject
+	private NpcSnapDebug debug;
+
+	@Inject
 	private RenderCallbackManager renderCallbackManager;
 
 	@Override
 	protected void startUp()
 	{
+		textureBandingPending = true;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
 		overlayManager.add(billboardOverlay);
 		renderCallbackManager.register(this);
@@ -83,7 +94,9 @@ public class NpcSnapPlugin extends Plugin
 		restoreNpcState();
 		billboardOverlay.clearGroundItems();
 		animationFrameCache.clear();
+		debug.clearFrameStates();
 		groundItemsSeeded = false;
+		restoreGlobalTextureQuality();
 		log.debug("NPC Snap stopped");
 	}
 
@@ -91,11 +104,14 @@ public class NpcSnapPlugin extends Plugin
 	public void onBeforeRender(BeforeRender beforeRender)
 	{
 		restoreNpcState();
+		debug.clearFrameStates();
 
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
 		}
+
+		syncGlobalTextureQuality();
 
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView == null)
@@ -155,6 +171,21 @@ public class NpcSnapPlugin extends Plugin
 	public void onItemQuantityChanged(ItemQuantityChanged itemQuantityChanged)
 	{
 		billboardOverlay.trackGroundItem(itemQuantityChanged.getItem(), itemQuantityChanged.getTile());
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged configChanged)
+	{
+		if (!"npc-snap".equals(configChanged.getGroup()))
+		{
+			return;
+		}
+
+		if ("enableGlobalTextureBanding".equals(configChanged.getKey())
+			|| "globalTextureColorBands".equals(configChanged.getKey()))
+		{
+			textureBandingPending = true;
+		}
 	}
 
 	@Override
@@ -263,6 +294,7 @@ public class NpcSnapPlugin extends Plugin
 		int snappedAnimationFrame = snapAnimationFrame(actor.getAnimation(), originalAnimationFrame, actionFrameCount);
 		int originalPoseFrame = actor.getPoseAnimationFrame();
 		int snappedPoseFrame = snapAnimationFrame(actor.getPoseAnimation(), originalPoseFrame, actionFrameCount);
+		debug.recordActorFrames(actor, actor.getAnimation(), originalAnimationFrame, snappedAnimationFrame, originalPoseFrame, snappedPoseFrame);
 
 		if (snappedAnimationFrame == originalAnimationFrame && snappedPoseFrame == originalPoseFrame)
 		{
@@ -313,6 +345,121 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		return animation.getNumFrames();
+	}
+
+	private void syncGlobalTextureQuality()
+	{
+		boolean enabled = config.enableGlobalTextureBanding();
+		int bands = config.globalTextureColorBands();
+		if (!textureBandingPending
+			&& textureBandingApplied == enabled
+			&& (!enabled || appliedTextureBands == bands))
+		{
+			return;
+		}
+
+		restoreGlobalTextureQuality();
+		textureBandingPending = false;
+
+		if (enabled)
+		{
+			applyGlobalTextureQuality();
+		}
+	}
+
+	private void applyGlobalTextureQuality()
+	{
+		TextureProvider textureProvider = client.getTextureProvider();
+		if (textureProvider == null)
+		{
+			textureBandingPending = true;
+			return;
+		}
+
+		Texture[] textures = textureProvider.getTextures();
+		if (textures == null)
+		{
+			textureBandingPending = true;
+			return;
+		}
+
+		resetTextureProviderCache(textureProvider);
+		int bands = config.globalTextureColorBands();
+		int changed = 0;
+		for (int textureId = 0; textureId < textures.length; textureId++)
+		{
+			int[] pixels = textureProvider.load(textureId);
+			Texture texture = textures[textureId];
+			if (texture != null && texture.getPixels() != null)
+			{
+				pixels = texture.getPixels();
+			}
+
+			if (pixels == null || pixels.length == 0)
+			{
+				continue;
+			}
+
+			originalTexturePixels.put(textureId, pixels.clone());
+			for (int i = 0; i < pixels.length; i++)
+			{
+				pixels[i] = NpcSnapColorBanding.snapTexturePixel(pixels[i], bands);
+			}
+
+			changed++;
+		}
+
+		textureBandingApplied = true;
+		appliedTextureBands = bands;
+		log.debug("Applied global texture banding to {} textures with {} bands", changed, bands);
+	}
+
+	private void restoreGlobalTextureQuality()
+	{
+		if (!textureBandingApplied && originalTexturePixels.isEmpty())
+		{
+			return;
+		}
+
+		TextureProvider textureProvider = client.getTextureProvider();
+		Texture[] textures = textureProvider != null ? textureProvider.getTextures() : null;
+		for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
+		{
+			int textureId = entry.getKey();
+			int[] pixels = null;
+			if (textures != null && textureId >= 0 && textureId < textures.length)
+			{
+				Texture texture = textures[textureId];
+				if (texture != null)
+				{
+					pixels = texture.getPixels();
+				}
+			}
+
+			if (pixels == null && textureProvider != null)
+			{
+				pixels = textureProvider.load(textureId);
+			}
+
+			int[] originalPixels = entry.getValue();
+			if (pixels != null && pixels.length == originalPixels.length)
+			{
+				System.arraycopy(originalPixels, 0, pixels, 0, originalPixels.length);
+			}
+		}
+
+		originalTexturePixels.clear();
+		textureBandingApplied = false;
+		appliedTextureBands = -1;
+		if (textureProvider != null)
+		{
+			resetTextureProviderCache(textureProvider);
+		}
+	}
+
+	private static void resetTextureProviderCache(TextureProvider textureProvider)
+	{
+		textureProvider.setBrightness(textureProvider.getBrightness());
 	}
 
 	private void restoreNpcState()

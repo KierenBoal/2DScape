@@ -30,6 +30,20 @@ public interface NpcSnapConfig extends Config
 	)
 	String billboardSection = "billboardSection";
 
+	@ConfigSection(
+		name = "Debug",
+		description = "Billboard diagnostic rendering options",
+		position = 3
+	)
+	String debugSection = "debugSection";
+
+	@ConfigSection(
+		name = "Textures",
+		description = "Global in-game texture quality settings",
+		position = 4
+	)
+	String texturesSection = "texturesSection";
+
 	@ConfigItem(
 		keyName = "enableAnimationFrameSnapping",
 		name = "Enable animation frame snapping",
@@ -71,7 +85,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default boolean applyToProjectiles()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -247,5 +261,86 @@ public interface NpcSnapConfig extends Config
 	default int billboardLightBoostPercent()
 	{
 		return 180;
+	}
+
+	@ConfigItem(
+		keyName = "enableGlobalTextureBanding",
+		name = "Reduce game texture quality",
+		description = "Apply billboard-style color bands to in-game model textures",
+		section = texturesSection
+	)
+	default boolean enableGlobalTextureBanding()
+	{
+		return true;
+	}
+
+	@Range(
+		min = 1,
+		max = 64
+	)
+	@ConfigItem(
+		keyName = "globalTextureColorBands",
+		name = "Texture color bands",
+		description = "Number of brightness bands used by in-game model textures",
+		section = texturesSection
+	)
+	default int globalTextureColorBands()
+	{
+		return 16;
+	}
+
+	@ConfigItem(
+		keyName = "debugDrawBillboardOutline",
+		name = "Draw billboard outline",
+		description = "Draw a red outline around the four corners of each billboard",
+		section = debugSection
+	)
+	default boolean debugDrawBillboardOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugDrawBillboardPaintOrder",
+		name = "Draw billboard paint order",
+		description = "Draw each billboard's paint order number in its center",
+		section = debugSection
+	)
+	default boolean debugDrawBillboardPaintOrder()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugDrawBoundingBox",
+		name = "Draw bounding box",
+		description = "Draw a static footprint and height box for billboarded NPCs, players, projectiles, and ground items",
+		section = debugSection
+	)
+	default boolean debugDrawBoundingBox()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugDrawFrameNumber",
+		name = "Draw frame number",
+		description = "Draw the in-game animation frame and the frame currently forced by snapping",
+		section = debugSection
+	)
+	default boolean debugDrawFrameNumber()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugShowCacheInvalidations",
+		name = "Show cache invalidations",
+		description = "Draw billboards as solid red for the frame where their cached image is redrawn",
+		section = debugSection
+	)
+	default boolean debugShowCacheInvalidations()
+	{
+		return false;
 	}
 }
