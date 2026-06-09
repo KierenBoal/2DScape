@@ -24,9 +24,11 @@ import net.runelite.api.Texture;
 import net.runelite.api.TextureProvider;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
+import net.runelite.api.events.StatChanged;
 import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
@@ -70,6 +72,12 @@ public class NpcSnapPlugin extends Plugin
 	private NpcBillboardOverlay billboardOverlay;
 
 	@Inject
+	private SkillingThoughtBubbleOverlay skillingThoughtBubbleOverlay;
+
+	@Inject
+	private SkillingActivityTracker skillingActivityTracker;
+
+	@Inject
 	private NpcSnapDebug debug;
 
 	@Inject
@@ -81,6 +89,7 @@ public class NpcSnapPlugin extends Plugin
 		textureBandingPending = true;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
 		overlayManager.add(billboardOverlay);
+		overlayManager.add(skillingThoughtBubbleOverlay);
 		renderCallbackManager.register(this);
 		log.debug("NPC Snap started");
 	}
@@ -89,10 +98,12 @@ public class NpcSnapPlugin extends Plugin
 	protected void shutDown()
 	{
 		renderCallbackManager.unregister(this);
+		overlayManager.remove(skillingThoughtBubbleOverlay);
 		overlayManager.remove(billboardOverlay);
 		drawManager.unregisterEveryFrameListener(restoreFrameListener);
 		restoreNpcState();
 		billboardOverlay.clearGroundItems();
+		skillingActivityTracker.clear();
 		animationFrameCache.clear();
 		debug.clearFrameStates();
 		groundItemsSeeded = false;
@@ -171,6 +182,22 @@ public class NpcSnapPlugin extends Plugin
 	public void onItemQuantityChanged(ItemQuantityChanged itemQuantityChanged)
 	{
 		billboardOverlay.trackGroundItem(itemQuantityChanged.getItem(), itemQuantityChanged.getTile());
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged statChanged)
+	{
+		long timeoutMillis = Math.max(1, config.skillingTimeoutSeconds()) * 1000L;
+		skillingActivityTracker.recordXp(statChanged.getSkill(), statChanged.getXp(), System.currentTimeMillis(), timeoutMillis);
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged gameStateChanged)
+	{
+		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
+		{
+			skillingActivityTracker.clear();
+		}
 	}
 
 	@Subscribe

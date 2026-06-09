@@ -99,6 +99,17 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "enableSkillingBubbles",
+		name = "Enable skilling bubbles",
+		description = "Show a thought bubble over your player when non-combat skill XP is gained",
+		section = targetsSection
+	)
+	default boolean enableSkillingBubbles()
+	{
+		return true;
+	}
+
 	@Range(
 		min = 1,
 		max = 32
@@ -156,23 +167,23 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "enableBillboardCombatSnapping",
+		name = "Enable combat snapping",
+		description = "Lock mutually interacting NPC and player billboards to combat-facing pitch and yaw",
+		section = snappingSection
+	)
+	default boolean enableBillboardCombatSnapping()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "enable2dBillboardSprites",
 		name = "Enable 2D billboard sprites",
 		description = "Hide NPC entities and redraw them as software-rasterized sprite billboards",
 		section = billboardSection
 	)
 	default boolean enable2dBillboardSprites()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "enableBillboardCombatSnapping",
-		name = "Enable combat snapping",
-		description = "Lock mutually interacting NPC and player billboards to combat-facing pitch and yaw",
-		section = billboardSection
-	)
-	default boolean enableBillboardCombatSnapping()
 	{
 		return true;
 	}
@@ -261,6 +272,21 @@ public interface NpcSnapConfig extends Config
 	default int billboardLightBoostPercent()
 	{
 		return 180;
+	}
+
+	@Range(
+		min = 1,
+		max = 60
+	)
+	@ConfigItem(
+		keyName = "skillingTimeoutSeconds",
+		name = "Skilling timeout",
+		description = "Seconds to keep a skill icon visible after XP is gained",
+		section = billboardSection
+	)
+	default int skillingTimeoutSeconds()
+	{
+		return 10;
 	}
 
 	@ConfigItem(
