@@ -56,6 +56,39 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "enableProjectileFrameSnapping",
+		name = "Enable projectile frame snapping",
+		description = "Enable stepped projectile billboard animation frames, such as arrows, spells in flight, and similar world projectiles",
+		section = snappingSection
+	)
+	default boolean enableProjectileFrameSnapping()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "enableGraphicsObjectFrameSnapping",
+		name = "Enable effect frame snapping",
+		description = "Enable stepped billboard animation frames for graphics objects and effect-like animated visuals, such as spell impact graphics",
+		section = snappingSection
+	)
+	default boolean enableGraphicsObjectFrameSnapping()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "enableObjectFrameSnapping",
+		name = "Enable object frame snapping",
+		description = "Enable stepped dynamic object billboard animation frames for animated world objects and scenery. RuneLite does not expose a public setter for live DynamicObject frames, so the snapping applies to billboards rather than the original 3D object render.",
+		section = snappingSection
+	)
+	default boolean enableObjectFrameSnapping()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "applyToNpcs",
 		name = "Apply to NPCs",
 		description = "Apply snapping and billboards to NPCs",
@@ -84,6 +117,28 @@ public interface NpcSnapConfig extends Config
 		section = targetsSection
 	)
 	default boolean applyToProjectiles()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "applyToGraphicsObjects",
+		name = "Apply to effects",
+		description = "Apply billboard rendering to graphics objects and effect-like visuals, such as spell impact graphics and actor-attached effect objects",
+		section = targetsSection
+	)
+	default boolean applyToGraphicsObjects()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "applyToObjects",
+		name = "Apply to objects",
+		description = "Apply billboard rendering to visible world objects and scenery where possible",
+		section = targetsSection
+	)
+	default boolean applyToObjects()
 	{
 		return true;
 	}

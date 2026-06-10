@@ -8,7 +8,9 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,7 +20,12 @@ import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.DecorativeObject;
+import net.runelite.api.DynamicObject;
 import net.runelite.api.GameState;
+import net.runelite.api.GameObject;
+import net.runelite.api.GraphicsObject;
+import net.runelite.api.GroundObject;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
@@ -28,6 +35,8 @@ import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
+import net.runelite.api.TileObject;
+import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
@@ -54,7 +63,12 @@ class NpcBillboardOverlay extends Overlay
 	private final NpcSnapDebug debug;
 	private final Map<Renderable, CachedBillboard> billboardCache = new HashMap<>();
 	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
+	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
+	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = new HashSet<>();
+	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
+	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
+	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 
 	@Inject
@@ -74,6 +88,8 @@ class NpcBillboardOverlay extends Overlay
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
 			activeBillboards.clear();
+			activeTileObjects.clear();
+			clearActiveSnapshots();
 			return null;
 		}
 
@@ -81,12 +97,16 @@ class NpcBillboardOverlay extends Overlay
 		if (worldView == null)
 		{
 			activeBillboards.clear();
+			activeTileObjects.clear();
+			clearActiveSnapshots();
 			return null;
 		}
 
 		if (!config.enable2dBillboardSprites())
 		{
 			activeBillboards.clear();
+			activeTileObjects.clear();
+			clearActiveSnapshots();
 			drawDebugBoundingBoxes(graphics, worldView);
 			return null;
 		}
@@ -105,9 +125,17 @@ class NpcBillboardOverlay extends Overlay
 			{
 				renderProjectile(graphics, (Projectile) billboard.renderable, paintOrder);
 			}
+			else if (billboard.renderable instanceof GraphicsObject)
+			{
+				renderGraphicsObject(graphics, (GraphicsObject) billboard.renderable, paintOrder);
+			}
 			else if (billboard.renderable instanceof TileItem)
 			{
 				renderGroundItem(graphics, (TileItem) billboard.renderable, paintOrder);
+			}
+			else if (billboard.tileObject != null)
+			{
+				renderTileObject(graphics, billboard.tileObject, paintOrder);
 			}
 		}
 
@@ -154,6 +182,22 @@ class NpcBillboardOverlay extends Overlay
 					debug.drawGroundItemBoundingBox(graphics, (TileItem) renderable, groundItem.localPoint, groundItem.plane);
 				}
 			}
+			else if (billboard.tileObject != null)
+			{
+				ObservedTileObject observed = visibleTileObjects.get(billboard.tileObject);
+				if (observed != null)
+				{
+					for (ObjectRenderablePart part : observed.parts)
+					{
+						Point canvasPoint = Perspective.localToCanvas(client, part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2));
+						if (canvasPoint != null)
+						{
+							graphics.setColor(Color.RED);
+							graphics.drawRect(canvasPoint.getX() - 2, canvasPoint.getY() - 2, 4, 4);
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -194,6 +238,111 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		groundItems.clear();
+	}
+
+	private void clearActiveSnapshots()
+	{
+		activeBillboardSnapshot = Collections.emptySet();
+		activeTileObjectSnapshot = Collections.emptySet();
+	}
+
+	void syncGroundItems(WorldView worldView)
+	{
+		if (worldView == null || worldView.getScene() == null)
+		{
+			clearGroundItems();
+			return;
+		}
+
+		Tile[][][] tiles = worldView.getScene().getTiles();
+		if (tiles == null)
+		{
+			clearGroundItems();
+			return;
+		}
+
+		Set<TileItem> seenItems = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Tile[][] planeTiles : tiles)
+		{
+			if (planeTiles == null)
+			{
+				continue;
+			}
+
+			for (Tile[] row : planeTiles)
+			{
+				if (row == null)
+				{
+					continue;
+				}
+
+				for (Tile tile : row)
+				{
+					if (tile == null)
+					{
+						continue;
+					}
+
+					Collection<TileItem> tileItems = tile.getGroundItems();
+					if (tileItems == null)
+					{
+						continue;
+					}
+
+					for (TileItem item : tileItems)
+					{
+						if (item == null)
+						{
+							continue;
+						}
+
+						seenItems.add(item);
+						trackGroundItem(item, tile);
+					}
+				}
+			}
+		}
+
+		List<TileItem> staleItems = new ArrayList<>();
+		for (TileItem item : groundItems.keySet())
+		{
+			if (!seenItems.contains(item))
+			{
+				staleItems.add(item);
+			}
+		}
+
+		for (TileItem item : staleItems)
+		{
+			untrackGroundItem(item);
+		}
+	}
+
+	void clearTileObjects()
+	{
+		observedTileObjects.clear();
+		visibleTileObjects.clear();
+		activeTileObjects.clear();
+		activeTileObjectSnapshot = Collections.emptySet();
+	}
+
+	void beginFrame()
+	{
+		visibleTileObjects.clear();
+		visibleTileObjects.putAll(observedTileObjects);
+		observedTileObjects.clear();
+		activeBillboards.clear();
+		activeTileObjects.clear();
+		activeBillboardsGameCycle = Integer.MIN_VALUE;
+	}
+
+	void observeTileObject(TileObject tileObject)
+	{
+		ObservedTileObject observed = buildObservedTileObject(tileObject);
+		if (observed != null)
+		{
+			observedTileObjects.put(tileObject, observed);
+		}
 	}
 
 	void seedGroundItems(WorldView worldView)
@@ -247,26 +396,68 @@ class NpcBillboardOverlay extends Overlay
 
 	boolean shouldBillboardNpc(NPC npc)
 	{
-		ensureActiveBillboardsCurrent();
-		return activeBillboards.contains(npc);
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeBillboards.contains(npc);
+		}
+
+		return activeBillboardSnapshot.contains(npc);
 	}
 
 	boolean shouldBillboardPlayer(Player player)
 	{
-		ensureActiveBillboardsCurrent();
-		return activeBillboards.contains(player);
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeBillboards.contains(player);
+		}
+
+		return activeBillboardSnapshot.contains(player);
 	}
 
 	boolean shouldBillboardProjectile(Projectile projectile)
 	{
-		ensureActiveBillboardsCurrent();
-		return activeBillboards.contains(projectile);
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeBillboards.contains(projectile);
+		}
+
+		return activeBillboardSnapshot.contains(projectile);
+	}
+
+	boolean shouldBillboardGraphicsObject(GraphicsObject graphicsObject)
+	{
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeBillboards.contains(graphicsObject);
+		}
+
+		return activeBillboardSnapshot.contains(graphicsObject);
 	}
 
 	boolean shouldBillboardGroundItem(TileItem item)
 	{
-		ensureActiveBillboardsCurrent();
-		return activeBillboards.contains(item);
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeBillboards.contains(item);
+		}
+
+		return activeBillboardSnapshot.contains(item);
+	}
+
+	boolean shouldBillboardTileObject(TileObject tileObject)
+	{
+		if (client.isClientThread())
+		{
+			ensureActiveBillboardsCurrent();
+			return activeTileObjects.contains(tileObject);
+		}
+
+		return activeTileObjectSnapshot.contains(tileObject);
 	}
 
 	private void renderActor(Graphics2D graphics, Actor actor, int paintOrder)
@@ -342,7 +533,7 @@ class NpcBillboardOverlay extends Overlay
 		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset());
 		Point basePoint = Perspective.localToCanvas(client, localPoint, actor.getWorldView().getPlane(), verticalOffset);
 		Point topPoint = Perspective.localToCanvas(client, localPoint, actor.getWorldView().getPlane(), verticalOffset + actor.getModelHeight());
-		Rectangle hullBounds = actor.getConvexHull() != null ? actor.getConvexHull().getBounds() : null;
+		Rectangle hullBounds = actorHullBounds(actor);
 		if (basePoint == null)
 		{
 			return;
@@ -358,7 +549,9 @@ class NpcBillboardOverlay extends Overlay
 		int distanceHeight = scaledSize(bounds.height, perspectiveScale);
 		int projectedHeight = projectedHeight(basePoint, topPoint);
 		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
-		int targetHeight = hullHeight > 0 ? hullHeight : Math.max(distanceHeight, projectedHeight);
+		int targetHeight = hullHeight > 0
+			? hullHeight
+			: distanceHeight > 0 ? distanceHeight : projectedHeight;
 		int targetWidth = aspectWidth(bounds, targetHeight);
 		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
 		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
@@ -540,7 +733,7 @@ class NpcBillboardOverlay extends Overlay
 
 		BillboardCacheKey cacheKey = new BillboardCacheKey(
 			projectile.getId(),
-			projectile.getAnimationFrame(),
+			snapFrame(projectile.getAnimation(), projectile.getAnimationFrame(), config.enableProjectileFrameSnapping()),
 			-1,
 			-1,
 			relativeYaw,
@@ -604,6 +797,68 @@ class NpcBillboardOverlay extends Overlay
 		));
 	}
 
+	private void renderGraphicsObject(Graphics2D graphics, GraphicsObject graphicsObject, int paintOrder)
+	{
+		Model model = graphicsObject.getModel();
+		LocalPoint localPoint = graphicsObject.getLocation();
+		if (model == null || localPoint == null)
+		{
+			return;
+		}
+
+		renderRenderableBillboard(
+			graphics,
+			graphicsObject,
+			model,
+			localPoint,
+			graphicsObject.getLevel(),
+			Math.max(0, graphicsObject.getZ()),
+			relativeYaw(),
+			relativePitch(),
+			snapFrame(graphicsObject.getAnimation(), graphicsObject.getAnimationFrame(), config.enableGraphicsObjectFrameSnapping()),
+			graphicsObject.getId(),
+			-1,
+			-1,
+			null,
+			false
+		);
+	}
+
+	private void renderTileObject(Graphics2D graphics, TileObject tileObject, int paintOrder)
+	{
+		ObservedTileObject observed = visibleTileObjects.get(tileObject);
+		if (observed == null)
+		{
+			return;
+		}
+
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			int snappedFrame = part.renderable instanceof DynamicObject
+				? snapFrame(((DynamicObject) part.renderable).getAnimation(), ((DynamicObject) part.renderable).getAnimFrame(), config.enableObjectFrameSnapping())
+				: -1;
+			int animationId = part.renderable instanceof DynamicObject && ((DynamicObject) part.renderable).getAnimation() != null
+				? ((DynamicObject) part.renderable).getAnimation().getId()
+				: tileObject.getId();
+			renderRenderableBillboard(
+				graphics,
+				part.renderable,
+				part.renderable.getModel(),
+				part.localPoint,
+				part.plane,
+				0,
+				relativeYaw(),
+				relativePitch(),
+				snappedFrame,
+				animationId,
+				-1,
+				-1,
+				null,
+				true
+			);
+		}
+	}
+
 	boolean shouldHideNpc(NPC npc)
 	{
 		return shouldBillboardNpc(npc);
@@ -619,16 +874,26 @@ class NpcBillboardOverlay extends Overlay
 		return shouldBillboardProjectile(projectile);
 	}
 
+	boolean shouldHideGraphicsObject(GraphicsObject graphicsObject)
+	{
+		return shouldBillboardGraphicsObject(graphicsObject);
+	}
+
 	boolean shouldHideGroundItem(TileItem item)
 	{
 		return shouldBillboardGroundItem(item);
+	}
+
+	boolean shouldHideTileObject(TileObject tileObject)
+	{
+		return shouldBillboardTileObject(tileObject);
 	}
 
 	private List<RenderableBillboard> getVisibleBillboards(WorldView worldView)
 	{
 		ensureActiveBillboardsCurrent(worldView);
 
-		List<RenderableBillboard> visibleBillboards = new ArrayList<>(activeBillboards.size());
+		List<RenderableBillboard> visibleBillboards = new ArrayList<>(activeBillboards.size() + activeTileObjects.size());
 		for (Renderable renderable : activeBillboards)
 		{
 			if (renderable instanceof NPC)
@@ -643,9 +908,22 @@ class NpcBillboardOverlay extends Overlay
 			{
 				visibleBillboards.add(new RenderableBillboard(renderable, billboardDepth((Projectile) renderable)));
 			}
+			else if (renderable instanceof GraphicsObject)
+			{
+				visibleBillboards.add(new RenderableBillboard(renderable, billboardDepth((GraphicsObject) renderable)));
+			}
 			else if (renderable instanceof TileItem)
 			{
 				visibleBillboards.add(new RenderableBillboard(renderable, billboardDepth((TileItem) renderable)));
+			}
+		}
+
+		for (TileObject tileObject : activeTileObjects)
+		{
+			ObservedTileObject observed = visibleTileObjects.get(tileObject);
+			if (observed != null)
+			{
+				visibleBillboards.add(new RenderableBillboard(tileObject, billboardDepth(observed)));
 			}
 		}
 
@@ -654,6 +932,11 @@ class NpcBillboardOverlay extends Overlay
 
 	private void ensureActiveBillboardsCurrent()
 	{
+		if (!client.isClientThread())
+		{
+			return;
+		}
+
 		ensureActiveBillboardsCurrent(client.getTopLevelWorldView());
 	}
 
@@ -666,6 +949,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		activeBillboards.clear();
+		activeTileObjects.clear();
 		activeBillboardsGameCycle = gameCycle;
 		if (!config.enable2dBillboardSprites() || client.getGameState() != GameState.LOGGED_IN || worldView == null)
 		{
@@ -678,8 +962,20 @@ class NpcBillboardOverlay extends Overlay
 		int count = Math.min(limit, candidates.size());
 		for (int i = 0; i < count; i++)
 		{
-			activeBillboards.add(candidates.get(i).renderable);
+			RenderableBillboard billboard = candidates.get(i);
+			if (billboard.renderable != null)
+			{
+				activeBillboards.add(billboard.renderable);
+			}
+			else if (billboard.tileObject != null)
+			{
+				activeTileObjects.add(billboard.tileObject);
+			}
 		}
+
+		activeBillboardSnapshot = new HashSet<>(activeBillboards);
+		activeTileObjectSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
+		activeTileObjectSnapshot.addAll(activeTileObjects);
 	}
 
 	private List<RenderableBillboard> collectCandidates(WorldView worldView)
@@ -728,6 +1024,19 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
+		if (config.applyToGraphicsObjects())
+		{
+			for (GraphicsObject graphicsObject : worldView.getGraphicsObjects())
+			{
+				if (graphicsObject == null || !isEligibleGraphicsObject(localPlayerLocation, graphicsObject, viewport))
+				{
+					continue;
+				}
+
+				candidates.add(new RenderableBillboard(graphicsObject, billboardDepth(graphicsObject)));
+			}
+		}
+
 		if (config.applyToGroundItems())
 		{
 			for (Map.Entry<TileItem, GroundItemBillboard> entry : groundItems.entrySet())
@@ -740,6 +1049,25 @@ class NpcBillboardOverlay extends Overlay
 				}
 
 				candidates.add(new RenderableBillboard(item, billboardDepth(item)));
+			}
+		}
+
+		if (config.applyToObjects() || config.applyToGraphicsObjects())
+		{
+			for (ObservedTileObject observed : visibleTileObjects.values())
+			{
+				boolean effectLike = isEffectObservedTileObject(worldView, observed);
+				if (effectLike ? !config.applyToGraphicsObjects() : !config.applyToObjects())
+				{
+					continue;
+				}
+
+				if (!isEligibleTileObject(localPlayerLocation, observed, viewport))
+				{
+					continue;
+				}
+
+				candidates.add(new RenderableBillboard(observed.tileObject, billboardDepth(observed)));
 			}
 		}
 
@@ -756,12 +1084,6 @@ class NpcBillboardOverlay extends Overlay
 		if (!isWithinRadius(localPlayerLocation, actorLocation, config.billboardRadiusTiles()))
 		{
 			return false;
-		}
-
-		Shape hull = actor.getConvexHull();
-		if (hull != null && hull.getBounds().intersects(viewport))
-		{
-			return true;
 		}
 
 		Polygon tilePoly = actor.getCanvasTilePoly();
@@ -797,6 +1119,28 @@ class NpcBillboardOverlay extends Overlay
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
+	private boolean isEligibleGraphicsObject(LocalPoint localPlayerLocation, GraphicsObject graphicsObject, Rectangle viewport)
+	{
+		LocalPoint localPoint = graphicsObject.getLocation();
+		if (localPlayerLocation == null || localPoint == null)
+		{
+			return false;
+		}
+
+		if (!isWithinRadius(localPlayerLocation, localPoint, config.billboardRadiusTiles()))
+		{
+			return false;
+		}
+
+		if (graphicsObject.getModel() == null)
+		{
+			return false;
+		}
+
+		Point canvasPoint = Perspective.localToCanvas(client, localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()));
+		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+	}
+
 	private static LocalPoint projectileLocalPoint(Projectile projectile)
 	{
 		return new LocalPoint((int) projectile.getX(), (int) projectile.getY());
@@ -825,6 +1169,107 @@ class NpcBillboardOverlay extends Overlay
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
+	private boolean isEligibleTileObject(LocalPoint localPlayerLocation, ObservedTileObject observed, Rectangle viewport)
+	{
+		if (localPlayerLocation == null || observed == null)
+		{
+			return false;
+		}
+
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			if (part.localPoint == null || part.renderable == null)
+			{
+				continue;
+			}
+
+			if (!isWithinRadius(localPlayerLocation, part.localPoint, config.billboardRadiusTiles()))
+			{
+				continue;
+			}
+
+			Point canvasPoint = Perspective.localToCanvas(client, part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2));
+			if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private boolean isEffectObservedTileObject(WorldView worldView, ObservedTileObject observed)
+	{
+		if (observed == null)
+		{
+			return false;
+		}
+
+		if (worldView == null)
+		{
+			return false;
+		}
+
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			if (part.localPoint == null)
+			{
+				continue;
+			}
+
+			if (overlapsActor(worldView, part.localPoint, part.plane))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static boolean overlapsActor(WorldView worldView, LocalPoint localPoint, int plane)
+	{
+		if (worldView == null || localPoint == null)
+		{
+			return false;
+		}
+
+		if (worldView.players() != null)
+		{
+			for (Player player : worldView.players())
+			{
+				if (player == null || player.getWorldView() == null || player.getWorldView().getPlane() != plane)
+				{
+					continue;
+				}
+
+				LocalPoint playerPoint = player.getLocalLocation();
+				if (playerPoint != null && playerPoint.equals(localPoint))
+				{
+					return true;
+				}
+			}
+		}
+
+		if (worldView.npcs() != null)
+		{
+			for (NPC npc : worldView.npcs())
+			{
+				if (npc == null || npc.getWorldView() == null || npc.getWorldView().getPlane() != plane)
+				{
+					continue;
+				}
+
+				LocalPoint npcPoint = npc.getLocalLocation();
+				if (npcPoint != null && npcPoint.equals(localPoint))
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	private boolean shouldRefreshCache(Renderable renderable, BillboardCacheKey cacheKey, Rectangle bounds)
 	{
 		CachedBillboard cached = billboardCache.get(renderable);
@@ -844,14 +1289,7 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
-		return isScheduledRedrawFrame(renderable);
-	}
-
-	private boolean isScheduledRedrawFrame(Renderable renderable)
-	{
-		int interval = Math.max(1, 50 / Math.max(1, config.animationFrameCount()));
-		int bucket = Math.floorMod(System.identityHashCode(renderable), interval);
-		return Math.floorMod(client.getGameCycle(), interval) == bucket;
+		return true;
 	}
 
 	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds)
@@ -1028,6 +1466,17 @@ class NpcBillboardOverlay extends Overlay
 		return cameraDistance(projectileLocalPoint(projectile), projectile.getFloor(), projectileVerticalOffset(projectile) + (projectile.getModelHeight() / 2.0));
 	}
 
+	private double billboardDepth(GraphicsObject graphicsObject)
+	{
+		LocalPoint localPoint = graphicsObject.getLocation();
+		if (localPoint == null)
+		{
+			return Double.NEGATIVE_INFINITY;
+		}
+
+		return cameraDistance(localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()) + (graphicsObject.getModelHeight() / 2.0));
+	}
+
 	private double billboardDepth(TileItem item)
 	{
 		GroundItemBillboard groundItem = groundItems.get(item);
@@ -1037,6 +1486,26 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return cameraDistance(groundItem.localPoint, groundItem.plane, item.getModelHeight() / 2.0);
+	}
+
+	private double billboardDepth(ObservedTileObject observed)
+	{
+		double nearest = Double.POSITIVE_INFINITY;
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			if (part.localPoint == null || part.renderable == null)
+			{
+				continue;
+			}
+
+			double distance = cameraDistance(part.localPoint, part.plane, part.renderable.getModelHeight() / 2.0);
+			if (distance < nearest)
+			{
+				nearest = distance;
+			}
+		}
+
+		return Double.isFinite(nearest) ? nearest : Double.NEGATIVE_INFINITY;
 	}
 
 	private boolean isWithinRadius(LocalPoint source, LocalPoint target, int radiusTiles)
@@ -1114,7 +1583,7 @@ class NpcBillboardOverlay extends Overlay
 			);
 
 			int alpha = transparencies == null || face >= transparencies.length ? 255 : 255 - (transparencies[face] & 0xFF);
-			Color color = applyLightBoost(hslToColor(faceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors), alpha));
+			Color color = applyLightBoost(resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha));
 
 			double depth = (
 				spriteDepth[a] +
@@ -1128,14 +1597,29 @@ class NpcBillboardOverlay extends Overlay
 		return faces;
 	}
 
-	private static int faceColor(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3, short[] unlitFaceColors)
+	private static Color resolveFaceColor(
+		int face,
+		int[] faceColors1,
+		int[] faceColors2,
+		int[] faceColors3,
+		short[] unlitFaceColors,
+		int alpha
+	)
 	{
 		if (USE_UNLIT_COLORS && unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1)
 		{
-			return Short.toUnsignedInt(unlitFaceColors[face]);
+			// The software billboard path has no lighting stage, so unlit face colors
+			// should be unpacked directly and used as the full-bright polygon color.
+			return packedHslToColor(Short.toUnsignedInt(unlitFaceColors[face]), alpha);
 		}
 
-		return (faceColors1[face] + faceColors2[face] + faceColors3[face]) / 3;
+		Color vertexA = packedHslToColor(faceColors1[face], alpha);
+		Color vertexB = packedHslToColor(faceColors2[face], alpha);
+		Color vertexC = packedHslToColor(faceColors3[face], alpha);
+		int red = (vertexA.getRed() + vertexB.getRed() + vertexC.getRed()) / 3;
+		int green = (vertexA.getGreen() + vertexB.getGreen() + vertexC.getGreen()) / 3;
+		int blue = (vertexA.getBlue() + vertexB.getBlue() + vertexC.getBlue()) / 3;
+		return new Color(red, green, blue, alpha);
 	}
 
 	private static Rectangle computeBounds(List<FaceDraw> faces)
@@ -1163,6 +1647,19 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+	}
+
+	private static Rectangle actorHullBounds(Actor actor)
+	{
+		try
+		{
+			Shape hull = actor.getConvexHull();
+			return hull != null ? hull.getBounds() : null;
+		}
+		catch (AssertionError ex)
+		{
+			return null;
+		}
 	}
 
 	private static void quantize(BufferedImage image, int paletteSize)
@@ -1326,6 +1823,209 @@ class NpcBillboardOverlay extends Overlay
 		return Math.max(0.0f, Math.min(255.0f, channel));
 	}
 
+	private Rectangle renderRenderableBillboard(
+		Graphics2D graphics,
+		Renderable renderable,
+		Model model,
+		LocalPoint localPoint,
+		int plane,
+		int verticalOffset,
+		int relativeYaw,
+		int relativePitch,
+		int animationFrame,
+		int animationId,
+		int poseAnimationId,
+		int poseAnimationFrame,
+		Shape hull,
+		boolean smoothDrawRect
+	)
+	{
+		if (model == null || localPoint == null)
+		{
+			return null;
+		}
+
+		int vertexCount = model.getVerticesCount();
+		if (vertexCount <= 0)
+		{
+			return null;
+		}
+
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		float[] spriteX = new float[vertexCount];
+		float[] spriteY = new float[vertexCount];
+		float[] spriteDepth = new float[vertexCount];
+		for (int i = 0; i < vertexCount; i++)
+		{
+			double[] yawRotated = rotateYaw(verticesX[i], verticesZ[i], relativeYaw);
+			double[] pitchRotated = rotatePitch(verticesY[i], yawRotated[1], relativePitch);
+			spriteX[i] = (float) yawRotated[0];
+			spriteY[i] = (float) pitchRotated[0];
+			spriteDepth[i] = (float) pitchRotated[1];
+		}
+
+		List<FaceDraw> faces = buildFaces(model, spriteX, spriteY, spriteDepth);
+		if (faces.isEmpty())
+		{
+			return null;
+		}
+
+		faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
+		Rectangle bounds = computeBounds(faces);
+		if (!isUsableSourceBounds(bounds))
+		{
+			return null;
+		}
+
+		BillboardCacheKey cacheKey = new BillboardCacheKey(
+			animationId,
+			animationFrame,
+			poseAnimationId,
+			poseAnimationFrame,
+			relativeYaw,
+			relativePitch,
+			config.billboardColorBands(),
+			config.billboardLightBoostPercent(),
+			qualityKey()
+		);
+		CachedBillboard cached = billboardCache.get(renderable);
+		if (shouldRefreshCache(renderable, cacheKey, bounds))
+		{
+			BufferedImage image = renderBillboardImage(faces, bounds);
+			if (image == null)
+			{
+				return null;
+			}
+
+			cached = new CachedBillboard(cacheKey, bounds, image);
+			billboardCache.put(renderable, cached);
+		}
+
+		Point basePoint = Perspective.localToCanvas(client, localPoint, plane, verticalOffset);
+		Point topPoint = Perspective.localToCanvas(client, localPoint, plane, verticalOffset + renderable.getModelHeight());
+		Rectangle hullBounds = hull != null ? hull.getBounds() : null;
+		if (basePoint == null)
+		{
+			return null;
+		}
+
+		double distance = cameraDistance(localPoint, plane, verticalOffset + (renderable.getModelHeight() / 2.0));
+		if (!isUsableDistance(distance))
+		{
+			return null;
+		}
+
+		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
+		int distanceHeight = scaledSize(bounds.height, perspectiveScale);
+		int projectedHeight = projectedHeight(basePoint, topPoint);
+		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
+		int targetHeight = hullHeight > 0
+			? hullHeight
+			: distanceHeight > 0 ? distanceHeight : projectedHeight;
+		int targetWidth = aspectWidth(bounds, targetHeight);
+		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
+		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
+		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
+		{
+			return null;
+		}
+
+		int drawX = anchorX - (targetWidth / 2);
+		int drawY = anchorY - targetHeight;
+		if (!isUsableDrawSize(targetWidth, targetHeight) || isOutsideViewport(drawX, drawY, targetWidth, targetHeight))
+		{
+			return null;
+		}
+
+		Rectangle drawRect = new Rectangle(drawX, drawY, targetWidth, targetHeight);
+		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
+		return drawRect;
+	}
+
+	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)
+	{
+		if (!enabled || animation == null)
+		{
+			return frame;
+		}
+
+		int totalFrames = animation.getNumFrames();
+		int visibleFrameCount = Math.max(1, config.animationFrameCount());
+		if (frame < 0 || totalFrames <= 1 || visibleFrameCount >= totalFrames)
+		{
+			return frame;
+		}
+
+		int clampedFrame = Math.min(frame, totalFrames - 1);
+		int snappedBucket = clampedFrame * visibleFrameCount / totalFrames;
+		int snappedFrame = snappedBucket * totalFrames / visibleFrameCount;
+		return Math.min(snappedFrame, totalFrames - 1);
+	}
+
+	private int relativeYaw()
+	{
+		int rawRelativeYaw = client.getCameraYaw();
+		if (!config.enableRotationSnapping())
+		{
+			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+		}
+
+		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
+	}
+
+	private ObservedTileObject buildObservedTileObject(TileObject tileObject)
+	{
+		if (tileObject == null || tileObject.getLocalLocation() == null)
+		{
+			return null;
+		}
+
+		List<ObjectRenderablePart> parts = new ArrayList<>(2);
+		if (tileObject instanceof GameObject)
+		{
+			addObjectRenderablePart(parts, ((GameObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
+		}
+		else if (tileObject instanceof GroundObject)
+		{
+			addObjectRenderablePart(parts, ((GroundObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
+		}
+		else if (tileObject instanceof WallObject)
+		{
+			WallObject wallObject = (WallObject) tileObject;
+			addObjectRenderablePart(parts, wallObject.getRenderable1(), tileObject.getLocalLocation(), tileObject.getPlane());
+			addObjectRenderablePart(parts, wallObject.getRenderable2(), tileObject.getLocalLocation(), tileObject.getPlane());
+		}
+		else if (tileObject instanceof DecorativeObject)
+		{
+			DecorativeObject decorativeObject = (DecorativeObject) tileObject;
+			addObjectRenderablePart(parts, decorativeObject.getRenderable(), offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset(), decorativeObject.getYOffset()), tileObject.getPlane());
+			addObjectRenderablePart(parts, decorativeObject.getRenderable2(), offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset2(), decorativeObject.getYOffset2()), tileObject.getPlane());
+		}
+
+		return parts.isEmpty() ? null : new ObservedTileObject(tileObject, parts);
+	}
+
+	private void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable, LocalPoint localPoint, int plane)
+	{
+		if (renderable == null || localPoint == null
+			|| renderable instanceof Actor
+			|| renderable instanceof Projectile
+			|| renderable instanceof GraphicsObject
+			|| renderable instanceof TileItem)
+		{
+			return;
+		}
+
+		parts.add(new ObjectRenderablePart(renderable, localPoint, plane));
+	}
+
+	private static LocalPoint offsetLocalPoint(LocalPoint base, int xOffset, int yOffset)
+	{
+		return base == null ? null : new LocalPoint(base.getX() + xOffset, base.getY() + yOffset);
+	}
+
 	private int relativeYaw(Actor actor)
 	{
 		//int rawRelativeYaw = actor.getCurrentOrientation() - client.getCameraYaw();
@@ -1480,7 +2180,7 @@ class NpcBillboardOverlay extends Overlay
 		return new double[]{rotatedY, rotatedDepth};
 	}
 
-	private static Color hslToColor(int packedHsl, int alpha)
+	private static Color packedHslToColor(int packedHsl, int alpha)
 	{
 		int hue = (packedHsl >> 10) & 0x3F;
 		int saturation = (packedHsl >> 7) & 0x07;
@@ -1663,11 +2363,20 @@ class NpcBillboardOverlay extends Overlay
 	private static final class RenderableBillboard
 	{
 		private final Renderable renderable;
+		private final TileObject tileObject;
 		private final double depth;
 
 		private RenderableBillboard(Renderable renderable, double depth)
 		{
 			this.renderable = renderable;
+			this.tileObject = null;
+			this.depth = depth;
+		}
+
+		private RenderableBillboard(TileObject tileObject, double depth)
+		{
+			this.renderable = null;
+			this.tileObject = tileObject;
 			this.depth = depth;
 		}
 
@@ -1676,4 +2385,31 @@ class NpcBillboardOverlay extends Overlay
 			return depth;
 		}
 	}
+
+	private static final class ObservedTileObject
+	{
+		private final TileObject tileObject;
+		private final List<ObjectRenderablePart> parts;
+
+		private ObservedTileObject(TileObject tileObject, List<ObjectRenderablePart> parts)
+		{
+			this.tileObject = tileObject;
+			this.parts = parts;
+		}
+	}
+
+	private static final class ObjectRenderablePart
+	{
+		private final Renderable renderable;
+		private final LocalPoint localPoint;
+		private final int plane;
+
+		private ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane)
+		{
+			this.renderable = renderable;
+			this.localPoint = localPoint;
+			this.plane = plane;
+		}
+	}
+
 }

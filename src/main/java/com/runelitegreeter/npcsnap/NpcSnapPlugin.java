@@ -9,8 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Animation;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.DecorativeObject;
 import net.runelite.api.GameState;
 import net.runelite.api.GameObject;
+import net.runelite.api.GraphicsObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.ItemLayer;
 import net.runelite.api.NPC;
@@ -22,6 +24,7 @@ import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
 import net.runelite.api.Texture;
 import net.runelite.api.TextureProvider;
+import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
@@ -51,7 +54,6 @@ public class NpcSnapPlugin extends Plugin
 	private final Map<Integer, Integer> animationFrameCache = new HashMap<>();
 	private final Map<Integer, int[]> originalTexturePixels = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
-	private boolean groundItemsSeeded;
 	private boolean textureBandingApplied;
 	private boolean textureBandingPending = true;
 	private int appliedTextureBands = -1;
@@ -103,10 +105,10 @@ public class NpcSnapPlugin extends Plugin
 		drawManager.unregisterEveryFrameListener(restoreFrameListener);
 		restoreNpcState();
 		billboardOverlay.clearGroundItems();
+		billboardOverlay.clearTileObjects();
 		skillingActivityTracker.clear();
 		animationFrameCache.clear();
 		debug.clearFrameStates();
-		groundItemsSeeded = false;
 		restoreGlobalTextureQuality();
 		log.debug("NPC Snap stopped");
 	}
@@ -116,6 +118,7 @@ public class NpcSnapPlugin extends Plugin
 	{
 		restoreNpcState();
 		debug.clearFrameStates();
+		billboardOverlay.beginFrame();
 
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
@@ -130,10 +133,9 @@ public class NpcSnapPlugin extends Plugin
 			return;
 		}
 
-		if (config.applyToGroundItems() && !groundItemsSeeded)
+		if (config.applyToGroundItems())
 		{
-			billboardOverlay.seedGroundItems(worldView);
-			groundItemsSeeded = true;
+			billboardOverlay.syncGroundItems(worldView);
 		}
 
 		for (NPC npc : worldView.npcs())
@@ -238,6 +240,11 @@ public class NpcSnapPlugin extends Plugin
 			return !config.applyToProjectiles() || !billboardOverlay.shouldHideProjectile((Projectile) renderable);
 		}
 
+		if (renderable instanceof GraphicsObject)
+		{
+			return !config.applyToGraphicsObjects() || !billboardOverlay.shouldHideGraphicsObject((GraphicsObject) renderable);
+		}
+
 		if (renderable instanceof TileItem)
 		{
 			return !config.applyToGroundItems() || !billboardOverlay.shouldHideGroundItem((TileItem) renderable);
@@ -256,12 +263,60 @@ public class NpcSnapPlugin extends Plugin
 
 		if (tileObject instanceof GameObject)
 		{
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			{
+				billboardOverlay.observeTileObject(tileObject);
+				if (billboardOverlay.shouldHideTileObject(tileObject))
+				{
+					return false;
+				}
+			}
+
 			return shouldDrawObjectRenderable(((GameObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof GroundObject)
 		{
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			{
+				billboardOverlay.observeTileObject(tileObject);
+				if (billboardOverlay.shouldHideTileObject(tileObject))
+				{
+					return false;
+				}
+			}
+
 			return shouldDrawObjectRenderable(((GroundObject) tileObject).getRenderable());
+		}
+
+		if (tileObject instanceof DecorativeObject)
+		{
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			{
+				billboardOverlay.observeTileObject(tileObject);
+				if (billboardOverlay.shouldHideTileObject(tileObject))
+				{
+					return false;
+				}
+			}
+
+			return shouldDrawObjectRenderable(((DecorativeObject) tileObject).getRenderable())
+				&& shouldDrawObjectRenderable(((DecorativeObject) tileObject).getRenderable2());
+		}
+
+		if (tileObject instanceof WallObject)
+		{
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			{
+				billboardOverlay.observeTileObject(tileObject);
+				if (billboardOverlay.shouldHideTileObject(tileObject))
+				{
+					return false;
+				}
+			}
+
+			return shouldDrawObjectRenderable(((WallObject) tileObject).getRenderable1())
+				&& shouldDrawObjectRenderable(((WallObject) tileObject).getRenderable2());
 		}
 
 		if (tileObject instanceof ItemLayer)
