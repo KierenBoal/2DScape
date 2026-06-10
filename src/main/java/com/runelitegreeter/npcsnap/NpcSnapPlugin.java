@@ -6,7 +6,6 @@ import java.util.Map;
 import javax.inject.Inject;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Animation;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.DecorativeObject;
@@ -28,6 +27,7 @@ import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
@@ -51,11 +51,11 @@ public class NpcSnapPlugin extends Plugin
 	implements RenderCallback
 {
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
-	private final Map<Integer, Integer> animationFrameCache = new HashMap<>();
 	private final Map<Integer, int[]> originalTexturePixels = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
 	private boolean textureBandingApplied;
 	private boolean textureBandingPending = true;
+	private boolean pendingSkillXpSeed;
 	private int appliedTextureBands = -1;
 
 	@Inject
@@ -83,12 +83,16 @@ public class NpcSnapPlugin extends Plugin
 	private NpcSnapDebug debug;
 
 	@Inject
+	private AnimationFrameSnapper animationFrameSnapper;
+
+	@Inject
 	private RenderCallbackManager renderCallbackManager;
 
 	@Override
 	protected void startUp()
 	{
 		textureBandingPending = true;
+		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
 		overlayManager.add(billboardOverlay);
 		overlayManager.add(skillingThoughtBubbleOverlay);
@@ -107,7 +111,8 @@ public class NpcSnapPlugin extends Plugin
 		billboardOverlay.clearGroundItems();
 		billboardOverlay.clearTileObjects();
 		skillingActivityTracker.clear();
-		animationFrameCache.clear();
+		pendingSkillXpSeed = false;
+		animationFrameSnapper.clear();
 		debug.clearFrameStates();
 		restoreGlobalTextureQuality();
 		log.debug("NPC Snap stopped");
@@ -194,11 +199,29 @@ public class NpcSnapPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onGameTick(GameTick gameTick)
+	{
+		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+
+		seedCurrentSkillXp();
+		pendingSkillXpSeed = false;
+	}
+
+	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			skillingActivityTracker.clear();
+			pendingSkillXpSeed = true;
+		}
+		else
+		{
+			skillingActivityTracker.clear();
+			pendingSkillXpSeed = false;
 		}
 	}
 
@@ -225,32 +248,14 @@ public class NpcSnapPlugin extends Plugin
 			return true;
 		}
 
-		if (renderable instanceof NPC)
+		// Actors must stay in the scene entity pipeline so right-click targeting still works.
+		// Their visual replacement happens without suppressing addEntity().
+		if (renderable instanceof NPC || renderable instanceof Player)
 		{
 			return true;
 		}
 
-		if (renderable instanceof Player)
-		{
-			return true;
-		}
-
-		if (renderable instanceof Projectile)
-		{
-			return !config.applyToProjectiles() || !billboardOverlay.shouldHideProjectile((Projectile) renderable);
-		}
-
-		if (renderable instanceof GraphicsObject)
-		{
-			return !config.applyToGraphicsObjects() || !billboardOverlay.shouldHideGraphicsObject((GraphicsObject) renderable);
-		}
-
-		if (renderable instanceof TileItem)
-		{
-			return !config.applyToGroundItems() || !billboardOverlay.shouldHideGroundItem((TileItem) renderable);
-		}
-
-		return true;
+		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
 	@Override
@@ -272,7 +277,7 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return shouldDrawObjectRenderable(((GameObject) tileObject).getRenderable());
+			return !billboardOverlay.shouldHideRenderable(((GameObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof GroundObject)
@@ -286,7 +291,7 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return shouldDrawObjectRenderable(((GroundObject) tileObject).getRenderable());
+			return !billboardOverlay.shouldHideRenderable(((GroundObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof DecorativeObject)
@@ -300,8 +305,8 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return shouldDrawObjectRenderable(((DecorativeObject) tileObject).getRenderable())
-				&& shouldDrawObjectRenderable(((DecorativeObject) tileObject).getRenderable2());
+			return !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable())
+				&& !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable2());
 		}
 
 		if (tileObject instanceof WallObject)
@@ -315,45 +320,15 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return shouldDrawObjectRenderable(((WallObject) tileObject).getRenderable1())
-				&& shouldDrawObjectRenderable(((WallObject) tileObject).getRenderable2());
+			return !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable1())
+				&& !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable2());
 		}
 
 		if (tileObject instanceof ItemLayer)
 		{
-			return shouldDrawItemLayer((ItemLayer) tileObject);
-		}
-
-		return true;
-	}
-
-	private boolean shouldDrawObjectRenderable(Renderable renderable)
-	{
-		if (renderable instanceof NPC)
-		{
-			return !config.applyToNpcs() || !billboardOverlay.shouldHideNpc((NPC) renderable);
-		}
-
-		if (renderable instanceof Player)
-		{
-			return !config.applyToPlayers() || !billboardOverlay.shouldHidePlayer((Player) renderable);
-		}
-
-		return true;
-	}
-
-	private boolean shouldDrawItemLayer(ItemLayer itemLayer)
-	{
-		return shouldDrawItemLayerRenderable(itemLayer.getBottom())
-			&& shouldDrawItemLayerRenderable(itemLayer.getMiddle())
-			&& shouldDrawItemLayerRenderable(itemLayer.getTop());
-	}
-
-	private boolean shouldDrawItemLayerRenderable(Renderable renderable)
-	{
-		if (renderable instanceof TileItem)
-		{
-			return !config.applyToGroundItems() || !billboardOverlay.shouldHideGroundItem((TileItem) renderable);
+			return !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getBottom())
+				&& !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getMiddle())
+				&& !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getTop());
 		}
 
 		return true;
@@ -373,9 +348,9 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		int originalAnimationFrame = actor.getAnimationFrame();
-		int snappedAnimationFrame = snapAnimationFrame(actor.getAnimation(), originalAnimationFrame, actionFrameCount);
+		int snappedAnimationFrame = animationFrameSnapper.snapAnimationFrame(actor.getAnimation(), originalAnimationFrame, actionFrameCount);
 		int originalPoseFrame = actor.getPoseAnimationFrame();
-		int snappedPoseFrame = snapAnimationFrame(actor.getPoseAnimation(), originalPoseFrame, actionFrameCount);
+		int snappedPoseFrame = animationFrameSnapper.snapAnimationFrame(actor.getPoseAnimation(), originalPoseFrame, actionFrameCount);
 		debug.recordActorFrames(actor, actor.getAnimation(), originalAnimationFrame, snappedAnimationFrame, originalPoseFrame, snappedPoseFrame);
 
 		if (snappedAnimationFrame == originalAnimationFrame && snappedPoseFrame == originalPoseFrame)
@@ -397,36 +372,6 @@ public class NpcSnapPlugin extends Plugin
 
 		// RuneLite exposes Actor#getOrientation()/getCurrentOrientation(), but not a public setter.
 		// The rotation config is kept so the supported API can be wired in immediately if that changes.
-	}
-
-	private int snapAnimationFrame(int animationId, int frame, int visibleFrameCount)
-	{
-		if (animationId < 0 || frame < 0 || visibleFrameCount <= 0)
-		{
-			return frame;
-		}
-
-		int totalFrames = animationFrameCache.computeIfAbsent(animationId, this::loadAnimationFrameCount);
-		if (totalFrames <= 1 || visibleFrameCount >= totalFrames)
-		{
-			return frame;
-		}
-
-		int clampedFrame = Math.min(frame, totalFrames - 1);
-		int snappedBucket = clampedFrame * visibleFrameCount / totalFrames;
-		int snappedFrame = snappedBucket * totalFrames / visibleFrameCount;
-		return Math.min(snappedFrame, totalFrames - 1);
-	}
-
-	private int loadAnimationFrameCount(int animationId)
-	{
-		Animation animation = client.loadAnimation(animationId);
-		if (animation == null)
-		{
-			return -1;
-		}
-
-		return animation.getNumFrames();
 	}
 
 	private void syncGlobalTextureQuality()
@@ -560,6 +505,14 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		mutatedActors.clear();
+	}
+
+	private void seedCurrentSkillXp()
+	{
+		for (net.runelite.api.Skill skill : skillingActivityTracker.getTrackedSkills())
+		{
+			skillingActivityTracker.seedXp(skill, client.getSkillExperience(skill));
+		}
 	}
 
 	@Value

@@ -10,39 +10,39 @@ import net.runelite.client.config.Range;
 public interface NpcSnapConfig extends Config
 {
 	@ConfigSection(
-		name = "Snapping",
+		name = "Visual Snapping",
 		description = "Animation and rotation snapping settings",
 		position = 0
 	)
 	String snappingSection = "snappingSection";
 
 	@ConfigSection(
-		name = "Targets",
+		name = "Render Targets",
 		description = "Entity types affected by snapping and billboards",
 		position = 1
 	)
 	String targetsSection = "targetsSection";
 
 	@ConfigSection(
-		name = "Billboards",
+		name = "Billboard Config",
 		description = "2D billboard rendering settings",
 		position = 2
 	)
 	String billboardSection = "billboardSection";
 
 	@ConfigSection(
-		name = "Debug",
-		description = "Billboard diagnostic rendering options",
-		position = 3
-	)
-	String debugSection = "debugSection";
-
-	@ConfigSection(
 		name = "Textures",
 		description = "Global in-game texture quality settings",
-		position = 4
+		position = 3
 	)
 	String texturesSection = "texturesSection";
+	
+	@ConfigSection(
+		name = "Debug",
+		description = "Billboard diagnostic rendering options",
+		position = 4
+	)
+	String debugSection = "debugSection";
 
 	@ConfigItem(
 		keyName = "enableAnimationFrameSnapping",
@@ -140,7 +140,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default boolean applyToObjects()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -290,7 +290,7 @@ public interface NpcSnapConfig extends Config
 	)
 	@ConfigItem(
 		keyName = "billboardPaletteSize",
-		name = "Billboard palette size (unused)",
+		name = "(unused) Billboard palette size",
 		description = "Maximum number of colors used by each billboard sprite after quantization and dithering",
 		section = billboardSection
 	)
@@ -341,7 +341,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default int skillingTimeoutSeconds()
 	{
-		return 10;
+		return 20;
 	}
 
 	@ConfigItem(
@@ -352,7 +352,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default boolean enableGlobalTextureBanding()
 	{
-		return true;
+		return false;
 	}
 
 	@Range(

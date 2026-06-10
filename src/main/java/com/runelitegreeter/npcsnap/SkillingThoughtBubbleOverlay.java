@@ -31,6 +31,8 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 
 class SkillingThoughtBubbleOverlay extends Overlay
 {
+	static final long FADE_IN_MILLIS = 500L;
+	static final long FADE_OUT_MILLIS = 2_500L;
 	private static final Color BUBBLE_FILL = new Color(255, 255, 255, 150);
 	private static final Color BUBBLE_OUTLINE = new Color(255, 255, 255, 215);
 	private static final int ICON_SIZE = 24;
@@ -85,7 +87,8 @@ class SkillingThoughtBubbleOverlay extends Overlay
 			return null;
 		}
 
-		List<Skill> activeSkills = skillingActivityTracker.getActiveSkills(System.currentTimeMillis());
+		long nowMillis = System.currentTimeMillis();
+		List<Skill> activeSkills = skillingActivityTracker.getRenderableSkills(nowMillis, FADE_OUT_MILLIS);
 		if (activeSkills.isEmpty())
 		{
 			return null;
@@ -97,7 +100,13 @@ class SkillingThoughtBubbleOverlay extends Overlay
 			return null;
 		}
 
-		drawBubble(graphics, player, anchor, activeSkills, System.currentTimeMillis());
+		float alpha = bubbleAlpha(activeSkills, nowMillis);
+		if (alpha <= 0.0f)
+		{
+			return null;
+		}
+
+		drawBubble(graphics, player, anchor, activeSkills, nowMillis, alpha);
 		return null;
 	}
 
@@ -113,21 +122,24 @@ class SkillingThoughtBubbleOverlay extends Overlay
 		return Perspective.localToCanvas(client, localPoint, player.getWorldView().getPlane(), zOffset);
 	}
 
-	private void drawBubble(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills, long nowMillis)
+	private void drawBubble(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills, long nowMillis, float alpha)
 	{
 		int iconCount = activeSkills.size();
 		int iconsWidth = (iconCount * ICON_SIZE) + ((iconCount - 1) * ICON_GAP);
 		int bubbleWidth = Math.max(MIN_BUBBLE_SIZE, iconsWidth + (BUBBLE_PADDING * 2));
 		int bubbleHeight = MIN_BUBBLE_SIZE;
 		double time = nowMillis / 1000.0d;
-		BubblePlacement placement = chooseBubblePlacement(player, anchor, bubbleWidth, bubbleHeight);
-		int bubbleX = placement.x + (int) Math.round(Math.sin(time * 1.2d) * 1.2d);
-		int bubbleY = placement.y + (int) Math.round(Math.cos(time * 1.0d) * 0.8d);
+		float introProgress = bubbleIntroProgress(activeSkills, nowMillis);
+		BubblePlacement restingPlacement = chooseBubblePlacement(player, anchor, bubbleWidth, bubbleHeight);
+		BubblePlacement animatedPlacement = interpolatePlacement(anchor, restingPlacement, bubbleWidth, bubbleHeight, introProgress);
+		int bubbleX = animatedPlacement.x + (int) Math.round(Math.sin(time * 1.2d) * 1.2d);
+		int bubbleY = animatedPlacement.y + (int) Math.round(Math.cos(time * 1.0d) * 0.8d);
 		Shape bubbleShape = createWobblyOval(bubbleX, bubbleY, bubbleWidth, bubbleHeight, time);
 
 		Composite originalComposite = graphics.getComposite();
 		Object originalAntialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
 
 		drawTrailingCircles(graphics, anchor.getX(), anchor.getY(), bubbleX + (bubbleWidth / 2), bubbleY + bubbleHeight, time);
 
@@ -143,8 +155,7 @@ class SkillingThoughtBubbleOverlay extends Overlay
 			BufferedImage image = getSkillImage(skill);
 			if (image != null)
 			{
-				graphics.setComposite(AlphaComposite.SrcOver);
-				graphics.drawImage(image, iconX, iconY, ICON_SIZE, ICON_SIZE, null);
+				drawContainedImage(graphics, image, iconX, iconY, ICON_SIZE, ICON_SIZE);
 			}
 
 			iconX += ICON_SIZE + ICON_GAP;
@@ -152,6 +163,76 @@ class SkillingThoughtBubbleOverlay extends Overlay
 
 		graphics.setComposite(originalComposite);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, originalAntialiasing);
+	}
+
+	private static void drawContainedImage(Graphics2D graphics, BufferedImage image, int x, int y, int maxWidth, int maxHeight)
+	{
+		int imageWidth = image.getWidth();
+		int imageHeight = image.getHeight();
+		if (imageWidth <= 0 || imageHeight <= 0)
+		{
+			return;
+		}
+
+		double scale = Math.min((double) maxWidth / imageWidth, (double) maxHeight / imageHeight);
+		int drawWidth = Math.max(1, (int) Math.round(imageWidth * scale));
+		int drawHeight = Math.max(1, (int) Math.round(imageHeight * scale));
+		int drawX = x + ((maxWidth - drawWidth) / 2);
+		int drawY = y + ((maxHeight - drawHeight) / 2);
+		graphics.drawImage(image, drawX, drawY, drawWidth, drawHeight, null);
+	}
+
+	private float bubbleAlpha(List<Skill> activeSkills, long nowMillis)
+	{
+		float alpha = 0.0f;
+		for (Skill skill : activeSkills)
+		{
+			alpha = Math.max(alpha, skillAlpha(skill, nowMillis));
+		}
+		return alpha;
+	}
+
+	private float bubbleIntroProgress(List<Skill> activeSkills, long nowMillis)
+	{
+		float progress = 1.0f;
+		for (Skill skill : activeSkills)
+		{
+			long visibleFrom = skillingActivityTracker.getVisibleFromMillis(skill);
+			if (visibleFrom <= 0L)
+			{
+				continue;
+			}
+
+			progress = Math.min(progress, clampAlpha((float) (nowMillis - visibleFrom) / FADE_IN_MILLIS));
+		}
+		return progress;
+	}
+
+	private float skillAlpha(Skill skill, long nowMillis)
+	{
+		long visibleFrom = skillingActivityTracker.getVisibleFromMillis(skill);
+		long activeUntil = skillingActivityTracker.getActiveUntilMillis(skill);
+		if (visibleFrom <= 0L || activeUntil <= 0L)
+		{
+			return 0.0f;
+		}
+
+		if (nowMillis < visibleFrom + FADE_IN_MILLIS)
+		{
+			return clampAlpha((float) (nowMillis - visibleFrom) / FADE_IN_MILLIS);
+		}
+
+		if (nowMillis <= activeUntil)
+		{
+			return 1.0f;
+		}
+
+		return clampAlpha(1.0f - ((float) (nowMillis - activeUntil) / FADE_OUT_MILLIS));
+	}
+
+	private static float clampAlpha(float alpha)
+	{
+		return Math.max(0.0f, Math.min(1.0f, alpha));
 	}
 
 	private BubblePlacement chooseBubblePlacement(Player player, Point anchor, int bubbleWidth, int bubbleHeight)
@@ -163,6 +244,15 @@ class SkillingThoughtBubbleOverlay extends Overlay
 		double leftScore = placementScore(left, -1, facingSide, screenRoomSide, player);
 		double rightScore = placementScore(right, 1, facingSide, screenRoomSide, player);
 		return rightScore > leftScore ? right : left;
+	}
+
+	private static BubblePlacement interpolatePlacement(Point anchor, BubblePlacement targetPlacement, int bubbleWidth, int bubbleHeight, float progress)
+	{
+		int startX = anchor.getX() - (bubbleWidth / 2);
+		int startY = anchor.getY() - (bubbleHeight / 2);
+		int x = Math.round(startX + ((targetPlacement.x - startX) * progress));
+		int y = Math.round(startY + ((targetPlacement.y - startY) * progress));
+		return new BubblePlacement(x, y, bubbleWidth, bubbleHeight);
 	}
 
 	private BubblePlacement candidatePlacement(Point anchor, int bubbleWidth, int bubbleHeight, int side)

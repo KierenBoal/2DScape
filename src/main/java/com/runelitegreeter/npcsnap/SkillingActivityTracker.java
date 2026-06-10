@@ -1,6 +1,7 @@
 package com.runelitegreeter.npcsnap;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -31,7 +32,23 @@ class SkillingActivityTracker
 	);
 
 	private final Map<Skill, Integer> lastXp = new EnumMap<>(Skill.class);
+	private final Map<Skill, Long> visibleFromMillis = new EnumMap<>(Skill.class);
 	private final Map<Skill, Long> activeUntilMillis = new EnumMap<>(Skill.class);
+
+	Collection<Skill> getTrackedSkills()
+	{
+		return TRACKED_SKILLS;
+	}
+
+	void seedXp(Skill skill, int xp)
+	{
+		if (skill == null || !TRACKED_SKILLS.contains(skill))
+		{
+			return;
+		}
+
+		lastXp.put(skill, xp);
+	}
 
 	boolean recordXp(Skill skill, int xp, long nowMillis, long timeoutMillis)
 	{
@@ -46,18 +63,34 @@ class SkillingActivityTracker
 			return false;
 		}
 
+		Long expiresAt = activeUntilMillis.get(skill);
+		if (expiresAt == null || expiresAt <= nowMillis)
+		{
+			visibleFromMillis.put(skill, nowMillis);
+		}
+
 		activeUntilMillis.put(skill, nowMillis + Math.max(0L, timeoutMillis));
 		return true;
 	}
 
-	List<Skill> getActiveSkills(long nowMillis)
+	List<Skill> getRenderableSkills(long nowMillis, long fadeOutMillis)
 	{
 		List<Skill> activeSkills = new ArrayList<>();
-		activeUntilMillis.entrySet().removeIf(entry -> entry.getValue() <= nowMillis);
+		long removalThreshold = nowMillis - Math.max(0L, fadeOutMillis);
+		activeUntilMillis.entrySet().removeIf(entry ->
+		{
+			boolean expired = entry.getValue() <= removalThreshold;
+			if (expired)
+			{
+				visibleFromMillis.remove(entry.getKey());
+			}
+			return expired;
+		});
+
 		for (Skill skill : Skill.values())
 		{
 			Long expiresAt = activeUntilMillis.get(skill);
-			if (expiresAt != null && expiresAt > nowMillis)
+			if (expiresAt != null && expiresAt > removalThreshold)
 			{
 				activeSkills.add(skill);
 			}
@@ -66,9 +99,20 @@ class SkillingActivityTracker
 		return activeSkills;
 	}
 
+	long getVisibleFromMillis(Skill skill)
+	{
+		return visibleFromMillis.getOrDefault(skill, 0L);
+	}
+
+	long getActiveUntilMillis(Skill skill)
+	{
+		return activeUntilMillis.getOrDefault(skill, 0L);
+	}
+
 	void clear()
 	{
 		lastXp.clear();
+		visibleFromMillis.clear();
 		activeUntilMillis.clear();
 	}
 }

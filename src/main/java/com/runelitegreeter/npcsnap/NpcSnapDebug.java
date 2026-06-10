@@ -17,6 +17,7 @@ import net.runelite.api.Model;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.Projectile;
+import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
 
@@ -54,6 +55,22 @@ class NpcSnapDebug
 		}
 
 		actorFrames.put(actor, new FrameState(animationId, animationFrame, forcedAnimationFrame, poseFrame, forcedPoseFrame));
+	}
+
+	FrameDebugInfo actorFrameDebugInfo(Actor actor)
+	{
+		if (actor == null)
+		{
+			return null;
+		}
+
+		FrameState state = actorFrames.get(actor);
+		if (state == null)
+		{
+			return new FrameDebugInfo(actor.getAnimation(), actor.getAnimationFrame(), actor.getAnimationFrame(), actor.getPoseAnimationFrame(), actor.getPoseAnimationFrame());
+		}
+
+		return new FrameDebugInfo(state.animationId, state.animationFrame, state.forcedAnimationFrame, state.poseFrame, state.forcedPoseFrame);
 	}
 
 	void drawBillboardDebug(Graphics2D graphics, RenderDebug renderDebug)
@@ -94,53 +111,21 @@ class NpcSnapDebug
 		}
 	}
 
-	void drawActorBoundingBox(Graphics2D graphics, Actor actor)
+	void drawRenderableBoundingBox(Graphics2D graphics, Renderable renderable, LocalPoint localPoint, int plane, int verticalOffset)
 	{
-		LocalPoint localPoint = actor.getLocalLocation();
-		if (localPoint == null)
+		if (renderable == null || localPoint == null)
 		{
 			return;
 		}
 
-		Model model = actor.getModel();
+		Model model = renderable.getModel();
 		if (model == null)
 		{
 			return;
 		}
 
-		int height = Math.max(1, actor.getModelHeight());
-		drawProjectedBox(graphics, modelBox(localPoint.getX(), localPoint.getY(), actor.getWorldView().getPlane(), 0, height, model));
-	}
-
-	void drawProjectileBoundingBox(Graphics2D graphics, Projectile projectile)
-	{
-		Model model = projectile.getModel();
-		if (model == null)
-		{
-			return;
-		}
-
-		int height = Math.max(1, projectile.getModelHeight());
-		LocalPoint localPoint = new LocalPoint((int) projectile.getX(), (int) projectile.getY());
-		int verticalOffset = Perspective.getTileHeight(client, localPoint, projectile.getFloor()) - (int) Math.round(projectile.getZ());
-		drawProjectedBox(graphics, modelBox(localPoint.getX(), localPoint.getY(), projectile.getFloor(), verticalOffset, height, model));
-	}
-
-	void drawGroundItemBoundingBox(Graphics2D graphics, TileItem item, LocalPoint localPoint, int plane)
-	{
-		if (localPoint == null)
-		{
-			return;
-		}
-
-		Model model = item.getModel();
-		if (model == null)
-		{
-			return;
-		}
-
-		int height = Math.max(1, item.getModelHeight());
-		drawProjectedBox(graphics, modelBox(localPoint.getX(), localPoint.getY(), plane, 0, height, model));
+		int height = Math.max(1, renderable.getModelHeight());
+		drawProjectedBox(graphics, modelBox(localPoint.getX(), localPoint.getY(), plane, verticalOffset, height, model));
 	}
 
 	private void drawProjectedBox(Graphics2D graphics, ProjectedBox box)
@@ -221,23 +206,10 @@ class NpcSnapDebug
 
 	private String frameText(RenderDebug renderDebug)
 	{
-		if (renderDebug.actor != null)
+		FrameDebugInfo frameDebugInfo = renderDebug.frameDebugInfo;
+		if (frameDebugInfo != null)
 		{
-			FrameState state = actorFrames.get(renderDebug.actor);
-			if (state == null)
-			{
-				return "Anim: " + renderDebug.actor.getAnimation()
-					+ ", Frame " + renderDebug.actor.getAnimationFrame()
-					+ " (" + renderDebug.actor.getAnimationFrame() + ")";
-			}
-
-			return "Anim: " + state.animationId + ", Frame " + state.forcedAnimationFrame + " (" + state.animationFrame + ")";
-		}
-
-		if (renderDebug.projectile != null)
-		{
-			int frame = renderDebug.projectile.getAnimationFrame();
-			return "Anim: " + renderDebug.projectile.getId() + ", Frame " + frame + " (" + frame + ")";
+			return "Anim: " + frameDebugInfo.animationId + ", Frame " + frameDebugInfo.forcedAnimationFrame + " (" + frameDebugInfo.animationFrame + ")";
 		}
 
 		return null;
@@ -264,49 +236,50 @@ class NpcSnapDebug
 
 	static final class RenderDebug
 	{
-		private final Actor actor;
-		private final Projectile projectile;
-		private final TileItem groundItem;
-		private final LocalPoint groundItemLocalPoint;
-		private final int groundItemPlane;
 		private final Rectangle bounds;
 		private final int paintOrder;
 		private final boolean cacheInvalidated;
+		private final FrameDebugInfo frameDebugInfo;
 
 		private RenderDebug(
-			Actor actor,
-			Projectile projectile,
-			TileItem groundItem,
-			LocalPoint groundItemLocalPoint,
-			int groundItemPlane,
 			Rectangle bounds,
 			int paintOrder,
-			boolean cacheInvalidated
+			boolean cacheInvalidated,
+			FrameDebugInfo frameDebugInfo
 		)
 		{
-			this.actor = actor;
-			this.projectile = projectile;
-			this.groundItem = groundItem;
-			this.groundItemLocalPoint = groundItemLocalPoint;
-			this.groundItemPlane = groundItemPlane;
 			this.bounds = bounds;
 			this.paintOrder = paintOrder;
 			this.cacheInvalidated = cacheInvalidated;
+			this.frameDebugInfo = frameDebugInfo;
 		}
 
-		static RenderDebug forActor(Actor actor, Rectangle bounds, int paintOrder, boolean cacheInvalidated)
+		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, FrameDebugInfo frameDebugInfo)
 		{
-			return new RenderDebug(actor, null, null, null, 0, bounds, paintOrder, cacheInvalidated);
+			return new RenderDebug(bounds, paintOrder, cacheInvalidated, frameDebugInfo);
+		}
+	}
+
+	static final class FrameDebugInfo
+	{
+		private final int animationId;
+		private final int animationFrame;
+		private final int forcedAnimationFrame;
+		private final int poseFrame;
+		private final int forcedPoseFrame;
+
+		private FrameDebugInfo(int animationId, int animationFrame, int forcedAnimationFrame, int poseFrame, int forcedPoseFrame)
+		{
+			this.animationId = animationId;
+			this.animationFrame = animationFrame;
+			this.forcedAnimationFrame = forcedAnimationFrame;
+			this.poseFrame = poseFrame;
+			this.forcedPoseFrame = forcedPoseFrame;
 		}
 
-		static RenderDebug forProjectile(Projectile projectile, Rectangle bounds, int paintOrder, boolean cacheInvalidated)
+		static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
 		{
-			return new RenderDebug(null, projectile, null, null, 0, bounds, paintOrder, cacheInvalidated);
-		}
-
-		static RenderDebug forGroundItem(TileItem item, LocalPoint localPoint, int plane, Rectangle bounds, int paintOrder, boolean cacheInvalidated)
-		{
-			return new RenderDebug(null, null, item, localPoint, plane, bounds, paintOrder, cacheInvalidated);
+			return new FrameDebugInfo(animationId, animationFrame, forcedAnimationFrame, -1, -1);
 		}
 	}
 

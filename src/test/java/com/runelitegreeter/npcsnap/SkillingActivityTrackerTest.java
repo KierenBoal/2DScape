@@ -18,7 +18,7 @@ public class SkillingActivityTrackerTest
 		boolean activated = tracker.recordXp(Skill.MINING, 100, 1_000L, 10_000L);
 
 		assertFalse(activated);
-		assertTrue(tracker.getActiveSkills(1_000L).isEmpty());
+		assertTrue(tracker.getRenderableSkills(1_000L, 2_500L).isEmpty());
 	}
 
 	@Test
@@ -30,7 +30,7 @@ public class SkillingActivityTrackerTest
 		boolean activated = tracker.recordXp(Skill.MINING, 125, 2_000L, 10_000L);
 
 		assertTrue(activated);
-		assertEquals(List.of(Skill.MINING), tracker.getActiveSkills(2_000L));
+		assertEquals(List.of(Skill.MINING), tracker.getRenderableSkills(2_000L, 2_500L));
 	}
 
 	@Test
@@ -41,8 +41,8 @@ public class SkillingActivityTrackerTest
 		tracker.recordXp(Skill.WOODCUTTING, 125, 1_000L, 10_000L);
 		tracker.recordXp(Skill.WOODCUTTING, 150, 9_000L, 10_000L);
 
-		assertEquals(List.of(Skill.WOODCUTTING), tracker.getActiveSkills(18_999L));
-		assertTrue(tracker.getActiveSkills(19_000L).isEmpty());
+		assertEquals(List.of(Skill.WOODCUTTING), tracker.getRenderableSkills(18_999L, 2_500L));
+		assertEquals(List.of(Skill.WOODCUTTING), tracker.getRenderableSkills(19_000L, 2_500L));
 	}
 
 	@Test
@@ -52,7 +52,8 @@ public class SkillingActivityTrackerTest
 		tracker.recordXp(Skill.FISHING, 100, 500L, 10_000L);
 		tracker.recordXp(Skill.FISHING, 125, 1_000L, 10_000L);
 
-		assertTrue(tracker.getActiveSkills(11_000L).isEmpty());
+		assertEquals(List.of(Skill.FISHING), tracker.getRenderableSkills(11_000L, 2_500L));
+		assertTrue(tracker.getRenderableSkills(13_500L, 2_500L).isEmpty());
 	}
 
 	@Test
@@ -66,7 +67,7 @@ public class SkillingActivityTrackerTest
 		assertFalse(tracker.recordXp(Skill.ATTACK, 125, 1_000L, 10_000L));
 		assertFalse(tracker.recordXp(Skill.PRAYER, 125, 1_000L, 10_000L));
 		assertFalse(tracker.recordXp(Skill.SLAYER, 125, 1_000L, 10_000L));
-		assertTrue(tracker.getActiveSkills(1_000L).isEmpty());
+		assertTrue(tracker.getRenderableSkills(1_000L, 2_500L).isEmpty());
 	}
 
 	@Test
@@ -78,6 +79,31 @@ public class SkillingActivityTrackerTest
 		tracker.recordXp(Skill.COOKING, 125, 1_000L, 10_000L);
 		tracker.recordXp(Skill.FARMING, 125, 2_000L, 10_000L);
 
-		assertEquals(List.of(Skill.COOKING, Skill.FARMING), tracker.getActiveSkills(2_000L));
+		assertEquals(List.of(Skill.COOKING, Skill.FARMING), tracker.getRenderableSkills(2_000L, 2_500L));
+	}
+
+	@Test
+	public void seededXpAllowsFirstObservedGainToActivate()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		tracker.seedXp(Skill.MINING, 100);
+
+		boolean activated = tracker.recordXp(Skill.MINING, 125, 2_000L, 10_000L);
+
+		assertTrue(activated);
+		assertEquals(List.of(Skill.MINING), tracker.getRenderableSkills(2_000L, 2_500L));
+		assertEquals(2_000L, tracker.getVisibleFromMillis(Skill.MINING));
+	}
+
+	@Test
+	public void refreshWithinActiveWindowKeepsOriginalFadeInStart()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		tracker.seedXp(Skill.WOODCUTTING, 100);
+		tracker.recordXp(Skill.WOODCUTTING, 125, 1_000L, 10_000L);
+		tracker.recordXp(Skill.WOODCUTTING, 150, 5_000L, 10_000L);
+
+		assertEquals(1_000L, tracker.getVisibleFromMillis(Skill.WOODCUTTING));
+		assertEquals(15_000L, tracker.getActiveUntilMillis(Skill.WOODCUTTING));
 	}
 }
