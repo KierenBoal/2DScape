@@ -1,4 +1,4 @@
-package com.runelitegreeter.npcsnap;
+package com.kierenboal.npcspan;
 
 import java.util.ArrayList;
 import java.util.Collection;

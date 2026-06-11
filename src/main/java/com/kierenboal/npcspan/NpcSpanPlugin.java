@@ -1,4 +1,4 @@
-package com.runelitegreeter.npcsnap;
+package com.kierenboal.npcspan;
 
 import com.google.inject.Provides;
 import java.util.HashMap;
@@ -47,7 +47,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 	name = "2DScape",
 	description = "Janky RuneScape Classic inspired graphics"
 )
-public class NpcSnapPlugin extends Plugin
+public class NpcSpanPlugin extends Plugin
 	implements RenderCallback
 {
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
@@ -97,7 +97,7 @@ public class NpcSnapPlugin extends Plugin
 		overlayManager.add(billboardOverlay);
 		overlayManager.add(skillingThoughtBubbleOverlay);
 		renderCallbackManager.register(this);
-		log.debug("NPC Snap started");
+		log.debug("2DScape started");
 	}
 
 	@Override
@@ -115,7 +115,7 @@ public class NpcSnapPlugin extends Plugin
 		animationFrameSnapper.clear();
 		debug.clearFrameStates();
 		restoreGlobalTextureQuality();
-		log.debug("NPC Snap stopped");
+		log.debug("2DScape stopped");
 	}
 
 	@Subscribe

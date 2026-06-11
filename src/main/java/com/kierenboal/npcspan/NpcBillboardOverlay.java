@@ -1,4 +1,4 @@
-package com.runelitegreeter.npcsnap;
+package com.kierenboal.npcspan;
 
 import java.awt.Color;
 import java.awt.Dimension;
@@ -1183,8 +1183,10 @@ class NpcBillboardOverlay extends Overlay
 		{
 			BillboardOutlineRenderer.applyOutline(
 				image,
+				config.enableBillboardHighlightOutline(),
 				config.enableBillboardShadowOutline(),
 				config.enableBillboardSpriteOutline(),
+				config.enableBillboardHighlightInline(),
 				config.enableBillboardShadowInline(),
 				config.enableBillboardSpriteInline(),
 				config.billboardSpriteOutlineColor()
@@ -1761,8 +1763,10 @@ class NpcBillboardOverlay extends Overlay
 			config.billboardColorBands(),
 			config.billboardLightBoostPercent(),
 			outlinePadding,
+			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),
 			config.enableBillboardSpriteOutline(),
+			config.enableBillboardHighlightInline(),
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
@@ -1836,8 +1840,10 @@ class NpcBillboardOverlay extends Overlay
 
 	private boolean hasAnyEdgeEffect()
 	{
-		return config.enableBillboardShadowOutline()
+		return config.enableBillboardHighlightOutline()
+			|| config.enableBillboardShadowOutline()
 			|| config.enableBillboardSpriteOutline()
+			|| config.enableBillboardHighlightInline()
 			|| config.enableBillboardShadowInline()
 			|| config.enableBillboardSpriteInline();
 	}
@@ -2164,8 +2170,10 @@ class NpcBillboardOverlay extends Overlay
 		private final int colorBands;
 		private final int lightBoost;
 		private final int outlinePadding;
+		private final boolean highlightOutline;
 		private final boolean shadowOutline;
 		private final boolean solidOutline;
+		private final boolean highlightInline;
 		private final boolean shadowInline;
 		private final boolean solidInline;
 		private final int outlineColor;
@@ -2181,8 +2189,10 @@ class NpcBillboardOverlay extends Overlay
 			int colorBands,
 			int lightBoost,
 			int outlinePadding,
+			boolean highlightOutline,
 			boolean shadowOutline,
 			boolean solidOutline,
+			boolean highlightInline,
 			boolean shadowInline,
 			boolean solidInline,
 			int outlineColor,
@@ -2197,8 +2207,10 @@ class NpcBillboardOverlay extends Overlay
 			this.colorBands = colorBands;
 			this.lightBoost = lightBoost;
 			this.outlinePadding = outlinePadding;
+			this.highlightOutline = highlightOutline;
 			this.shadowOutline = shadowOutline;
 			this.solidOutline = solidOutline;
+			this.highlightInline = highlightInline;
 			this.shadowInline = shadowInline;
 			this.solidInline = solidInline;
 			this.outlineColor = outlineColor;
@@ -2226,8 +2238,10 @@ class NpcBillboardOverlay extends Overlay
 				&& colorBands == that.colorBands
 				&& lightBoost == that.lightBoost
 				&& outlinePadding == that.outlinePadding
+				&& highlightOutline == that.highlightOutline
 				&& shadowOutline == that.shadowOutline
 				&& solidOutline == that.solidOutline
+				&& highlightInline == that.highlightInline
 				&& shadowInline == that.shadowInline
 				&& solidInline == that.solidInline
 				&& outlineColor == that.outlineColor
@@ -2246,8 +2260,10 @@ class NpcBillboardOverlay extends Overlay
 			result = 31 * result + colorBands;
 			result = 31 * result + lightBoost;
 			result = 31 * result + outlinePadding;
+			result = 31 * result + (highlightOutline ? 1 : 0);
 			result = 31 * result + (shadowOutline ? 1 : 0);
 			result = 31 * result + (solidOutline ? 1 : 0);
+			result = 31 * result + (highlightInline ? 1 : 0);
 			result = 31 * result + (shadowInline ? 1 : 0);
 			result = 31 * result + (solidInline ? 1 : 0);
 			result = 31 * result + outlineColor;

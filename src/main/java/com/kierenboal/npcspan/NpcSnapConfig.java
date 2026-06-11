@@ -1,4 +1,4 @@
-package com.runelitegreeter.npcsnap;
+package com.kierenboal.npcspan;
 
 import java.awt.Color;
 import net.runelite.client.config.Config;
@@ -32,16 +32,23 @@ public interface NpcSnapConfig extends Config
 	String billboardSection = "billboardSection";
 
 	@ConfigSection(
+		name = "Billboard Outlines",
+		description = "Billboard outline and inline settings",
+		position = 3
+	)
+	String billboardOutlineSection = "billboardOutlineSection";
+	
+	@ConfigSection(
 		name = "Textures",
 		description = "Global in-game texture quality settings",
-		position = 3
+		position = 4
 	)
 	String texturesSection = "texturesSection";
 	
 	@ConfigSection(
 		name = "Debug",
 		description = "Billboard diagnostic rendering options",
-		position = 4
+		position = 5
 	)
 	String debugSection = "debugSection";
 
@@ -334,7 +341,7 @@ public interface NpcSnapConfig extends Config
 		keyName = "enableBillboardSpriteOutline",
 		name = "Enable sprite outline",
 		description = "Draw a 1-pixel outline around each billboard sprite using the selected color",
-		section = billboardSection
+		section = billboardOutlineSection
 	)
 	default boolean enableBillboardSpriteOutline()
 	{
@@ -345,20 +352,31 @@ public interface NpcSnapConfig extends Config
 		keyName = "billboardSpriteOutlineColor",
 		name = "Sprite outline color",
 		description = "Color used for the billboard sprite outline",
-		section = billboardSection
+		section = billboardOutlineSection
 	)
 	default Color billboardSpriteOutlineColor()
 	{
-		return new Color(0x333333);
+		return new Color(0xDDDDDD);
 	}
 
 	@ConfigItem(
 		keyName = "enableBillboardShadowOutline",
 		name = "Enable shadow outline",
 		description = "Draw a 1-pixel outline using the average neighboring sprite color, darkened by 33 percent. When enabled, this takes precedence over the solid outline color.",
-		section = billboardSection
+		section = billboardOutlineSection
 	)
 	default boolean enableBillboardShadowOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardHighlightOutline",
+		name = "Enable highlight outline",
+		description = "Draw a 1-pixel outline using the average neighboring sprite color, brightened by 33 percent. When enabled, this takes precedence over the shadow and solid outline colors.",
+		section = billboardOutlineSection
+	)
+	default boolean enableBillboardHighlightOutline()
 	{
 		return false;
 	}
@@ -367,7 +385,7 @@ public interface NpcSnapConfig extends Config
 		keyName = "enableBillboardSpriteInline",
 		name = "Enable sprite inline",
 		description = "Draw a 1-pixel inline on the inside edge of each billboard sprite using the selected color",
-		section = billboardSection
+		section = billboardOutlineSection
 	)
 	default boolean enableBillboardSpriteInline()
 	{
@@ -378,9 +396,20 @@ public interface NpcSnapConfig extends Config
 		keyName = "enableBillboardShadowInline",
 		name = "Enable shadow inline",
 		description = "Draw a 1-pixel inline on the inside edge using the average neighboring sprite color, darkened by 33 percent. When enabled, this takes precedence over the solid inline color.",
-		section = billboardSection
+		section = billboardOutlineSection
 	)
 	default boolean enableBillboardShadowInline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardHighlightInline",
+		name = "Enable highlight inline",
+		description = "Draw a 1-pixel inline on the inside edge using the average neighboring sprite color, brightened by 33 percent. When enabled, this takes precedence over the shadow and solid inline colors.",
+		section = billboardOutlineSection
+	)
+	default boolean enableBillboardHighlightInline()
 	{
 		return false;
 	}

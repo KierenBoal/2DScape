@@ -1,4 +1,4 @@
-package com.runelitegreeter.npcsnap;
+package com.kierenboal.npcspan;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
@@ -11,6 +11,7 @@ final class BillboardOutlineRenderer
 	private static final int[] ADJACENT_X = {-1, 0, 1, -1, 1, -1, 0, 1};
 	private static final int[] ADJACENT_Y = {-1, -1, -1, 0, 0, 1, 1, 1};
 	private static final double SHADOW_DARKEN_FACTOR = 0.67d;
+	private static final double HIGHLIGHT_BRIGHTEN_FACTOR = 1.33d;
 
 	private BillboardOutlineRenderer()
 	{
@@ -18,15 +19,17 @@ final class BillboardOutlineRenderer
 
 	static void applyOutline(
 		BufferedImage image,
+		boolean highlightOutline,
 		boolean shadowOutline,
 		boolean solidOutline,
+		boolean highlightInline,
 		boolean shadowInline,
 		boolean solidInline,
 		Color solidOutlineColor)
 	{
 		int width = image.getWidth();
 		int height = image.getHeight();
-		if (width <= 0 || height <= 0 || (!shadowOutline && !solidOutline && !shadowInline && !solidInline))
+		if (width <= 0 || height <= 0 || (!highlightOutline && !shadowOutline && !solidOutline && !highlightInline && !shadowInline && !solidInline))
 		{
 			return;
 		}
@@ -70,8 +73,8 @@ final class BillboardOutlineRenderer
 			}
 		}
 
-		applyExteriorBoundary(sourcePixels, resultPixels, width, height, exteriorTransparentBoundary, shadowOutline, solidOutline, solidOutlineColor);
-		applyInteriorBoundary(sourcePixels, resultPixels, width, height, exteriorOpaqueBoundary, shadowInline, solidInline, solidOutlineColor);
+		applyExteriorBoundary(sourcePixels, resultPixels, width, height, exteriorTransparentBoundary, highlightOutline, shadowOutline, solidOutline, solidOutlineColor);
+		applyInteriorBoundary(sourcePixels, resultPixels, width, height, exteriorOpaqueBoundary, highlightInline, shadowInline, solidInline, solidOutlineColor);
 		image.setRGB(0, 0, width, height, resultPixels, 0, width);
 	}
 
@@ -81,6 +84,7 @@ final class BillboardOutlineRenderer
 		int width,
 		int height,
 		boolean[] exteriorTransparentBoundary,
+		boolean highlightOutline,
 		boolean shadowOutline,
 		boolean solidOutline,
 		Color solidOutlineColor)
@@ -94,9 +98,11 @@ final class BillboardOutlineRenderer
 
 			int x = index % width;
 			int y = index / width;
-			int outlineArgb = shadowOutline
-				? shadowOutlineColor(sourcePixels, width, height, x, y)
-				: solidOutline ? solidOutlineColor.getRGB() : 0;
+			int outlineArgb = highlightOutline
+				? highlightOutlineColor(sourcePixels, width, height, x, y)
+				: shadowOutline
+					? shadowOutlineColor(sourcePixels, width, height, x, y)
+					: solidOutline ? solidOutlineColor.getRGB() : 0;
 			if (outlineArgb != 0)
 			{
 				resultPixels[index] = outlineArgb;
@@ -110,6 +116,7 @@ final class BillboardOutlineRenderer
 		int width,
 		int height,
 		boolean[] exteriorOpaqueBoundary,
+		boolean highlightInline,
 		boolean shadowInline,
 		boolean solidInline,
 		Color solidOutlineColor)
@@ -123,9 +130,11 @@ final class BillboardOutlineRenderer
 
 			int x = index % width;
 			int y = index / width;
-			int inlineArgb = shadowInline
-				? shadowInlineColor(sourcePixels, width, height, x, y)
-				: solidInline ? solidOutlineColor.getRGB() : 0;
+			int inlineArgb = highlightInline
+				? highlightInlineColor(sourcePixels, width, height, x, y)
+				: shadowInline
+					? shadowInlineColor(sourcePixels, width, height, x, y)
+					: solidInline ? solidOutlineColor.getRGB() : 0;
 			if (inlineArgb != 0)
 			{
 				resultPixels[index] = inlineArgb;
@@ -165,9 +174,19 @@ final class BillboardOutlineRenderer
 		return darkenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
 	}
 
+	private static int highlightOutlineColor(int[] pixels, int width, int height, int x, int y)
+	{
+		return brightenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
+	}
+
 	private static int shadowInlineColor(int[] pixels, int width, int height, int x, int y)
 	{
 		return darkenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
+	}
+
+	private static int highlightInlineColor(int[] pixels, int width, int height, int x, int y)
+	{
+		return brightenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
 	}
 
 	private static int darkenedAverageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
@@ -181,6 +200,20 @@ final class BillboardOutlineRenderer
 		int avgRed = darken((color >>> 16) & 0xFF);
 		int avgGreen = darken((color >>> 8) & 0xFF);
 		int avgBlue = darken(color & 0xFF);
+		return 0xFF000000 | (avgRed << 16) | (avgGreen << 8) | avgBlue;
+	}
+
+	private static int brightenedAverageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
+	{
+		int color = averageOpaqueNeighborColor(pixels, width, height, x, y);
+		if (color == 0)
+		{
+			return 0;
+		}
+
+		int avgRed = brighten((color >>> 16) & 0xFF);
+		int avgGreen = brighten((color >>> 8) & 0xFF);
+		int avgBlue = brighten(color & 0xFF);
 		return 0xFF000000 | (avgRed << 16) | (avgGreen << 8) | avgBlue;
 	}
 
@@ -264,6 +297,11 @@ final class BillboardOutlineRenderer
 	private static int darken(double color)
 	{
 		return clampToByte((int) Math.round(color * SHADOW_DARKEN_FACTOR));
+	}
+
+	private static int brighten(double color)
+	{
+		return clampToByte((int) Math.round(color * HIGHLIGHT_BRIGHTEN_FACTOR));
 	}
 
 	private static int clampToByte(int value)
