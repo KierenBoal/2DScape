@@ -1,4 +1,4 @@
-package com.kierenboal.npcspan;
+package com.kierenboal.npcsnap;
 
 import java.util.ArrayList;
 import java.util.Collection;

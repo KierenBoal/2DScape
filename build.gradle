@@ -14,7 +14,7 @@ repositories {
 }
 
 def runeLiteVersion = 'latest.release'
-def pluginMainClass = 'com.kierenboal.npcspan.NpcSpanPluginTest'
+def pluginMainClass = 'com.kierenboal.npcsnap.NpcSnapPluginTest'
 
 dependencies {
 	compileOnly group: 'net.runelite', name:'client', version: runeLiteVersion

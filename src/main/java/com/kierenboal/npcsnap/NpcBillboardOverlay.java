@@ -1,4 +1,4 @@
-package com.kierenboal.npcspan;
+package com.kierenboal.npcsnap;
 
 import java.awt.Color;
 import java.awt.Dimension;

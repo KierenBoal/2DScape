@@ -1,4 +1,4 @@
-package com.kierenboal.npcspan;
+package com.kierenboal.npcsnap;
 
 import com.google.inject.Provides;
 import java.util.HashMap;
@@ -47,7 +47,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 	name = "2DScape",
 	description = "Janky RuneScape Classic inspired graphics"
 )
-public class NpcSpanPlugin extends Plugin
+public class NpcSnapPlugin extends Plugin
 	implements RenderCallback
 {
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
