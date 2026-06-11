@@ -561,6 +561,7 @@ class NpcBillboardOverlay extends Overlay
 		Rectangle viewport = getViewportBounds();
 		List<BillboardTarget> candidates = new ArrayList<>();
 		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
+		Set<OccupiedTileKey> claimedActorEffectTiles = new HashSet<>();
 
 		if (config.applyToNpcs())
 		{
@@ -579,7 +580,7 @@ class NpcBillboardOverlay extends Overlay
 					npc.getLocalLocation(),
 					npc.getWorldView().getPlane()
 				));
-				addActorSpotAnimCandidates(candidates, npc, viewport, claimedActorEffects);
+				addActorSpotAnimCandidates(candidates, npc, viewport, claimedActorEffects, claimedActorEffectTiles);
 			}
 		}
 
@@ -600,7 +601,7 @@ class NpcBillboardOverlay extends Overlay
 					player.getLocalLocation(),
 					player.getWorldView().getPlane()
 				));
-				addActorSpotAnimCandidates(candidates, player, viewport, claimedActorEffects);
+				addActorSpotAnimCandidates(candidates, player, viewport, claimedActorEffects, claimedActorEffectTiles);
 			}
 		}
 
@@ -634,6 +635,11 @@ class NpcBillboardOverlay extends Overlay
 				}
 
 				if (claimedActorEffects.contains(EffectDedupKey.of(graphicsObject)))
+				{
+					continue;
+				}
+
+				if (claimedActorEffectTiles.contains(OccupiedTileKey.of(graphicsObject.getLocation(), graphicsObject.getLevel())))
 				{
 					continue;
 				}
@@ -675,6 +681,11 @@ class NpcBillboardOverlay extends Overlay
 				}
 
 				if (!isEligibleTileObject(localPlayerLocation, observed, viewport))
+				{
+					continue;
+				}
+
+				if (effectLike && claimedActorEffectTiles.contains(OccupiedTileKey.of(observedTileLocalPoint(observed), observedTilePlane(observed))))
 				{
 					continue;
 				}
@@ -973,7 +984,13 @@ class NpcBillboardOverlay extends Overlay
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
-	private void addActorSpotAnimCandidates(List<BillboardTarget> candidates, Actor actor, Rectangle viewport, Set<EffectDedupKey> claimedActorEffects)
+	private void addActorSpotAnimCandidates(
+		List<BillboardTarget> candidates,
+		Actor actor,
+		Rectangle viewport,
+		Set<EffectDedupKey> claimedActorEffects,
+		Set<OccupiedTileKey> claimedActorEffectTiles
+	)
 	{
 		if (actor == null || !config.applyToGraphicsObjects())
 		{
@@ -995,6 +1012,7 @@ class NpcBillboardOverlay extends Overlay
 
 			candidates.add(BillboardTarget.forActorSpotAnim(actorSpotAnim, actor, billboardDepth(actorSpotAnim, actor)));
 			claimedActorEffects.add(EffectDedupKey.of(actorSpotAnim, actor));
+			claimedActorEffectTiles.add(OccupiedTileKey.of(actor.getLocalLocation(), actor.getWorldView().getPlane()));
 		}
 	}
 
@@ -1052,6 +1070,39 @@ class NpcBillboardOverlay extends Overlay
 	private static LocalPoint projectileLocalPoint(Projectile projectile)
 	{
 		return new LocalPoint((int) projectile.getX(), (int) projectile.getY());
+	}
+
+	private static LocalPoint observedTileLocalPoint(ObservedTileObject observed)
+	{
+		if (observed == null)
+		{
+			return null;
+		}
+
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			if (part.localPoint != null)
+			{
+				return part.localPoint;
+			}
+		}
+
+		return null;
+	}
+
+	private static int observedTilePlane(ObservedTileObject observed)
+	{
+		if (observed == null)
+		{
+			return -1;
+		}
+
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			return part.plane;
+		}
+
+		return -1;
 	}
 
 	private int projectileVerticalOffset(Projectile projectile)
@@ -2665,6 +2716,62 @@ class NpcBillboardOverlay extends Overlay
 		{
 			int result = Integer.hashCode(id);
 			result = (31 * result) + Integer.hashCode(plane);
+			result = (31 * result) + Integer.hashCode(tileX);
+			result = (31 * result) + Integer.hashCode(tileY);
+			return result;
+		}
+	}
+
+	private static final class OccupiedTileKey
+	{
+		private final int plane;
+		private final int tileX;
+		private final int tileY;
+
+		private OccupiedTileKey(int plane, int tileX, int tileY)
+		{
+			this.plane = plane;
+			this.tileX = tileX;
+			this.tileY = tileY;
+		}
+
+		private static OccupiedTileKey of(LocalPoint localPoint, int plane)
+		{
+			if (localPoint == null)
+			{
+				return null;
+			}
+
+			return new OccupiedTileKey(
+				plane,
+				localPoint.getX() / LOCAL_TILE_SIZE,
+				localPoint.getY() / LOCAL_TILE_SIZE
+			);
+		}
+
+		@Override
+		public boolean equals(Object other)
+		{
+			if (this == other)
+			{
+				return true;
+			}
+
+			if (!(other instanceof OccupiedTileKey))
+			{
+				return false;
+			}
+
+			OccupiedTileKey that = (OccupiedTileKey) other;
+			return plane == that.plane
+				&& tileX == that.tileX
+				&& tileY == that.tileY;
+		}
+
+		@Override
+		public int hashCode()
+		{
+			int result = Integer.hashCode(plane);
 			result = (31 * result) + Integer.hashCode(tileX);
 			result = (31 * result) + Integer.hashCode(tileY);
 			return result;
