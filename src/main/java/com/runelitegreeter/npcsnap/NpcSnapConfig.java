@@ -1,5 +1,6 @@
 package com.runelitegreeter.npcsnap;
 
+import java.awt.Color;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigGroup;
@@ -329,6 +330,61 @@ public interface NpcSnapConfig extends Config
 		return 180;
 	}
 
+	@ConfigItem(
+		keyName = "enableBillboardSpriteOutline",
+		name = "Enable sprite outline",
+		description = "Draw a 1-pixel outline around each billboard sprite using the selected color",
+		section = billboardSection
+	)
+	default boolean enableBillboardSpriteOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "billboardSpriteOutlineColor",
+		name = "Sprite outline color",
+		description = "Color used for the billboard sprite outline",
+		section = billboardSection
+	)
+	default Color billboardSpriteOutlineColor()
+	{
+		return new Color(0x333333);
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardShadowOutline",
+		name = "Enable shadow outline",
+		description = "Draw a 1-pixel outline using the average neighboring sprite color, darkened by 33 percent. When enabled, this takes precedence over the solid outline color.",
+		section = billboardSection
+	)
+	default boolean enableBillboardShadowOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardSpriteInline",
+		name = "Enable sprite inline",
+		description = "Draw a 1-pixel inline on the inside edge of each billboard sprite using the selected color",
+		section = billboardSection
+	)
+	default boolean enableBillboardSpriteInline()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardShadowInline",
+		name = "Enable shadow inline",
+		description = "Draw a 1-pixel inline on the inside edge using the average neighboring sprite color, darkened by 33 percent. When enabled, this takes precedence over the solid inline color.",
+		section = billboardSection
+	)
+	default boolean enableBillboardShadowInline()
+	{
+		return false;
+	}
+
 	@Range(
 		min = 1,
 		max = 60
@@ -341,7 +397,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default int skillingTimeoutSeconds()
 	{
-		return 20;
+		return 12;
 	}
 
 	@ConfigItem(
@@ -417,10 +473,21 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(
 		keyName = "debugShowCacheInvalidations",
 		name = "Show cache invalidations",
-		description = "Draw billboards as solid red for the frame where their cached image is redrawn",
+		description = "Draw billboards as solid red for the frame where their cache entry is invalidated",
 		section = debugSection
 	)
 	default boolean debugShowCacheInvalidations()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugShowRedraws",
+		name = "Show redraws",
+		description = "Flash a random color for the frame where the cached billboard image is actually redrawn",
+		section = debugSection
+	)
+	default boolean debugShowRedraws()
 	{
 		return false;
 	}

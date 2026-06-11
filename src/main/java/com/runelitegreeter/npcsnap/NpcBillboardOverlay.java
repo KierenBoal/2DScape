@@ -57,6 +57,7 @@ class NpcBillboardOverlay extends Overlay
 	private static final int MAX_SOURCE_BILLBOARD_COORDINATE = 32768;
 	private static final int MAX_DRAW_BILLBOARD_SIZE = 8192;
 	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
+	private static final int OUTLINE_PADDING = 1;
 	private static final int RENDER_PRIORITY_NONE = -1;
 	private static final int RENDER_PRIORITY_GROUND_ITEM = 0;
 	private static final int RENDER_PRIORITY_ACTOR = 1;
@@ -402,6 +403,7 @@ class NpcBillboardOverlay extends Overlay
 			result.bounds,
 			paintOrder,
 			result.cacheInvalidated,
+			result.spriteRedrawn,
 			request.frameDebugInfo
 		));
 	}
@@ -431,6 +433,7 @@ class NpcBillboardOverlay extends Overlay
 				result.bounds,
 				paintOrder,
 				result.cacheInvalidated,
+				result.spriteRedrawn,
 				request.frameDebugInfo
 			));
 		}
@@ -1147,11 +1150,12 @@ class NpcBillboardOverlay extends Overlay
 		return true;
 	}
 
-	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds)
+	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding)
 	{
+		Rectangle imageBounds = expandedBounds(bounds, outlinePadding);
 		double qualityScale = renderQualityScale();
-		int imageWidth = Math.max(1, (int) Math.round(bounds.width * qualityScale));
-		int imageHeight = Math.max(1, (int) Math.round(bounds.height * qualityScale));
+		int imageWidth = Math.max(1, (int) Math.round(imageBounds.width * qualityScale));
+		int imageHeight = Math.max(1, (int) Math.round(imageBounds.height * qualityScale));
 		if (!isUsableDrawSize(imageWidth, imageHeight))
 		{
 			return null;
@@ -1162,7 +1166,7 @@ class NpcBillboardOverlay extends Overlay
 		try
 		{
 			imageGraphics.scale(qualityScale, qualityScale);
-			imageGraphics.translate(-bounds.x, -bounds.y);
+			imageGraphics.translate(-imageBounds.x, -imageBounds.y);
 			for (FaceDraw face : faces)
 			{
 				//imageGraphics.setColor(face.getColor());
@@ -1175,9 +1179,31 @@ class NpcBillboardOverlay extends Overlay
 			imageGraphics.dispose();
 		}
 
+		if (hasAnyEdgeEffect())
+		{
+			BillboardOutlineRenderer.applyOutline(
+				image,
+				config.enableBillboardShadowOutline(),
+				config.enableBillboardSpriteOutline(),
+				config.enableBillboardShadowInline(),
+				config.enableBillboardSpriteInline(),
+				config.billboardSpriteOutlineColor()
+			);
+		}
+
 		//disabled quantize for now
 		//quantize(image, config.billboardPaletteSize());
 		return image;
+	}
+
+	private static Rectangle expandedBounds(Rectangle bounds, int padding)
+	{
+		if (padding <= 0)
+		{
+			return bounds;
+		}
+
+		return new Rectangle(bounds.x - padding, bounds.y - padding, bounds.width + (padding * 2), bounds.height + (padding * 2));
 	}
 
 	private static boolean isUsableSourceBounds(Rectangle bounds)
@@ -1716,11 +1742,14 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
-		Rectangle bounds = computeBounds(faces);
-		if (!isUsableSourceBounds(bounds))
+		Rectangle sourceBounds = computeBounds(faces);
+		if (!isUsableSourceBounds(sourceBounds))
 		{
 			return null;
 		}
+
+		int outlinePadding = outlinePadding();
+		Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
 
 		BillboardCacheKey cacheKey = new BillboardCacheKey(
 			request.animationId,
@@ -1731,20 +1760,28 @@ class NpcBillboardOverlay extends Overlay
 			request.relativePitch,
 			config.billboardColorBands(),
 			config.billboardLightBoostPercent(),
+			outlinePadding,
+			config.enableBillboardShadowOutline(),
+			config.enableBillboardSpriteOutline(),
+			config.enableBillboardShadowInline(),
+			config.enableBillboardSpriteInline(),
+			config.billboardSpriteOutlineColor().getRGB(),
 			qualityKey()
 		);
 		CachedBillboard cached = billboardCache.get(renderable);
-		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, bounds);
+		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds);
+		boolean spriteRedrawn = false;
 		if (cacheInvalidated)
 		{
-			BufferedImage image = renderBillboardImage(faces, bounds);
+			BufferedImage image = renderBillboardImage(faces, sourceBounds, outlinePadding);
 			if (image == null)
 			{
 				return null;
 			}
 
-			cached = new CachedBillboard(cacheKey, bounds, image);
+			cached = new CachedBillboard(cacheKey, imageBounds, image);
 			billboardCache.put(renderable, cached);
+			spriteRedrawn = true;
 		}
 
 		Point basePoint = Perspective.localToCanvas(client, localPoint, request.plane, request.verticalOffset);
@@ -1762,13 +1799,13 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
-		int distanceHeight = scaledSize(bounds.height, perspectiveScale);
+		int distanceHeight = scaledSize(cached.bounds.height, perspectiveScale);
 		int projectedHeight = projectedHeight(basePoint, topPoint);
 		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
 		int targetHeight = hullHeight > 0
 			? hullHeight
 			: distanceHeight > 0 ? distanceHeight : projectedHeight;
-		int targetWidth = aspectWidth(bounds, targetHeight);
+		int targetWidth = aspectWidth(cached.bounds, targetHeight);
 		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
 		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
 		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
@@ -1787,7 +1824,22 @@ class NpcBillboardOverlay extends Overlay
 
 		Rectangle drawRect = new Rectangle(drawX, drawY, targetWidth, targetHeight);
 		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
-		return new BillboardRenderResult(drawRect, cacheInvalidated);
+		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteRedrawn);
+	}
+
+	private int outlinePadding()
+	{
+		return config.enableBillboardShadowOutline() || config.enableBillboardSpriteOutline()
+			? OUTLINE_PADDING
+			: 0;
+	}
+
+	private boolean hasAnyEdgeEffect()
+	{
+		return config.enableBillboardShadowOutline()
+			|| config.enableBillboardSpriteOutline()
+			|| config.enableBillboardShadowInline()
+			|| config.enableBillboardSpriteInline();
 	}
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)
@@ -2111,9 +2163,30 @@ class NpcBillboardOverlay extends Overlay
 		private final int relativePitch;
 		private final int colorBands;
 		private final int lightBoost;
+		private final int outlinePadding;
+		private final boolean shadowOutline;
+		private final boolean solidOutline;
+		private final boolean shadowInline;
+		private final boolean solidInline;
+		private final int outlineColor;
 		private final int renderQuality;
 
-		private BillboardCacheKey(int animationId, int animationFrame, int poseAnimationId, int poseAnimationFrame, int relativeYaw, int relativePitch, int colorBands, int lightBoost, int renderQuality)
+		private BillboardCacheKey(
+			int animationId,
+			int animationFrame,
+			int poseAnimationId,
+			int poseAnimationFrame,
+			int relativeYaw,
+			int relativePitch,
+			int colorBands,
+			int lightBoost,
+			int outlinePadding,
+			boolean shadowOutline,
+			boolean solidOutline,
+			boolean shadowInline,
+			boolean solidInline,
+			int outlineColor,
+			int renderQuality)
 		{
 			this.animationId = animationId;
 			this.animationFrame = animationFrame;
@@ -2123,6 +2196,12 @@ class NpcBillboardOverlay extends Overlay
 			this.relativePitch = relativePitch;
 			this.colorBands = colorBands;
 			this.lightBoost = lightBoost;
+			this.outlinePadding = outlinePadding;
+			this.shadowOutline = shadowOutline;
+			this.solidOutline = solidOutline;
+			this.shadowInline = shadowInline;
+			this.solidInline = solidInline;
+			this.outlineColor = outlineColor;
 			this.renderQuality = renderQuality;
 		}
 
@@ -2146,6 +2225,12 @@ class NpcBillboardOverlay extends Overlay
 				&& relativePitch == that.relativePitch
 				&& colorBands == that.colorBands
 				&& lightBoost == that.lightBoost
+				&& outlinePadding == that.outlinePadding
+				&& shadowOutline == that.shadowOutline
+				&& solidOutline == that.solidOutline
+				&& shadowInline == that.shadowInline
+				&& solidInline == that.solidInline
+				&& outlineColor == that.outlineColor
 				&& renderQuality == that.renderQuality;
 		}
 
@@ -2160,6 +2245,12 @@ class NpcBillboardOverlay extends Overlay
 			result = 31 * result + relativePitch;
 			result = 31 * result + colorBands;
 			result = 31 * result + lightBoost;
+			result = 31 * result + outlinePadding;
+			result = 31 * result + (shadowOutline ? 1 : 0);
+			result = 31 * result + (solidOutline ? 1 : 0);
+			result = 31 * result + (shadowInline ? 1 : 0);
+			result = 31 * result + (solidInline ? 1 : 0);
+			result = 31 * result + outlineColor;
 			result = 31 * result + renderQuality;
 			return result;
 		}
@@ -2467,11 +2558,13 @@ class NpcBillboardOverlay extends Overlay
 	{
 		private final Rectangle bounds;
 		private final boolean cacheInvalidated;
+		private final boolean spriteRedrawn;
 
-		private BillboardRenderResult(Rectangle bounds, boolean cacheInvalidated)
+		private BillboardRenderResult(Rectangle bounds, boolean cacheInvalidated, boolean spriteRedrawn)
 		{
 			this.bounds = bounds;
 			this.cacheInvalidated = cacheInvalidated;
+			this.spriteRedrawn = spriteRedrawn;
 		}
 	}
 

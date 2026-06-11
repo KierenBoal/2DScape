@@ -7,6 +7,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Stroke;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import javax.inject.Inject;
@@ -84,6 +85,12 @@ class NpcSnapDebug
 		if (config.debugShowCacheInvalidations() && renderDebug.cacheInvalidated)
 		{
 			graphics.setColor(INVALIDATION_RED);
+			graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+		}
+
+		if (config.debugShowRedraws() && renderDebug.spriteRedrawn && renderDebug.redrawFlashColor != null)
+		{
+			graphics.setColor(renderDebug.redrawFlashColor);
 			graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 		}
 
@@ -239,24 +246,36 @@ class NpcSnapDebug
 		private final Rectangle bounds;
 		private final int paintOrder;
 		private final boolean cacheInvalidated;
+		private final boolean spriteRedrawn;
+		private final Color redrawFlashColor;
 		private final FrameDebugInfo frameDebugInfo;
 
 		private RenderDebug(
 			Rectangle bounds,
 			int paintOrder,
 			boolean cacheInvalidated,
+			boolean spriteRedrawn,
+			Color redrawFlashColor,
 			FrameDebugInfo frameDebugInfo
 		)
 		{
 			this.bounds = bounds;
 			this.paintOrder = paintOrder;
 			this.cacheInvalidated = cacheInvalidated;
+			this.spriteRedrawn = spriteRedrawn;
+			this.redrawFlashColor = redrawFlashColor;
 			this.frameDebugInfo = frameDebugInfo;
 		}
 
-		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, FrameDebugInfo frameDebugInfo)
+		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, boolean spriteRedrawn, FrameDebugInfo frameDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, cacheInvalidated, frameDebugInfo);
+			return new RenderDebug(bounds, paintOrder, cacheInvalidated, spriteRedrawn, spriteRedrawn ? randomFlashColor() : null, frameDebugInfo);
+		}
+
+		private static Color randomFlashColor()
+		{
+			ThreadLocalRandom random = ThreadLocalRandom.current();
+			return new Color(random.nextInt(256), random.nextInt(256), random.nextInt(256), 220);
 		}
 	}
 
