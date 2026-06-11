@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
+import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.DecorativeObject;
 import net.runelite.api.DynamicObject;
@@ -71,6 +72,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
+	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = new HashSet<>();
 	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
@@ -179,6 +181,7 @@ class NpcBillboardOverlay extends Overlay
 
 		groundItems.remove(item);
 		billboardCache.remove(item);
+		activeRenderableTargets.remove(item);
 		activeBillboards.remove(item);
 	}
 
@@ -187,6 +190,7 @@ class NpcBillboardOverlay extends Overlay
 		for (TileItem item : groundItems.keySet())
 		{
 			billboardCache.remove(item);
+			activeRenderableTargets.remove(item);
 			activeBillboards.remove(item);
 		}
 
@@ -443,14 +447,10 @@ class NpcBillboardOverlay extends Overlay
 	{
 		ensureActiveBillboardsCurrent(worldView);
 
-		List<BillboardTarget> visibleTargets = new ArrayList<>(activeBillboards.size() + activeTileObjects.size());
-		for (Renderable renderable : activeBillboards)
+		List<BillboardTarget> visibleTargets = new ArrayList<>(activeRenderableTargets.size() + activeTileObjects.size());
+		for (BillboardTarget target : activeRenderableTargets.values())
 		{
-			BillboardTarget target = buildActiveTarget(renderable);
-			if (target != null)
-			{
-				visibleTargets.add(target);
-			}
+			visibleTargets.add(target);
 		}
 
 		for (TileObject tileObject : activeTileObjects)
@@ -522,6 +522,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
+		activeRenderableTargets.clear();
 		activeBillboards.clear();
 		activeTileObjects.clear();
 		activeBillboardsGameCycle = gameCycle;
@@ -539,6 +540,7 @@ class NpcBillboardOverlay extends Overlay
 			BillboardTarget target = candidates.get(i);
 			if (target.renderable != null)
 			{
+				activeRenderableTargets.put(target.renderable, target);
 				activeBillboards.add(target.renderable);
 			}
 			else if (target.tileObject != null)
@@ -558,6 +560,7 @@ class NpcBillboardOverlay extends Overlay
 		LocalPoint localPlayerLocation = localPlayer != null ? localPlayer.getLocalLocation() : null;
 		Rectangle viewport = getViewportBounds();
 		List<BillboardTarget> candidates = new ArrayList<>();
+		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
 
 		if (config.applyToNpcs())
 		{
@@ -576,6 +579,7 @@ class NpcBillboardOverlay extends Overlay
 					npc.getLocalLocation(),
 					npc.getWorldView().getPlane()
 				));
+				addActorSpotAnimCandidates(candidates, npc, viewport, claimedActorEffects);
 			}
 		}
 
@@ -596,6 +600,7 @@ class NpcBillboardOverlay extends Overlay
 					player.getLocalLocation(),
 					player.getWorldView().getPlane()
 				));
+				addActorSpotAnimCandidates(candidates, player, viewport, claimedActorEffects);
 			}
 		}
 
@@ -624,6 +629,11 @@ class NpcBillboardOverlay extends Overlay
 			for (GraphicsObject graphicsObject : worldView.getGraphicsObjects())
 			{
 				if (graphicsObject == null || !isEligibleGraphicsObject(localPlayerLocation, graphicsObject, viewport))
+				{
+					continue;
+				}
+
+				if (claimedActorEffects.contains(EffectDedupKey.of(graphicsObject)))
 				{
 					continue;
 				}
@@ -676,65 +686,6 @@ class NpcBillboardOverlay extends Overlay
 		return candidates;
 	}
 
-	private BillboardTarget buildActiveTarget(Renderable renderable)
-	{
-		if (renderable instanceof NPC)
-		{
-			NPC npc = (NPC) renderable;
-			return BillboardTarget.forRenderable(
-				BillboardTargetType.NPC,
-				renderable,
-				billboardDepth(npc),
-				RENDER_PRIORITY_ACTOR,
-				npc.getLocalLocation(),
-				npc.getWorldView().getPlane()
-			);
-		}
-		if (renderable instanceof Player)
-		{
-			Player player = (Player) renderable;
-			return BillboardTarget.forRenderable(
-				BillboardTargetType.PLAYER,
-				renderable,
-				billboardDepth(player),
-				RENDER_PRIORITY_ACTOR,
-				player.getLocalLocation(),
-				player.getWorldView().getPlane()
-			);
-		}
-		if (renderable instanceof Projectile)
-		{
-			Projectile projectile = (Projectile) renderable;
-			return BillboardTarget.forRenderable(
-				BillboardTargetType.PROJECTILE,
-				renderable,
-				billboardDepth(projectile),
-				RENDER_PRIORITY_EFFECT,
-				projectileLocalPoint(projectile),
-				projectile.getFloor()
-			);
-		}
-		if (renderable instanceof GraphicsObject)
-		{
-			GraphicsObject graphicsObject = (GraphicsObject) renderable;
-			return BillboardTarget.forRenderable(
-				BillboardTargetType.GRAPHICS_OBJECT,
-				renderable,
-				billboardDepth(graphicsObject),
-				RENDER_PRIORITY_EFFECT,
-				graphicsObject.getLocation(),
-				graphicsObject.getLevel()
-			);
-		}
-		if (renderable instanceof TileItem)
-		{
-			GroundItemBillboard groundItem = groundItems.get(renderable);
-			return groundItem == null ? null : BillboardTarget.forGroundItem((TileItem) renderable, groundItem, billboardDepth((TileItem) renderable));
-		}
-
-		return null;
-	}
-
 	private BillboardTarget buildActiveTarget(WorldView worldView, TileObject tileObject)
 	{
 		ObservedTileObject observed = visibleTileObjects.get(tileObject);
@@ -753,6 +704,8 @@ class NpcBillboardOverlay extends Overlay
 			case NPC:
 			case PLAYER:
 				return buildActorRenderRequest((Actor) target.renderable);
+			case ACTOR_SPOT_ANIM:
+				return buildActorSpotAnimRenderRequest((ActorSpotAnim) target.renderable, target.parentActor);
 			case PROJECTILE:
 				return buildProjectileRenderRequest((Projectile) target.renderable);
 			case GRAPHICS_OBJECT:
@@ -816,6 +769,37 @@ class NpcBillboardOverlay extends Overlay
 			actorHullBounds(actor),
 			VerticalAnchor.BOTTOM,
 			debug.actorFrameDebugInfo(actor)
+		);
+	}
+
+	private BillboardRenderRequest buildActorSpotAnimRenderRequest(ActorSpotAnim actorSpotAnim, Actor actor)
+	{
+		if (actor == null)
+		{
+			return null;
+		}
+
+		LocalPoint localPoint = actor.getLocalLocation();
+		if (localPoint == null)
+		{
+			return null;
+		}
+
+		return new BillboardRenderRequest(
+			actorSpotAnim,
+			actorSpotAnim.getModel(),
+			localPoint,
+			actor.getWorldView().getPlane(),
+			Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight()),
+			relativeYaw(actor),
+			relativePitch(),
+			actorSpotAnim.getId(),
+			actorSpotAnim.getFrame(),
+			-1,
+			-1,
+			null,
+			VerticalAnchor.BOTTOM,
+			NpcSnapDebug.FrameDebugInfo.of(actorSpotAnim.getId(), actorSpotAnim.getFrame(), actorSpotAnim.getFrame())
 		);
 	}
 
@@ -903,6 +887,18 @@ class NpcBillboardOverlay extends Overlay
 				debug.drawRenderableBoundingBox(graphics, projectile, projectileLocalPoint(projectile), projectile.getFloor(), projectileVerticalOffset(projectile));
 				return;
 			}
+			case ACTOR_SPOT_ANIM:
+			{
+				Actor actor = target.parentActor;
+				ActorSpotAnim actorSpotAnim = (ActorSpotAnim) target.renderable;
+				if (actor == null)
+				{
+					return;
+				}
+
+				debug.drawRenderableBoundingBox(graphics, actorSpotAnim, actor.getLocalLocation(), actor.getWorldView().getPlane(), Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight()));
+				return;
+			}
 			case GRAPHICS_OBJECT:
 			{
 				GraphicsObject graphicsObject = (GraphicsObject) target.renderable;
@@ -977,6 +973,31 @@ class NpcBillboardOverlay extends Overlay
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
+	private void addActorSpotAnimCandidates(List<BillboardTarget> candidates, Actor actor, Rectangle viewport, Set<EffectDedupKey> claimedActorEffects)
+	{
+		if (actor == null || !config.applyToGraphicsObjects())
+		{
+			return;
+		}
+
+		Iterable<ActorSpotAnim> spotAnims = actor.getSpotAnims();
+		if (spotAnims == null)
+		{
+			return;
+		}
+
+		for (ActorSpotAnim actorSpotAnim : spotAnims)
+		{
+			if (!isEligibleActorSpotAnim(actor, actorSpotAnim, viewport))
+			{
+				continue;
+			}
+
+			candidates.add(BillboardTarget.forActorSpotAnim(actorSpotAnim, actor, billboardDepth(actorSpotAnim, actor)));
+			claimedActorEffects.add(EffectDedupKey.of(actorSpotAnim, actor));
+		}
+	}
+
 	private boolean isEligibleGraphicsObject(LocalPoint localPlayerLocation, GraphicsObject graphicsObject, Rectangle viewport)
 	{
 		LocalPoint localPoint = graphicsObject.getLocation();
@@ -996,6 +1017,35 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Point canvasPoint = Perspective.localToCanvas(client, localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()));
+		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+	}
+
+	private boolean isEligibleActorSpotAnim(Actor actor, ActorSpotAnim actorSpotAnim, Rectangle viewport)
+	{
+		if (actor == null || actorSpotAnim == null || viewport == null)
+		{
+			return false;
+		}
+
+		LocalPoint localPlayerLocation = client.getLocalPlayer() != null ? client.getLocalPlayer().getLocalLocation() : null;
+		LocalPoint actorLocation = actor.getLocalLocation();
+		if (localPlayerLocation == null || actorLocation == null)
+		{
+			return false;
+		}
+
+		if (!isWithinRadius(localPlayerLocation, actorLocation, config.billboardRadiusTiles()))
+		{
+			return false;
+		}
+
+		if (actorSpotAnim.getModel() == null)
+		{
+			return false;
+		}
+
+		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
+		Point canvasPoint = Perspective.localToCanvas(client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2));
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
@@ -1358,6 +1408,18 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return cameraDistance(localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()) + (graphicsObject.getModelHeight() / 2.0));
+	}
+
+	private double billboardDepth(ActorSpotAnim actorSpotAnim, Actor actor)
+	{
+		LocalPoint localPoint = actor != null ? actor.getLocalLocation() : null;
+		if (localPoint == null)
+		{
+			return Double.NEGATIVE_INFINITY;
+		}
+
+		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
+		return cameraDistance(localPoint, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2.0));
 	}
 
 	private double billboardDepth(TileItem item)
@@ -1817,10 +1879,10 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		int drawX = anchorX - (targetWidth / 2);
-		int drawY = request.verticalAnchor == VerticalAnchor.CENTER
-			? anchorY - (targetHeight / 2)
-			: anchorY - targetHeight;
+		double originX = (-cached.bounds.x) * (targetWidth / (double) cached.bounds.width);
+		double originY = (-cached.bounds.y) * (targetHeight / (double) cached.bounds.height);
+		int drawX = (int) Math.round(anchorX - originX);
+		int drawY = (int) Math.round(anchorY - originY);
 		if (!isUsableDrawSize(targetWidth, targetHeight) || isOutsideViewport(drawX, drawY, targetWidth, targetHeight))
 		{
 			return null;
@@ -1934,8 +1996,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativeYaw(Projectile projectile)
 	{
-		//int rawRelativeYaw = projectile.getOrientation() - client.getCameraYaw();
-		int rawRelativeYaw = client.getCameraYaw() - projectile.getOrientation();
+		int rawRelativeYaw = client.getCameraYaw() + projectile.getOrientation();
 		if (!config.enableRotationSnapping())
 		{
 			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
@@ -2302,6 +2363,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		NPC,
 		PLAYER,
+		ACTOR_SPOT_ANIM,
 		PROJECTILE,
 		GRAPHICS_OBJECT,
 		GROUND_ITEM,
@@ -2318,6 +2380,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		private final BillboardTargetType type;
 		private final Renderable renderable;
+		private final Actor parentActor;
 		private final TileObject tileObject;
 		private final ObservedTileObject observedTileObject;
 		private final GroundItemBillboard groundItem;
@@ -2328,6 +2391,7 @@ class NpcBillboardOverlay extends Overlay
 		private BillboardTarget(
 			BillboardTargetType type,
 			Renderable renderable,
+			Actor parentActor,
 			TileObject tileObject,
 			ObservedTileObject observedTileObject,
 			GroundItemBillboard groundItem,
@@ -2338,6 +2402,7 @@ class NpcBillboardOverlay extends Overlay
 		{
 			this.type = type;
 			this.renderable = renderable;
+			this.parentActor = parentActor;
 			this.tileObject = tileObject;
 			this.observedTileObject = observedTileObject;
 			this.groundItem = groundItem;
@@ -2355,7 +2420,24 @@ class NpcBillboardOverlay extends Overlay
 			int plane
 		)
 		{
-			return new BillboardTarget(type, renderable, null, null, null, depth, renderPriority, PriorityTileKey.of(localPoint, plane, renderPriority));
+			return new BillboardTarget(type, renderable, null, null, null, null, depth, renderPriority, PriorityTileKey.of(localPoint, plane, renderPriority));
+		}
+
+		private static BillboardTarget forActorSpotAnim(ActorSpotAnim actorSpotAnim, Actor actor, double depth)
+		{
+			LocalPoint localPoint = actor.getLocalLocation();
+			int plane = actor.getWorldView().getPlane();
+			return new BillboardTarget(
+				BillboardTargetType.ACTOR_SPOT_ANIM,
+				actorSpotAnim,
+				actor,
+				null,
+				null,
+				null,
+				depth,
+				RENDER_PRIORITY_EFFECT,
+				PriorityTileKey.of(localPoint, plane, RENDER_PRIORITY_EFFECT)
+			);
 		}
 
 		private static BillboardTarget forGroundItem(TileItem item, GroundItemBillboard groundItem, double depth)
@@ -2363,6 +2445,7 @@ class NpcBillboardOverlay extends Overlay
 			return new BillboardTarget(
 				BillboardTargetType.GROUND_ITEM,
 				item,
+				null,
 				null,
 				null,
 				groundItem,
@@ -2377,6 +2460,7 @@ class NpcBillboardOverlay extends Overlay
 			int renderPriority = effectLike ? RENDER_PRIORITY_EFFECT : RENDER_PRIORITY_NONE;
 			return new BillboardTarget(
 				BillboardTargetType.TILE_OBJECT,
+				null,
 				null,
 				observedTileObject.tileObject,
 				observedTileObject,
@@ -2515,6 +2599,74 @@ class NpcBillboardOverlay extends Overlay
 			int result = plane;
 			result = 31 * result + tileX;
 			result = 31 * result + tileY;
+			return result;
+		}
+	}
+
+	private static final class EffectDedupKey
+	{
+		private final int id;
+		private final int plane;
+		private final int tileX;
+		private final int tileY;
+
+		private EffectDedupKey(int id, int plane, int tileX, int tileY)
+		{
+			this.id = id;
+			this.plane = plane;
+			this.tileX = tileX;
+			this.tileY = tileY;
+		}
+
+		private static EffectDedupKey of(GraphicsObject graphicsObject)
+		{
+			LocalPoint localPoint = graphicsObject.getLocation();
+			return localPoint == null ? null : new EffectDedupKey(
+				graphicsObject.getId(),
+				graphicsObject.getLevel(),
+				localPoint.getX() / LOCAL_TILE_SIZE,
+				localPoint.getY() / LOCAL_TILE_SIZE
+			);
+		}
+
+		private static EffectDedupKey of(ActorSpotAnim actorSpotAnim, Actor actor)
+		{
+			LocalPoint localPoint = actor.getLocalLocation();
+			return localPoint == null ? null : new EffectDedupKey(
+				actorSpotAnim.getId(),
+				actor.getWorldView().getPlane(),
+				localPoint.getX() / LOCAL_TILE_SIZE,
+				localPoint.getY() / LOCAL_TILE_SIZE
+			);
+		}
+
+		@Override
+		public boolean equals(Object other)
+		{
+			if (this == other)
+			{
+				return true;
+			}
+
+			if (!(other instanceof EffectDedupKey))
+			{
+				return false;
+			}
+
+			EffectDedupKey that = (EffectDedupKey) other;
+			return id == that.id
+				&& plane == that.plane
+				&& tileX == that.tileX
+				&& tileY == that.tileY;
+		}
+
+		@Override
+		public int hashCode()
+		{
+			int result = Integer.hashCode(id);
+			result = (31 * result) + Integer.hashCode(plane);
+			result = (31 * result) + Integer.hashCode(tileX);
+			result = (31 * result) + Integer.hashCode(tileY);
 			return result;
 		}
 	}
