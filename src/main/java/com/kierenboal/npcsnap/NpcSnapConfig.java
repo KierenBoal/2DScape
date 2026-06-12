@@ -294,6 +294,21 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
+		max = 128
+	)
+	@ConfigItem(
+		keyName = "billboardMaxDrawsPerFrame",
+		name = "Max billboard updates per frame",
+		description = "Maximum number of billboard sprites that can be rerendered in a single frame",
+		section = billboardSection
+	)
+	default int billboardMaxDrawsPerFrame()
+	{
+		return 3;
+	}
+
+	@Range(
+		min = 1,
 		max = 64
 	)
 	@ConfigItem(

@@ -8,16 +8,18 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.IdentityHashMap;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Collection;
 import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
@@ -89,6 +91,10 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = new HashSet<>();
 	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Deque<BillboardTargetKey> renderQueue = new ArrayDeque<>();
+	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
+	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
+	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
@@ -180,15 +186,29 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		activeRenderableTargets.clear();
+		clearActiveSelections();
+		clearRenderQueue();
+		clearActiveSnapshots();
+	}
+
+	private void clearActiveSelections()
+	{
 		activeBillboards.clear();
 		activeTileObjects.clear();
-		clearActiveSnapshots();
 	}
 
 	private void clearActiveSnapshots()
 	{
 		activeBillboardSnapshot = Collections.emptySet();
 		activeTileObjectSnapshot = Collections.emptySet();
+	}
+
+	private void clearRenderQueue()
+	{
+		renderQueue.clear();
+		renderQueueEntries.clear();
+		billboardUpdateStates.clear();
+		frameUpdatePlans.clear();
 	}
 
 	void syncGroundItems(WorldView worldView)
@@ -288,8 +308,7 @@ class NpcBillboardOverlay extends Overlay
 			visibleTileObjects.putAll(observedTileObjects);
 			observedTileObjects.clear();
 		}
-		activeBillboards.clear();
-		activeTileObjects.clear();
+		clearActiveSelections();
 		activeBillboardsGameCycle = Integer.MIN_VALUE;
 	}
 
@@ -380,10 +399,9 @@ class NpcBillboardOverlay extends Overlay
 		if (client.isClientThread())
 		{
 			ensureActiveBillboardsCurrent();
-			return activeTileObjects.contains(tileObject);
 		}
 
-		return activeTileObjectSnapshot.contains(tileObject);
+		return false;
 	}
 
 	private void renderTarget(Graphics2D graphics, BillboardTarget target, int paintOrder)
@@ -400,7 +418,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		BillboardRenderResult result = renderRenderableBillboard(graphics, request);
+		BillboardRenderResult result = renderRenderableBillboard(graphics, request, frameUpdatePlans.get(target.targetKey));
 		if (result == null)
 		{
 			return;
@@ -424,7 +442,7 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			BillboardRenderResult result = renderRenderableBillboard(graphics, request);
+			BillboardRenderResult result = renderRenderableBillboard(graphics, request, frameUpdatePlans.get(target.targetKey));
 			if (result == null)
 			{
 				continue;
@@ -526,11 +544,12 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		activeRenderableTargets.clear();
-		activeBillboards.clear();
-		activeTileObjects.clear();
+		clearActiveSelections();
 		activeBillboardsGameCycle = gameCycle;
+		frameUpdatePlans.clear();
 		if (!config.enable2dBillboardSprites() || client.getGameState() != GameState.LOGGED_IN || worldView == null)
 		{
+			clearRenderQueue();
 			clearActiveSnapshots();
 			return;
 		}
@@ -538,14 +557,20 @@ class NpcBillboardOverlay extends Overlay
 		List<BillboardTarget> candidates = collectCandidates(worldView);
 		candidates.sort(Comparator.comparingDouble(BillboardTarget::getDepth));
 		int limit = Math.max(1, config.billboardMaxEntities());
-		int count = Math.min(limit, candidates.size());
-		for (int i = 0; i < count; i++)
+		if (candidates.size() > limit)
 		{
-			BillboardTarget target = candidates.get(i);
+			candidates = new ArrayList<>(candidates.subList(0, limit));
+		}
+
+		for (BillboardTarget target : candidates)
+		{
 			if (target.renderable != null)
 			{
 				activeRenderableTargets.put(target.renderable, target);
-				activeBillboards.add(target.renderable);
+				if (billboardCache.containsKey(target.renderable))
+				{
+					activeBillboards.add(target.renderable);
+				}
 			}
 			else if (target.tileObject != null)
 			{
@@ -553,7 +578,195 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
+		scheduleFrameUpdates(sortTargetsForRender(new ArrayList<>(candidates)), gameCycle);
 		updateActiveSnapshots();
+	}
+
+	private void scheduleFrameUpdates(List<BillboardTarget> orderedTargets, int gameCycle)
+	{
+		Map<BillboardTargetKey, BillboardTarget> candidatesByKey = new HashMap<>();
+		for (BillboardTarget candidate : orderedTargets)
+		{
+			candidatesByKey.put(candidate.targetKey, candidate);
+		}
+
+		pruneRenderQueue(candidatesByKey.keySet());
+		appendNewQueueEntries(orderedTargets);
+		reprioritizeRenderQueue(candidatesByKey, gameCycle);
+
+		int maxDraws = Math.max(1, config.billboardMaxDrawsPerFrame());
+		int baseRefreshInterval = Math.max(1, (int) Math.ceil((double) Math.max(1, orderedTargets.size()) / maxDraws));
+		int queueBudget = renderQueue.size();
+		Set<BillboardTargetKey> seenThisFrame = new HashSet<>();
+		int scheduled = 0;
+		while (queueBudget-- > 0 && scheduled < maxDraws && !renderQueue.isEmpty())
+		{
+			BillboardTargetKey key = renderQueue.pollFirst();
+			renderQueueEntries.remove(key);
+			if (!seenThisFrame.add(key))
+			{
+				continue;
+			}
+
+			BillboardTarget target = candidatesByKey.get(key);
+			if (target == null)
+			{
+				continue;
+			}
+
+			BillboardUpdateState updateState = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
+			if (!updateState.isReady(gameCycle, targetHasCachedBillboard(target)))
+			{
+				requeueTarget(key);
+				continue;
+			}
+
+			double qualityScale = updateState.qualityScale;
+			if (!needsBillboardRedraw(target, qualityScale))
+			{
+				updateState.defer(gameCycle, baseRefreshInterval);
+				requeueTarget(key);
+				continue;
+			}
+
+			frameUpdatePlans.put(key, new FrameUpdatePlan(qualityScale));
+			updateState.advance(gameCycle, baseRefreshInterval, renderQualityScale());
+			requeueTarget(key);
+			scheduled++;
+		}
+	}
+
+	private void reprioritizeRenderQueue(Map<BillboardTargetKey, BillboardTarget> candidatesByKey, int gameCycle)
+	{
+		if (renderQueue.isEmpty())
+		{
+			return;
+		}
+
+		List<QueuedBillboardTarget> prioritizedTargets = new ArrayList<>(renderQueue.size());
+		int queueIndex = 0;
+		for (BillboardTargetKey key : renderQueue)
+		{
+			BillboardTarget target = candidatesByKey.get(key);
+			if (target == null)
+			{
+				queueIndex++;
+				continue;
+			}
+
+			BillboardUpdateState state = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
+			UpdateHeuristicSnapshot snapshot = buildUpdateHeuristicSnapshot(target);
+			double score = computeUpdatePriorityScore(target, state, snapshot, gameCycle, queueIndex);
+			prioritizedTargets.add(new QueuedBillboardTarget(key, score, queueIndex));
+			state.observe(snapshot);
+			queueIndex++;
+		}
+
+		prioritizedTargets.sort(Comparator
+			.comparingDouble(QueuedBillboardTarget::getPriorityScore).reversed()
+			.thenComparingInt(QueuedBillboardTarget::getQueueIndex));
+		renderQueue.clear();
+		renderQueueEntries.clear();
+		for (QueuedBillboardTarget prioritizedTarget : prioritizedTargets)
+		{
+			requeueTarget(prioritizedTarget.key);
+		}
+	}
+
+	private double computeUpdatePriorityScore(
+		BillboardTarget target,
+		BillboardUpdateState state,
+		UpdateHeuristicSnapshot snapshot,
+		int gameCycle,
+		int queueIndex
+	)
+	{
+		double score = 0.0d;
+		if (!targetHasCachedBillboard(target))
+		{
+			score += 10_000.0d;
+		}
+
+		if (state.hasMoved(snapshot))
+		{
+			score += 1_200.0d;
+		}
+
+		if (state.hasAnimationChanged(snapshot))
+		{
+			score += 1_000.0d;
+		}
+		else if (snapshot.animated)
+		{
+			score += 450.0d;
+		}
+
+		double depthPenalty = Math.max(0.0d, snapshot.depth);
+		score += 8_000.0d / Math.max(128.0d, depthPenalty + 128.0d);
+
+		int cyclesSinceRedraw = state.cyclesSinceRedraw(gameCycle);
+		score += Math.min(4_000.0d, cyclesSinceRedraw * 160.0d);
+
+		int overdueCycles = state.overdueCycles(gameCycle);
+		score += Math.min(3_000.0d, overdueCycles * 220.0d);
+
+		score -= queueIndex * 0.01d;
+		return score;
+	}
+
+	private void pruneRenderQueue(Set<BillboardTargetKey> validKeys)
+	{
+		Iterator<BillboardTargetKey> iterator = renderQueue.iterator();
+		while (iterator.hasNext())
+		{
+			BillboardTargetKey key = iterator.next();
+			if (!validKeys.contains(key))
+			{
+				iterator.remove();
+				renderQueueEntries.remove(key);
+				billboardUpdateStates.remove(key);
+				frameUpdatePlans.remove(key);
+			}
+		}
+	}
+
+	private void appendNewQueueEntries(List<BillboardTarget> orderedTargets)
+	{
+		List<BillboardTarget> newTargets = new ArrayList<>();
+		for (BillboardTarget target : orderedTargets)
+		{
+			if (!renderQueueEntries.contains(target.targetKey) && !billboardUpdateStates.containsKey(target.targetKey))
+			{
+				newTargets.add(target);
+			}
+		}
+
+		int maxDraws = Math.max(1, config.billboardMaxDrawsPerFrame());
+		int newTargetCount = newTargets.size();
+		for (int i = 0; i < newTargetCount; i++)
+		{
+			BillboardTarget target = newTargets.get(i);
+			int nearPriorityIndex = (newTargetCount - 1) - i;
+			double seededQualityScale = seededQualityScale(nearPriorityIndex, maxDraws);
+			billboardUpdateStates.put(target.targetKey, new BillboardUpdateState(seededQualityScale));
+			requeueTargetFront(target.targetKey);
+		}
+	}
+
+	private void requeueTarget(BillboardTargetKey key)
+	{
+		if (renderQueueEntries.add(key))
+		{
+			renderQueue.addLast(key);
+		}
+	}
+
+	private void requeueTargetFront(BillboardTargetKey key)
+	{
+		if (renderQueueEntries.add(key))
+		{
+			renderQueue.addFirst(key);
+		}
 	}
 
 	private void updateActiveSnapshots()
@@ -1214,10 +1427,158 @@ class NpcBillboardOverlay extends Overlay
 		return true;
 	}
 
-	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding)
+	private boolean targetHasCachedBillboard(BillboardTarget target)
+	{
+		if (target == null)
+		{
+			return false;
+		}
+
+		if (target.type == BillboardTargetType.TILE_OBJECT)
+		{
+			return targetHasCachedTileObjectBillboard(target);
+		}
+
+		return billboardCache.containsKey(target.renderable);
+	}
+
+	private boolean targetHasCachedTileObjectBillboard(BillboardTarget target)
+	{
+		if (target == null || target.observedTileObject == null)
+		{
+			return false;
+		}
+
+		for (ObjectRenderablePart part : target.observedTileObject.parts)
+		{
+			if (part.renderable != null && billboardCache.containsKey(part.renderable))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private boolean needsBillboardRedraw(BillboardTarget target, double qualityScale)
+	{
+		if (target.type == BillboardTargetType.TILE_OBJECT)
+		{
+			return needsTileObjectBillboardRedraw(target, qualityScale);
+		}
+
+		BillboardRenderRequest request = buildRenderRequest(target);
+		return request != null && needsBillboardRedraw(request, qualityScale);
+	}
+
+	private boolean needsTileObjectBillboardRedraw(BillboardTarget target, double qualityScale)
+	{
+		if (target == null || target.observedTileObject == null)
+		{
+			return false;
+		}
+
+		for (ObjectRenderablePart part : target.observedTileObject.parts)
+		{
+			BillboardRenderRequest request = buildRenderRequest(target, part);
+			if (request != null && needsBillboardRedraw(request, qualityScale))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private boolean needsBillboardRedraw(BillboardRenderRequest request, double qualityScale)
+	{
+		Renderable renderable = request.renderable;
+		if (renderable == null)
+		{
+			return false;
+		}
+
+		CachedBillboard cached = billboardCache.get(renderable);
+		if (cached == null)
+		{
+			return true;
+		}
+
+		long nowMillis = System.currentTimeMillis();
+		if (nowMillis - cached.lastRedrawMillis() > CACHE_TTL_MILLIS)
+		{
+			return true;
+		}
+
+		return !cached.matchesPreviewKey(buildPreviewCacheKey(request, qualityScale));
+	}
+
+	private UpdateHeuristicSnapshot buildUpdateHeuristicSnapshot(BillboardTarget target)
+	{
+		if (target == null)
+		{
+			return UpdateHeuristicSnapshot.empty();
+		}
+
+		if (target.type == BillboardTargetType.TILE_OBJECT)
+		{
+			return buildTileObjectHeuristicSnapshot(target);
+		}
+
+		BillboardRenderRequest request = buildRenderRequest(target);
+		if (request == null)
+		{
+			return UpdateHeuristicSnapshot.forDepth(target.getDepth());
+		}
+
+		return UpdateHeuristicSnapshot.fromRequest(request, target.getDepth());
+	}
+
+	private UpdateHeuristicSnapshot buildTileObjectHeuristicSnapshot(BillboardTarget target)
+	{
+		if (target == null || target.observedTileObject == null)
+		{
+			return UpdateHeuristicSnapshot.empty();
+		}
+
+		long positionKey = 0L;
+		int animationHash = 1;
+		boolean animated = false;
+		boolean sawPosition = false;
+		for (ObjectRenderablePart part : target.observedTileObject.parts)
+		{
+			if (part.localPoint != null)
+			{
+				positionKey = (31L * positionKey) + UpdateHeuristicSnapshot.positionKey(part.localPoint, part.plane);
+				sawPosition = true;
+			}
+
+			if (part.renderable instanceof DynamicObject)
+			{
+				DynamicObject dynamicObject = (DynamicObject) part.renderable;
+				int animationId = dynamicObject.getAnimation() != null ? dynamicObject.getAnimation().getId() : -1;
+				animationHash = (31 * animationHash) + animationId;
+				animationHash = (31 * animationHash) + dynamicObject.getAnimFrame();
+				animated = animated || dynamicObject.getAnimation() != null;
+			}
+			else
+			{
+				animationHash = (31 * animationHash) + System.identityHashCode(part.renderable);
+			}
+		}
+
+		return new UpdateHeuristicSnapshot(
+			target.getDepth(),
+			sawPosition ? positionKey : Long.MIN_VALUE,
+			animationHash,
+			animated
+		);
+	}
+
+	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride)
 	{
 		Rectangle imageBounds = expandedBounds(bounds, outlinePadding);
-		double qualityScale = renderQualityScale();
+		double qualityScale = renderQualityScale(qualityScaleOverride);
 		int imageWidth = Math.max(1, (int) Math.round(imageBounds.width * qualityScale));
 		int imageHeight = Math.max(1, (int) Math.round(imageBounds.height * qualityScale));
 		if (!isUsableDrawSize(imageWidth, imageHeight))
@@ -1390,12 +1751,37 @@ class NpcBillboardOverlay extends Overlay
 	
 	private double renderQualityScale()
 	{
-		return Math.max(MIN_RENDER_QUALITY, Math.min(1.0d, config.renderBillboardQuality() / 100.0d));
+		return renderQualityScale(config.renderBillboardQuality() / 100.0d);
 	}
 
 	private int qualityKey()
 	{
-		return (int) Math.round(renderQualityScale() * 10_000.0d);
+		return qualityKey(renderQualityScale());
+	}
+
+	private double renderQualityScale(double qualityScale)
+	{
+		return Math.max(MIN_RENDER_QUALITY, Math.min(1.0d, qualityScale));
+	}
+
+	private int qualityKey(double qualityScale)
+	{
+		return (int) Math.round(renderQualityScale(qualityScale) * 10_000.0d);
+	}
+
+	private double seededQualityScale(int nearPriorityIndex, int maxUpdatesPerFrame)
+	{
+		int updatesPerFrame = Math.max(1, maxUpdatesPerFrame);
+		int maxBootstrapEntries = updatesPerFrame * 3;
+		int clampedPriorityIndex = Math.min(Math.max(0, nearPriorityIndex), Math.max(0, maxBootstrapEntries - 1));
+		int qualityTier = clampedPriorityIndex / updatesPerFrame;
+		double qualityScale = renderQualityScale();
+		for (int i = 0; i < qualityTier; i++)
+		{
+			qualityScale *= 0.5d;
+		}
+
+		return renderQualityScale(qualityScale);
 	}
 
 	private double cameraDistance(Actor actor, LocalPoint localPoint, double verticalOffset)
@@ -1674,7 +2060,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
-	private BillboardRenderResult renderRenderableBillboard(Graphics2D graphics, BillboardRenderRequest request)
+	private BillboardRenderResult renderRenderableBillboard(Graphics2D graphics, BillboardRenderRequest request, FrameUpdatePlan updatePlan)
 	{
 		Renderable renderable = request.renderable;
 		Model model = request.model;
@@ -1690,56 +2076,68 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
-		float[] spriteX = new float[vertexCount];
-		float[] spriteY = new float[vertexCount];
-		float[] spriteDepth = new float[vertexCount];
-		for (int i = 0; i < vertexCount; i++)
-		{
-			double[] yawRotated = rotateYaw(verticesX[i], verticesZ[i], request.relativeYaw);
-			double[] pitchRotated = rotatePitch(verticesY[i], yawRotated[1], request.relativePitch);
-			spriteX[i] = (float) yawRotated[0];
-			spriteY[i] = (float) pitchRotated[0];
-			spriteDepth[i] = (float) pitchRotated[1];
-		}
-
 		long nowMillis = System.currentTimeMillis();
-		BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId);
-		if (builtFaces.faces.isEmpty())
-		{
-			return null;
-		}
-
-		List<FaceDraw> faces = builtFaces.faces;
-		faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
-		Rectangle sourceBounds = computeBounds(faces);
-		if (!isUsableSourceBounds(sourceBounds))
-		{
-			return null;
-		}
-
-		int outlinePadding = outlinePadding();
-		Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
-
-		BillboardCacheKey cacheKey = buildCacheKey(request, outlinePadding, builtFaces.textureStateHash);
 		CachedBillboard cached = billboardCache.get(renderable);
-		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+		boolean cacheInvalidated = false;
 		boolean spriteRedrawn = false;
-		if (cacheInvalidated)
+		if (updatePlan != null)
 		{
-			BufferedImage image = renderBillboardImage(faces, sourceBounds, outlinePadding);
-			if (image == null)
+			float[] verticesX = model.getVerticesX();
+			float[] verticesY = model.getVerticesY();
+			float[] verticesZ = model.getVerticesZ();
+			float[] spriteX = new float[vertexCount];
+			float[] spriteY = new float[vertexCount];
+			float[] spriteDepth = new float[vertexCount];
+			for (int i = 0; i < vertexCount; i++)
 			{
-				return null;
+				double[] yawRotated = rotateYaw(verticesX[i], verticesZ[i], request.relativeYaw);
+				double[] pitchRotated = rotatePitch(verticesY[i], yawRotated[1], request.relativePitch);
+				spriteX[i] = (float) yawRotated[0];
+				spriteY[i] = (float) pitchRotated[0];
+				spriteDepth[i] = (float) pitchRotated[1];
 			}
 
-			cached = new CachedBillboard(cacheKey, imageBounds, image, nowMillis);
-			billboardCache.put(renderable, cached);
-			spriteRedrawn = true;
+			BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId);
+			if (!builtFaces.faces.isEmpty())
+			{
+				List<FaceDraw> faces = builtFaces.faces;
+				faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
+				Rectangle sourceBounds = computeBounds(faces);
+				if (isUsableSourceBounds(sourceBounds))
+				{
+					int outlinePadding = outlinePadding();
+					Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
+					BillboardCacheKey cacheKey = buildCacheKey(
+						request,
+						outlinePadding,
+						builtFaces.textureStateHash,
+						qualityKey(updatePlan.qualityScale)
+					);
+					cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+					if (cacheInvalidated)
+					{
+						BufferedImage image = renderBillboardImage(faces, sourceBounds, outlinePadding, updatePlan.qualityScale);
+						if (image != null)
+						{
+							cached = new CachedBillboard(cacheKey, imageBounds, image, nowMillis);
+							billboardCache.put(renderable, cached);
+							spriteRedrawn = true;
+						}
+					}
+					else if (cached != null)
+					{
+						cached.touch(nowMillis);
+					}
+				}
+			}
 		}
-		else
+
+		if (cached == null)
+		{
+			return null;
+		}
+
+		if (!spriteRedrawn)
 		{
 			cached.touch(nowMillis);
 		}
@@ -1792,7 +2190,7 @@ class NpcBillboardOverlay extends Overlay
 		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteDirty);
 	}
 
-	private BillboardCacheKey buildCacheKey(BillboardRenderRequest request, int outlinePadding, int textureStateHash)
+	private BillboardCacheKey buildCacheKey(BillboardRenderRequest request, int outlinePadding, int textureStateHash, int renderQualityKey)
 	{
 		return new BillboardCacheKey(
 			request.animationId,
@@ -1811,8 +2209,31 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
-			qualityKey(),
+			renderQualityKey,
 			textureStateHash
+		);
+	}
+
+	private BillboardCachePreviewKey buildPreviewCacheKey(BillboardRenderRequest request, double qualityScale)
+	{
+		return new BillboardCachePreviewKey(
+			request.animationId,
+			request.animationFrame,
+			request.poseAnimationId,
+			request.poseAnimationFrame,
+			request.relativeYaw,
+			request.relativePitch,
+			config.billboardColorBands(),
+			config.billboardLightBoostPercent(),
+			outlinePadding(),
+			config.enableBillboardHighlightOutline(),
+			config.enableBillboardShadowOutline(),
+			config.enableBillboardSpriteOutline(),
+			config.enableBillboardHighlightInline(),
+			config.enableBillboardShadowInline(),
+			config.enableBillboardSpriteInline(),
+			config.billboardSpriteOutlineColor().getRGB(),
+			qualityKey(qualityScale)
 		);
 	}
 
@@ -2720,6 +3141,65 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
+	private static final class BillboardCachePreviewKey
+	{
+		private final int animationId;
+		private final int animationFrame;
+		private final int poseAnimationId;
+		private final int poseAnimationFrame;
+		private final int relativeYaw;
+		private final int relativePitch;
+		private final int colorBands;
+		private final int lightBoost;
+		private final int outlinePadding;
+		private final boolean highlightOutline;
+		private final boolean shadowOutline;
+		private final boolean solidOutline;
+		private final boolean highlightInline;
+		private final boolean shadowInline;
+		private final boolean solidInline;
+		private final int outlineColor;
+		private final int renderQuality;
+
+		private BillboardCachePreviewKey(
+			int animationId,
+			int animationFrame,
+			int poseAnimationId,
+			int poseAnimationFrame,
+			int relativeYaw,
+			int relativePitch,
+			int colorBands,
+			int lightBoost,
+			int outlinePadding,
+			boolean highlightOutline,
+			boolean shadowOutline,
+			boolean solidOutline,
+			boolean highlightInline,
+			boolean shadowInline,
+			boolean solidInline,
+			int outlineColor,
+			int renderQuality)
+		{
+			this.animationId = animationId;
+			this.animationFrame = animationFrame;
+			this.poseAnimationId = poseAnimationId;
+			this.poseAnimationFrame = poseAnimationFrame;
+			this.relativeYaw = relativeYaw;
+			this.relativePitch = relativePitch;
+			this.colorBands = colorBands;
+			this.lightBoost = lightBoost;
+			this.outlinePadding = outlinePadding;
+			this.highlightOutline = highlightOutline;
+			this.shadowOutline = shadowOutline;
+			this.solidOutline = solidOutline;
+			this.highlightInline = highlightInline;
+			this.shadowInline = shadowInline;
+			this.solidInline = solidInline;
+			this.outlineColor = outlineColor;
+			this.renderQuality = renderQuality;
+		}
+	}
+
 	private static final class CachedBillboard implements TimedCacheEntry
 	{
 		private final BillboardCacheKey key;
@@ -2753,6 +3233,28 @@ class NpcBillboardOverlay extends Overlay
 		private long lastRedrawMillis()
 		{
 			return lastRedrawMillis;
+		}
+
+		private boolean matchesPreviewKey(BillboardCachePreviewKey previewKey)
+		{
+			return previewKey != null
+				&& key.animationId == previewKey.animationId
+				&& key.animationFrame == previewKey.animationFrame
+				&& key.poseAnimationId == previewKey.poseAnimationId
+				&& key.poseAnimationFrame == previewKey.poseAnimationFrame
+				&& key.relativeYaw == previewKey.relativeYaw
+				&& key.relativePitch == previewKey.relativePitch
+				&& key.colorBands == previewKey.colorBands
+				&& key.lightBoost == previewKey.lightBoost
+				&& key.outlinePadding == previewKey.outlinePadding
+				&& key.highlightOutline == previewKey.highlightOutline
+				&& key.shadowOutline == previewKey.shadowOutline
+				&& key.solidOutline == previewKey.solidOutline
+				&& key.highlightInline == previewKey.highlightInline
+				&& key.shadowInline == previewKey.shadowInline
+				&& key.solidInline == previewKey.solidInline
+				&& key.outlineColor == previewKey.outlineColor
+				&& key.renderQuality == previewKey.renderQuality;
 		}
 
 		private boolean consumeDirty()
@@ -2830,6 +3332,7 @@ class NpcBillboardOverlay extends Overlay
 		private final double depth;
 		private final int renderPriority;
 		private final PriorityTileKey priorityTileKey;
+		private final BillboardTargetKey targetKey;
 
 		private BillboardTarget(
 			BillboardTargetType type,
@@ -2840,7 +3343,8 @@ class NpcBillboardOverlay extends Overlay
 			GroundItemBillboard groundItem,
 			double depth,
 			int renderPriority,
-			PriorityTileKey priorityTileKey
+			PriorityTileKey priorityTileKey,
+			BillboardTargetKey targetKey
 		)
 		{
 			this.type = type;
@@ -2852,6 +3356,7 @@ class NpcBillboardOverlay extends Overlay
 			this.depth = depth;
 			this.renderPriority = renderPriority;
 			this.priorityTileKey = priorityTileKey;
+			this.targetKey = targetKey;
 		}
 
 		private static BillboardTarget forRenderable(
@@ -2863,7 +3368,18 @@ class NpcBillboardOverlay extends Overlay
 			int plane
 		)
 		{
-			return new BillboardTarget(type, renderable, null, null, null, null, depth, renderPriority, PriorityTileKey.of(localPoint, plane, renderPriority));
+			return new BillboardTarget(
+				type,
+				renderable,
+				null,
+				null,
+				null,
+				null,
+				depth,
+				renderPriority,
+				PriorityTileKey.of(localPoint, plane, renderPriority),
+				BillboardTargetKey.forRenderable(type, renderable, localPoint, plane)
+			);
 		}
 
 		private static BillboardTarget forActorSpotAnim(ActorSpotAnim actorSpotAnim, Actor actor, double depth)
@@ -2879,7 +3395,8 @@ class NpcBillboardOverlay extends Overlay
 				null,
 				depth,
 				RENDER_PRIORITY_EFFECT,
-				PriorityTileKey.of(localPoint, plane, RENDER_PRIORITY_EFFECT)
+				PriorityTileKey.of(localPoint, plane, RENDER_PRIORITY_EFFECT),
+				BillboardTargetKey.forActorSpotAnim(actorSpotAnim, actor, localPoint, plane)
 			);
 		}
 
@@ -2894,7 +3411,8 @@ class NpcBillboardOverlay extends Overlay
 				groundItem,
 				depth,
 				RENDER_PRIORITY_GROUND_ITEM,
-				PriorityTileKey.of(groundItem.localPoint, groundItem.plane, RENDER_PRIORITY_GROUND_ITEM)
+				PriorityTileKey.of(groundItem.localPoint, groundItem.plane, RENDER_PRIORITY_GROUND_ITEM),
+				BillboardTargetKey.forGroundItem(item, groundItem)
 			);
 		}
 
@@ -2910,7 +3428,8 @@ class NpcBillboardOverlay extends Overlay
 				null,
 				depth,
 				renderPriority,
-				PriorityTileKey.of(firstLocalPoint(observedTileObject), firstPlane(observedTileObject), renderPriority)
+				PriorityTileKey.of(firstLocalPoint(observedTileObject), firstPlane(observedTileObject), renderPriority),
+				BillboardTargetKey.forTileObject(observedTileObject.tileObject, firstLocalPoint(observedTileObject), firstPlane(observedTileObject))
 			);
 		}
 
@@ -2960,6 +3479,310 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			return -1;
+		}
+	}
+
+	private static final class BillboardTargetKey
+	{
+		private final long orderKey;
+		private final long uniqueKey;
+
+		private BillboardTargetKey(long orderKey, long uniqueKey)
+		{
+			this.orderKey = orderKey;
+			this.uniqueKey = uniqueKey;
+		}
+
+		private static BillboardTargetKey forRenderable(BillboardTargetType type, Renderable renderable, LocalPoint localPoint, int plane)
+		{
+			int entityId = renderableEntityId(type, renderable);
+			long locationKey = locationKey(localPoint, plane);
+			long orderKey = composeOrderKey(type.ordinal(), entityId, locationKey);
+			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(renderable));
+			return new BillboardTargetKey(orderKey, uniqueKey);
+		}
+
+		private static BillboardTargetKey forActorSpotAnim(ActorSpotAnim actorSpotAnim, Actor actor, LocalPoint localPoint, int plane)
+		{
+			long locationKey = locationKey(localPoint, plane);
+			long orderKey = composeOrderKey(BillboardTargetType.ACTOR_SPOT_ANIM.ordinal(), actorSpotAnim.getId(), locationKey);
+			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(actorSpotAnim) ^ System.identityHashCode(actor));
+			return new BillboardTargetKey(orderKey, uniqueKey);
+		}
+
+		private static BillboardTargetKey forGroundItem(TileItem item, GroundItemBillboard groundItem)
+		{
+			long locationKey = locationKey(groundItem != null ? groundItem.localPoint : null, groundItem != null ? groundItem.plane : -1);
+			long orderKey = composeOrderKey(BillboardTargetType.GROUND_ITEM.ordinal(), item.getId(), locationKey);
+			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(item));
+			return new BillboardTargetKey(orderKey, uniqueKey);
+		}
+
+		private static BillboardTargetKey forTileObject(TileObject tileObject, LocalPoint localPoint, int plane)
+		{
+			long locationKey = locationKey(localPoint, plane);
+			long orderKey = composeOrderKey(BillboardTargetType.TILE_OBJECT.ordinal(), tileObject != null ? tileObject.getId() : -1, locationKey);
+			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(tileObject));
+			return new BillboardTargetKey(orderKey, uniqueKey);
+		}
+
+		private static int compareForQueueOrder(BillboardTargetKey left, BillboardTargetKey right)
+		{
+			int byOrder = Long.compare(left.orderKey, right.orderKey);
+			return byOrder != 0 ? byOrder : Long.compare(left.uniqueKey, right.uniqueKey);
+		}
+
+		private static int renderableEntityId(BillboardTargetType type, Renderable renderable)
+		{
+			if (renderable == null)
+			{
+				return -1;
+			}
+
+			switch (type)
+			{
+				case NPC:
+					return ((NPC) renderable).getId();
+				case PROJECTILE:
+					return ((Projectile) renderable).getId();
+				case GRAPHICS_OBJECT:
+					return ((GraphicsObject) renderable).getId();
+				case GROUND_ITEM:
+					return ((TileItem) renderable).getId();
+				default:
+					return System.identityHashCode(renderable);
+			}
+		}
+
+		private static long composeOrderKey(int typeOrdinal, int entityId, long locationKey)
+		{
+			long key = ((long) typeOrdinal & 0xFFL) << 56;
+			key |= ((long) entityId & 0xFFFFFFL) << 32;
+			key |= locationKey & 0xFFFFFFFFL;
+			return key;
+		}
+
+		private static long composeUniqueKey(long orderKey, int identityHash)
+		{
+			return (orderKey * 31L) ^ (identityHash & 0xFFFFFFFFL);
+		}
+
+		private static long locationKey(LocalPoint localPoint, int plane)
+		{
+			if (localPoint == null)
+			{
+				return plane & 0x3L;
+			}
+
+			long tileX = (localPoint.getX() / LOCAL_TILE_SIZE) & 0x7FFL;
+			long tileY = (localPoint.getY() / LOCAL_TILE_SIZE) & 0x7FFL;
+			long planeBits = plane & 0x3L;
+			return (planeBits << 22) | (tileX << 11) | tileY;
+		}
+
+		@Override
+		public boolean equals(Object other)
+		{
+			if (this == other)
+			{
+				return true;
+			}
+
+			if (!(other instanceof BillboardTargetKey))
+			{
+				return false;
+			}
+
+			BillboardTargetKey that = (BillboardTargetKey) other;
+			return orderKey == that.orderKey && uniqueKey == that.uniqueKey;
+		}
+
+		@Override
+		public int hashCode()
+		{
+			int result = Long.hashCode(orderKey);
+			result = (31 * result) + Long.hashCode(uniqueKey);
+			return result;
+		}
+	}
+
+	private static final class BillboardUpdateState
+	{
+		private double qualityScale;
+		private int nextEligibleGameCycle;
+		private int lastRedrawGameCycle;
+		private long lastObservedPositionKey;
+		private int lastObservedAnimationHash;
+		private boolean hasObservation;
+
+		private BillboardUpdateState(double qualityScale)
+		{
+			this.qualityScale = qualityScale;
+			this.nextEligibleGameCycle = Integer.MIN_VALUE;
+			this.lastRedrawGameCycle = Integer.MIN_VALUE;
+			this.lastObservedPositionKey = Long.MIN_VALUE;
+			this.lastObservedAnimationHash = Integer.MIN_VALUE;
+			this.hasObservation = false;
+		}
+
+		private boolean isReady(int gameCycle, boolean hasCachedBillboard)
+		{
+			return !hasCachedBillboard || gameCycle >= nextEligibleGameCycle;
+		}
+
+		private boolean hasMoved(UpdateHeuristicSnapshot snapshot)
+		{
+			return hasObservation
+				&& snapshot.hasPosition()
+				&& lastObservedPositionKey != Long.MIN_VALUE
+				&& lastObservedPositionKey != snapshot.positionKey;
+		}
+
+		private boolean hasAnimationChanged(UpdateHeuristicSnapshot snapshot)
+		{
+			return hasObservation && lastObservedAnimationHash != Integer.MIN_VALUE && lastObservedAnimationHash != snapshot.animationHash;
+		}
+
+		private int cyclesSinceRedraw(int gameCycle)
+		{
+			if (lastRedrawGameCycle == Integer.MIN_VALUE)
+			{
+				return 64;
+			}
+
+			return Math.max(0, gameCycle - lastRedrawGameCycle);
+		}
+
+		private int overdueCycles(int gameCycle)
+		{
+			if (nextEligibleGameCycle == Integer.MIN_VALUE)
+			{
+				return cyclesSinceRedraw(gameCycle);
+			}
+
+			return Math.max(0, gameCycle - nextEligibleGameCycle);
+		}
+
+		private void observe(UpdateHeuristicSnapshot snapshot)
+		{
+			if (snapshot == null)
+			{
+				return;
+			}
+
+			lastObservedPositionKey = snapshot.positionKey;
+			lastObservedAnimationHash = snapshot.animationHash;
+			hasObservation = true;
+		}
+
+		private void defer(int gameCycle, int baseRefreshInterval)
+		{
+			nextEligibleGameCycle = gameCycle + Math.max(1, baseRefreshInterval);
+		}
+
+		private void advance(int gameCycle, int baseRefreshInterval, double fullQualityScale)
+		{
+			double clampedFullQuality = Math.max(MIN_RENDER_QUALITY, Math.min(1.0d, fullQualityScale));
+			double clampedCurrentQuality = Math.max(MIN_RENDER_QUALITY, Math.min(clampedFullQuality, qualityScale));
+			double refreshRatio = clampedCurrentQuality / clampedFullQuality;
+			int nextDelay = Math.max(1, (int) Math.round(baseRefreshInterval * refreshRatio));
+			nextEligibleGameCycle = gameCycle + nextDelay;
+			qualityScale = Math.min(clampedFullQuality, clampedCurrentQuality * 2.0d);
+			lastRedrawGameCycle = gameCycle;
+		}
+	}
+
+	private static final class FrameUpdatePlan
+	{
+		private final double qualityScale;
+
+		private FrameUpdatePlan(double qualityScale)
+		{
+			this.qualityScale = qualityScale;
+		}
+	}
+
+	private static final class UpdateHeuristicSnapshot
+	{
+		private final double depth;
+		private final long positionKey;
+		private final int animationHash;
+		private final boolean animated;
+
+		private UpdateHeuristicSnapshot(double depth, long positionKey, int animationHash, boolean animated)
+		{
+			this.depth = depth;
+			this.positionKey = positionKey;
+			this.animationHash = animationHash;
+			this.animated = animated;
+		}
+
+		private static UpdateHeuristicSnapshot empty()
+		{
+			return new UpdateHeuristicSnapshot(Double.POSITIVE_INFINITY, Long.MIN_VALUE, Integer.MIN_VALUE, false);
+		}
+
+		private static UpdateHeuristicSnapshot forDepth(double depth)
+		{
+			return new UpdateHeuristicSnapshot(depth, Long.MIN_VALUE, Integer.MIN_VALUE, false);
+		}
+
+		private static UpdateHeuristicSnapshot fromRequest(BillboardRenderRequest request, double depth)
+		{
+			long positionKey = positionKey(request.localPoint, request.plane);
+			int animationHash = 1;
+			animationHash = (31 * animationHash) + request.animationId;
+			animationHash = (31 * animationHash) + request.animationFrame;
+			animationHash = (31 * animationHash) + request.poseAnimationId;
+			animationHash = (31 * animationHash) + request.poseAnimationFrame;
+			animationHash = (31 * animationHash) + request.animatedTextureId;
+			boolean animated = request.animationId >= 0
+				|| request.poseAnimationId >= 0
+				|| request.animationFrame >= 0
+				|| request.poseAnimationFrame >= 0;
+			return new UpdateHeuristicSnapshot(depth, positionKey, animationHash, animated);
+		}
+
+		private boolean hasPosition()
+		{
+			return positionKey != Long.MIN_VALUE;
+		}
+
+		private static long positionKey(LocalPoint localPoint, int plane)
+		{
+			if (localPoint == null)
+			{
+				return Long.MIN_VALUE;
+			}
+
+			long x = localPoint.getX() & 0x1FFFFL;
+			long y = localPoint.getY() & 0x1FFFFL;
+			long z = plane & 0x3L;
+			return (z << 34) | (x << 17) | y;
+		}
+	}
+
+	private static final class QueuedBillboardTarget
+	{
+		private final BillboardTargetKey key;
+		private final double priorityScore;
+		private final int queueIndex;
+
+		private QueuedBillboardTarget(BillboardTargetKey key, double priorityScore, int queueIndex)
+		{
+			this.key = key;
+			this.priorityScore = priorityScore;
+			this.queueIndex = queueIndex;
+		}
+
+		private double getPriorityScore()
+		{
+			return priorityScore;
+		}
+
+		private int getQueueIndex()
+		{
+			return queueIndex;
 		}
 	}
 

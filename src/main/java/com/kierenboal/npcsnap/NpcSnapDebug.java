@@ -158,7 +158,7 @@ class NpcSnapDebug
 
 		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, boolean spriteRedrawn, FrameDebugInfo frameDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, cacheInvalidated, frameDebugInfo);
+			return new RenderDebug(bounds, paintOrder, cacheInvalidated || spriteRedrawn, frameDebugInfo);
 		}
 	}
 
