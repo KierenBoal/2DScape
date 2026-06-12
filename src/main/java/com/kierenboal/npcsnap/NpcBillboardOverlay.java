@@ -7,12 +7,14 @@ import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Collection;
@@ -32,14 +34,19 @@ import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.Player;
+import net.runelite.api.PlayerComposition;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
+import net.runelite.api.Texture;
+import net.runelite.api.TextureProvider;
 import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.gameval.ItemID;
+import net.runelite.api.kit.KitType;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -58,6 +65,12 @@ class NpcBillboardOverlay extends Overlay
 	private static final int MAX_DRAW_BILLBOARD_SIZE = 8192;
 	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
 	private static final int OUTLINE_PADDING = 1;
+	private static final long CACHE_TTL_MILLIS = 10_000L;
+	private static final int[] ANIMATED_TEXTURE_IDS = {
+		ItemID.TZHAAR_CAPE_FIRE,
+		ItemID.INFERNAL_CAPE
+	};
+	private static final float ANIMATED_TEXTURE_V_SCROLL_PER_SECOND = -0.25f;
 	private static final int RENDER_PRIORITY_NONE = -1;
 	private static final int RENDER_PRIORITY_GROUND_ITEM = 0;
 	private static final int RENDER_PRIORITY_ACTOR = 1;
@@ -68,6 +81,7 @@ class NpcBillboardOverlay extends Overlay
 	private final NpcSnapDebug debug;
 	private final AnimationFrameSnapper animationFrameSnapper;
 	private final Map<Renderable, CachedBillboard> billboardCache = new HashMap<>();
+	private final Map<Integer, TextureCacheEntry> textureCache = new HashMap<>();
 	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
@@ -284,8 +298,14 @@ class NpcBillboardOverlay extends Overlay
 		activeTileObjectSnapshot = Collections.emptySet();
 	}
 
+	void clearTextureCache()
+	{
+		textureCache.clear();
+	}
+
 	void beginFrame()
 	{
+		expireCaches(System.currentTimeMillis());
 		visibleTileObjects.clear();
 		visibleTileObjects.putAll(observedTileObjects);
 		observedTileObjects.clear();
@@ -434,13 +454,14 @@ class NpcBillboardOverlay extends Overlay
 
 	private void drawRenderDebug(Graphics2D graphics, BillboardRenderResult result, BillboardRenderRequest request, int paintOrder)
 	{
-		debug.drawBillboardDebug(graphics, NpcSnapDebug.RenderDebug.forBounds(
+		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forBounds(
 			result.bounds,
 			paintOrder,
 			result.cacheInvalidated,
 			result.spriteRedrawn,
 			request.frameDebugInfo
-		));
+		);
+		debug.drawBillboardDebugForeground(graphics, renderDebug);
 	}
 
 	private List<BillboardTarget> getVisibleTargets(WorldView worldView)
@@ -763,6 +784,7 @@ class NpcBillboardOverlay extends Overlay
 			snappedFrame,
 			-1,
 			-1,
+			-1,
 			null,
 			VerticalAnchor.BOTTOM,
 			frameDebugInfo
@@ -784,6 +806,7 @@ class NpcBillboardOverlay extends Overlay
 			actor.getAnimationFrame(),
 			actor.getPoseAnimation(),
 			actor.getPoseAnimationFrame(),
+			animatedTextureId(actor),
 			actorHullBounds(actor),
 			VerticalAnchor.BOTTOM,
 			debug.actorFrameDebugInfo(actor)
@@ -815,6 +838,7 @@ class NpcBillboardOverlay extends Overlay
 			actorSpotAnim.getFrame(),
 			-1,
 			-1,
+			-1,
 			null,
 			VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(actorSpotAnim.getId(), actorSpotAnim.getFrame(), actorSpotAnim.getFrame())
@@ -836,6 +860,7 @@ class NpcBillboardOverlay extends Overlay
 			snappedFrame,
 			-1,
 			-1,
+			-1,
 			null,
 			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), snappedFrame)
@@ -855,6 +880,7 @@ class NpcBillboardOverlay extends Overlay
 			relativePitch(),
 			graphicsObject.getId(),
 			snappedFrame,
+			-1,
 			-1,
 			-1,
 			null,
@@ -882,6 +908,7 @@ class NpcBillboardOverlay extends Overlay
 			item.getQuantity(),
 			-1,
 			-1,
+			item.getId(),
 			null,
 			VerticalAnchor.BOTTOM,
 			null
@@ -1236,7 +1263,7 @@ class NpcBillboardOverlay extends Overlay
 		return false;
 	}
 
-	private boolean shouldRefreshCache(Renderable renderable, BillboardCacheKey cacheKey, Rectangle bounds)
+	private boolean shouldRefreshCache(Renderable renderable, BillboardCacheKey cacheKey, Rectangle bounds, long nowMillis)
 	{
 		CachedBillboard cached = billboardCache.get(renderable);
 		if (cached == null)
@@ -1246,6 +1273,11 @@ class NpcBillboardOverlay extends Overlay
 
 		boolean sizeChanged = cached.bounds.width != bounds.width || cached.bounds.height != bounds.height;
 		if (sizeChanged)
+		{
+			return true;
+		}
+
+		if (nowMillis - cached.lastRedrawMillis() > CACHE_TTL_MILLIS)
 		{
 			return true;
 		}
@@ -1273,12 +1305,17 @@ class NpcBillboardOverlay extends Overlay
 		Graphics2D imageGraphics = image.createGraphics();
 		try
 		{
-			imageGraphics.scale(qualityScale, qualityScale);
-			imageGraphics.translate(-imageBounds.x, -imageBounds.y);
+			int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
 			for (FaceDraw face : faces)
 			{
+				if (face.isTextured())
+				{
+					rasterizeTexturedFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face);
+					continue;
+				}
+
 				imageGraphics.setColor(NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands()));
-				imageGraphics.fillPolygon(face.getPolygon());
+				imageGraphics.fillPolygon(scalePolygon(face.getPolygon(), imageBounds, qualityScale));
 			}
 		}
 		finally
@@ -1389,6 +1426,42 @@ class NpcBillboardOverlay extends Overlay
 	private static boolean isUsableCanvasCoordinate(int coordinate)
 	{
 		return Math.abs(coordinate) <= MAX_CANVAS_COORDINATE;
+	}
+
+	private static boolean isBackFace(float[] spriteX, float[] spriteY, float[] spriteDepth, int a, int b, int c)
+	{
+		float abx = spriteX[b] - spriteX[a];
+		float aby = spriteY[b] - spriteY[a];
+		float acx = spriteX[c] - spriteX[a];
+		float acy = spriteY[c] - spriteY[a];
+		float normalZ = (abx * acy) - (aby * acx);
+		if (Math.abs(normalZ) <= 1.0e-4f)
+		{
+			return true;
+		}
+
+		float abz = spriteDepth[b] - spriteDepth[a];
+		float acz = spriteDepth[c] - spriteDepth[a];
+		float normalDepth = (aby * acz) - (abz * acy);
+		return normalZ >= 0.0f || !Float.isFinite(normalDepth);
+	}
+
+	private void expireCaches(long nowMillis)
+	{
+		expireIdleEntries(billboardCache.entrySet().iterator(), nowMillis);
+		expireIdleEntries(textureCache.entrySet().iterator(), nowMillis);
+	}
+
+	private static <K, V extends TimedCacheEntry> void expireIdleEntries(Iterator<Map.Entry<K, V>> iterator, long nowMillis)
+	{
+		while (iterator.hasNext())
+		{
+			Map.Entry<K, V> entry = iterator.next();
+			if (nowMillis - entry.getValue().lastUsedMillis() > CACHE_TTL_MILLIS)
+			{
+				iterator.remove();
+			}
+		}
 	}
 	
 	private double renderQualityScale()
@@ -1547,11 +1620,13 @@ class NpcBillboardOverlay extends Overlay
 		);
 	}
 
-	private List<FaceDraw> buildFaces(
+	private BuiltFaces buildFaces(
 		Model model,
 		float[] spriteX,
 		float[] spriteY,
-		float[] spriteDepth
+		float[] spriteDepth,
+		long nowMillis,
+		int animatedTextureId
 	)
 	{
 		List<FaceDraw> faces = new ArrayList<>(model.getFaceCount());
@@ -1564,17 +1639,17 @@ class NpcBillboardOverlay extends Overlay
 		short[] unlitFaceColors = model.getUnlitFaceColors();
 		byte[] transparencies = model.getFaceTransparencies();
 		short[] textures = model.getFaceTextures();
+		int textureStateHash = 1;
 
 		for (int face = 0; face < model.getFaceCount(); face++)
 		{
-			if (textures != null && face < textures.length && textures[face] != -1)
-			{
-				continue;
-			}
-
 			int a = faceIndices1[face];
 			int b = faceIndices2[face];
 			int c = faceIndices3[face];
+			if (isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
+			{
+				continue;
+			}
 
 			Polygon polygon = new Polygon(
 				new int[]{Math.round(spriteX[a]), Math.round(spriteX[b]), Math.round(spriteX[c])},
@@ -1591,10 +1666,23 @@ class NpcBillboardOverlay extends Overlay
 				spriteDepth[c]
 			) / 3.0;
 
-			faces.add(new FaceDraw(polygon, color, depth));
+			int textureId = textures != null && face < textures.length ? Short.toUnsignedInt(textures[face]) : 0xFFFF;
+			if (textureId != 0xFFFF)
+			{
+				TextureSample textureSample = resolveTextureSample(textureId, nowMillis, animatedTextureId);
+				TextureUvs textureUvs = computeTextureUvs(model, face);
+				if (textureSample != null && textureUvs != null)
+				{
+					textureStateHash = (31 * textureStateHash) + textureSample.stateHash;
+					faces.add(new FaceDraw(polygon, color, depth, textureSample, textureUvs));
+					continue;
+				}
+			}
+
+			faces.add(new FaceDraw(polygon, color, depth, null, null));
 		}
 
-		return faces;
+		return new BuiltFaces(faces, textureStateHash);
 	}
 
 	private static Color resolveFaceColor(
@@ -1693,12 +1781,14 @@ class NpcBillboardOverlay extends Overlay
 			spriteDepth[i] = (float) pitchRotated[1];
 		}
 
-		List<FaceDraw> faces = buildFaces(model, spriteX, spriteY, spriteDepth);
-		if (faces.isEmpty())
+		long nowMillis = System.currentTimeMillis();
+		BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId);
+		if (builtFaces.faces.isEmpty())
 		{
 			return null;
 		}
 
+		List<FaceDraw> faces = builtFaces.faces;
 		faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
 		Rectangle sourceBounds = computeBounds(faces);
 		if (!isUsableSourceBounds(sourceBounds))
@@ -1709,9 +1799,9 @@ class NpcBillboardOverlay extends Overlay
 		int outlinePadding = outlinePadding();
 		Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
 
-		BillboardCacheKey cacheKey = buildCacheKey(request, outlinePadding);
+		BillboardCacheKey cacheKey = buildCacheKey(request, outlinePadding, builtFaces.textureStateHash);
 		CachedBillboard cached = billboardCache.get(renderable);
-		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds);
+		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
 		boolean spriteRedrawn = false;
 		if (cacheInvalidated)
 		{
@@ -1721,9 +1811,13 @@ class NpcBillboardOverlay extends Overlay
 				return null;
 			}
 
-			cached = new CachedBillboard(cacheKey, imageBounds, image);
+			cached = new CachedBillboard(cacheKey, imageBounds, image, nowMillis);
 			billboardCache.put(renderable, cached);
 			spriteRedrawn = true;
+		}
+		else
+		{
+			cached.touch(nowMillis);
 		}
 
 		Point basePoint = Perspective.localToCanvas(client, localPoint, request.plane, request.verticalOffset);
@@ -1761,11 +1855,20 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
+		boolean spriteDirty = cached.consumeDirty();
+		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forBounds(
+			drawRect,
+			0,
+			cacheInvalidated,
+			spriteDirty,
+			request.frameDebugInfo
+		);
+		debug.drawBillboardDebug(graphics, renderDebug);
 		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
-		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteRedrawn);
+		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteDirty);
 	}
 
-	private BillboardCacheKey buildCacheKey(BillboardRenderRequest request, int outlinePadding)
+	private BillboardCacheKey buildCacheKey(BillboardRenderRequest request, int outlinePadding, int textureStateHash)
 	{
 		return new BillboardCacheKey(
 			request.animationId,
@@ -1784,8 +1887,383 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
-			qualityKey()
+			qualityKey(),
+			textureStateHash
 		);
+	}
+
+	private int animatedTextureId(Actor actor)
+	{
+		if (!(actor instanceof Player))
+		{
+			return -1;
+		}
+
+		PlayerComposition composition = ((Player) actor).getPlayerComposition();
+		if (composition == null)
+		{
+			return -1;
+		}
+
+		int capeId = composition.getEquipmentId(KitType.CAPE);
+		capeId = normalizeEquipmentItemId(capeId);
+		if (isAnimatedTextureId(capeId))
+		{
+			return capeId;
+		}
+
+		int[] equipmentIds = composition.getEquipmentIds();
+		if (equipmentIds == null)
+		{
+			return -1;
+		}
+
+		for (int equipmentId : equipmentIds)
+		{
+			int normalizedId = normalizeEquipmentItemId(equipmentId);
+			if (isAnimatedTextureId(normalizedId))
+			{
+				return normalizedId;
+			}
+		}
+
+		return -1;
+	}
+
+	private TextureSample resolveTextureSample(int textureId, long nowMillis, int animatedTextureId)
+	{
+		TextureProvider textureProvider = client.getTextureProvider();
+		if (textureProvider == null)
+		{
+			return null;
+		}
+
+		Texture[] textures = textureProvider.getTextures();
+		if (textures == null || textureId < 0 || textureId >= textures.length)
+		{
+			return null;
+		}
+
+		Texture texture = textures[textureId];
+		int[] pixels = texture != null && texture.getPixels() != null ? texture.getPixels() : textureProvider.load(textureId);
+		if (pixels == null || pixels.length == 0)
+		{
+			return null;
+		}
+
+		int dimension = (int) Math.round(Math.sqrt(pixels.length));
+		if (dimension <= 0 || dimension * dimension != pixels.length)
+		{
+			return null;
+		}
+
+		TextureCacheEntry entry = textureCache.get(textureId);
+		if (entry == null || entry.pixels != pixels || entry.width != dimension || entry.height != dimension)
+		{
+			entry = new TextureCacheEntry(pixels, dimension, dimension, nowMillis);
+			textureCache.put(textureId, entry);
+		}
+		else
+		{
+			entry.touch(nowMillis);
+		}
+
+		float uOffset = texture != null ? normalizeTextureOffset(texture.getU(), entry.width) : 0f;
+		float vOffset = texture != null ? normalizeTextureOffset(texture.getV(), entry.height) : 0f;
+		if (isAnimatedTextureId(animatedTextureId))
+		{
+			uOffset = 0f;
+			vOffset = animatedTextureVOffset(nowMillis, texture);
+		}
+		int stateHash = 31 * textureId + Float.floatToIntBits(uOffset);
+		stateHash = 31 * stateHash + Float.floatToIntBits(vOffset);
+		return new TextureSample(entry, uOffset, vOffset, stateHash);
+	}
+
+	private TextureUvs computeTextureUvs(Model model, int face)
+	{
+		float[] vertexX = model.getVerticesX();
+		float[] vertexY = model.getVerticesY();
+		float[] vertexZ = model.getVerticesZ();
+		int[] indices1 = model.getFaceIndices1();
+		int[] indices2 = model.getFaceIndices2();
+		int[] indices3 = model.getFaceIndices3();
+		byte[] textureFaces = model.getTextureFaces();
+		int[] texIndices1 = model.getTexIndices1();
+		int[] texIndices2 = model.getTexIndices2();
+		int[] texIndices3 = model.getTexIndices3();
+
+		if (textureFaces != null && face < textureFaces.length && textureFaces[face] != -1
+			&& texIndices1 != null && texIndices2 != null && texIndices3 != null)
+		{
+			int triangleA = indices1[face];
+			int triangleB = indices2[face];
+			int triangleC = indices3[face];
+			int textureFace = textureFaces[face] & 0xFF;
+			if (textureFace >= texIndices1.length || textureFace >= texIndices2.length || textureFace >= texIndices3.length)
+			{
+				return null;
+			}
+
+			int texA = texIndices1[textureFace];
+			int texB = texIndices2[textureFace];
+			int texC = texIndices3[textureFace];
+
+			float v1x = vertexX[texA];
+			float v1y = vertexY[texA];
+			float v1z = vertexZ[texA];
+			float v2x = vertexX[texB] - v1x;
+			float v2y = vertexY[texB] - v1y;
+			float v2z = vertexZ[texB] - v1z;
+			float v3x = vertexX[texC] - v1x;
+			float v3y = vertexY[texC] - v1y;
+			float v3z = vertexZ[texC] - v1z;
+
+			float v4x = vertexX[triangleA] - v1x;
+			float v4y = vertexY[triangleA] - v1y;
+			float v4z = vertexZ[triangleA] - v1z;
+			float v5x = vertexX[triangleB] - v1x;
+			float v5y = vertexY[triangleB] - v1y;
+			float v5z = vertexZ[triangleB] - v1z;
+			float v6x = vertexX[triangleC] - v1x;
+			float v6y = vertexY[triangleC] - v1y;
+			float v6z = vertexZ[triangleC] - v1z;
+
+			float v7x = v2y * v3z - v2z * v3y;
+			float v7y = v2z * v3x - v2x * v3z;
+			float v7z = v2x * v3y - v2y * v3x;
+
+			float v8x = v3y * v7z - v3z * v7y;
+			float v8y = v3z * v7x - v3x * v7z;
+			float v8z = v3x * v7y - v3y * v7x;
+			float denominator = v8x * v2x + v8y * v2y + v8z * v2z;
+			if (Math.abs(denominator) < 1.0e-6f)
+			{
+				return null;
+			}
+
+			float factor = 1.0f / denominator;
+			float u0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
+			float u1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
+			float u2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
+
+			v8x = v2y * v7z - v2z * v7y;
+			v8y = v2z * v7x - v2x * v7z;
+			v8z = v2x * v7y - v2y * v7x;
+			denominator = v8x * v3x + v8y * v3y + v8z * v3z;
+			if (Math.abs(denominator) < 1.0e-6f)
+			{
+				return null;
+			}
+
+			factor = 1.0f / denominator;
+			float v0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
+			float v1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
+			float v2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
+			return new TextureUvs(u0, v0, u1, v1, u2, v2);
+		}
+
+		return new TextureUvs(0f, 0f, 1f, 0f, 0f, 1f);
+	}
+
+	private void rasterizeTexturedFace(int[] imagePixels, int imageWidth, int imageHeight, Rectangle imageBounds, double qualityScale, FaceDraw face)
+	{
+		TextureSample textureSample = face.getTextureSample();
+		if (textureSample == null)
+		{
+			return;
+		}
+
+		float x0 = scaleCoordinate(face.getPolygon().xpoints[0], imageBounds.x, qualityScale);
+		float y0 = scaleCoordinate(face.getPolygon().ypoints[0], imageBounds.y, qualityScale);
+		float x1 = scaleCoordinate(face.getPolygon().xpoints[1], imageBounds.x, qualityScale);
+		float y1 = scaleCoordinate(face.getPolygon().ypoints[1], imageBounds.y, qualityScale);
+		float x2 = scaleCoordinate(face.getPolygon().xpoints[2], imageBounds.x, qualityScale);
+		float y2 = scaleCoordinate(face.getPolygon().ypoints[2], imageBounds.y, qualityScale);
+
+		float area = edge(x0, y0, x1, y1, x2, y2);
+		if (Math.abs(area) < 1.0e-6f)
+		{
+			return;
+		}
+
+		int minX = clampRasterCoordinate((int) Math.floor(Math.min(x0, Math.min(x1, x2))), imageWidth);
+		int maxX = clampRasterCoordinate((int) Math.ceil(Math.max(x0, Math.max(x1, x2))), imageWidth);
+		int minY = clampRasterCoordinate((int) Math.floor(Math.min(y0, Math.min(y1, y2))), imageHeight);
+		int maxY = clampRasterCoordinate((int) Math.ceil(Math.max(y0, Math.max(y1, y2))), imageHeight);
+		if (minX > maxX || minY > maxY)
+		{
+			return;
+		}
+
+		Color shade = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
+		TextureUvs textureUvs = face.getTextureUvs();
+		for (int y = minY; y <= maxY; y++)
+		{
+			float py = y + 0.5f;
+			for (int x = minX; x <= maxX; x++)
+			{
+				float px = x + 0.5f;
+				float w0 = edge(x1, y1, x2, y2, px, py) / area;
+				float w1 = edge(x2, y2, x0, y0, px, py) / area;
+				float w2 = 1.0f - w0 - w1;
+				if (w0 < 0f || w1 < 0f || w2 < 0f)
+				{
+					continue;
+				}
+
+				float u = (float) wrapUnit((w0 * textureUvs.u0) + (w1 * textureUvs.u1) + (w2 * textureUvs.u2) + textureSample.uOffset);
+				float v = (float) wrapUnit((w0 * textureUvs.v0) + (w1 * textureUvs.v1) + (w2 * textureUvs.v2) + textureSample.vOffset);
+				int textureX = Math.min(textureSample.entry.width - 1, (int) (u * textureSample.entry.width));
+				int textureY = Math.min(textureSample.entry.height - 1, (int) (v * textureSample.entry.height));
+				int samplePixel = textureSample.entry.pixels[(textureY * textureSample.entry.width) + textureX];
+				if ((samplePixel >>> 24) == 0 && (samplePixel & 0xFFFFFF) == 0)
+				{
+					continue;
+				}
+
+				int shadedPixel = modulateTexturePixel(samplePixel, shade);
+				int pixelIndex = (y * imageWidth) + x;
+				imagePixels[pixelIndex] = blendPixel(imagePixels[pixelIndex], shadedPixel);
+			}
+		}
+	}
+
+	private static Polygon scalePolygon(Polygon source, Rectangle imageBounds, double qualityScale)
+	{
+		int[] xPoints = new int[source.npoints];
+		int[] yPoints = new int[source.npoints];
+		for (int i = 0; i < source.npoints; i++)
+		{
+			xPoints[i] = Math.round(scaleCoordinate(source.xpoints[i], imageBounds.x, qualityScale));
+			yPoints[i] = Math.round(scaleCoordinate(source.ypoints[i], imageBounds.y, qualityScale));
+		}
+
+		return new Polygon(xPoints, yPoints, source.npoints);
+	}
+
+	private static float scaleCoordinate(int coordinate, int origin, double qualityScale)
+	{
+		return (float) ((coordinate - origin) * qualityScale);
+	}
+
+	private static int clampRasterCoordinate(int coordinate, int dimension)
+	{
+		return Math.max(0, Math.min(dimension - 1, coordinate));
+	}
+
+	private static float edge(float ax, float ay, float bx, float by, float px, float py)
+	{
+		return ((px - ax) * (by - ay)) - ((py - ay) * (bx - ax));
+	}
+
+	private static float normalizeTextureOffset(float offset, int dimension)
+	{
+		if (!Float.isFinite(offset))
+		{
+			return 0f;
+		}
+
+		return Math.abs(offset) > 1.0f && dimension > 0 ? offset / dimension : offset;
+	}
+
+	private static int normalizeEquipmentItemId(int equipmentId)
+	{
+		if (equipmentId >= PlayerComposition.ITEM_OFFSET)
+		{
+			return equipmentId - PlayerComposition.ITEM_OFFSET;
+		}
+
+		return equipmentId;
+	}
+
+	private static boolean isAnimatedTextureId(int textureId)
+	{
+		for (int animatedTextureId : ANIMATED_TEXTURE_IDS)
+		{
+			if (animatedTextureId == textureId)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private float animatedTextureVOffset(long nowMillis, Texture texture)
+	{
+		double speedMultiplier = texture != null && texture.getAnimationSpeed() > 0
+			? texture.getAnimationSpeed()
+			: 1.0d;
+		double offset = (nowMillis / 1000.0d) * ANIMATED_TEXTURE_V_SCROLL_PER_SECOND * speedMultiplier;
+		return snappedAnimatedTextureOffset(offset);
+	}
+
+	private float snappedAnimatedTextureOffset(double offset)
+	{
+		offset = wrapUnit(offset);
+		if (!config.enableAnimationFrameSnapping())
+		{
+			return (float) offset;
+		}
+
+		int visibleFrameCount = Math.max(1, config.animationFrameCount());
+		double snapped = Math.round(offset * visibleFrameCount) / (double) visibleFrameCount;
+		return (float) wrapUnit(snapped);
+	}
+
+	private static double wrapUnit(double coordinate)
+	{
+		double wrapped = coordinate - Math.floor(coordinate);
+		return wrapped < 0.0d ? wrapped + 1.0d : wrapped;
+	}
+
+	private int modulateTexturePixel(int samplePixel, Color shade)
+	{
+		int sampleAlpha = (samplePixel >>> 24) & 0xFF;
+		if (sampleAlpha == 0 && (samplePixel & 0xFFFFFF) != 0)
+		{
+			sampleAlpha = 0xFF;
+		}
+
+		int alpha = (sampleAlpha * shade.getAlpha()) / 255;
+		int red = (((samplePixel >> 16) & 0xFF) * shade.getRed()) / 255;
+		int green = (((samplePixel >> 8) & 0xFF) * shade.getGreen()) / 255;
+		int blue = ((samplePixel & 0xFF) * shade.getBlue()) / 255;
+		return NpcSnapColorBanding.snapTexturePixel((alpha << 24) | (red << 16) | (green << 8) | blue, config.billboardColorBands());
+	}
+
+	private static int blendPixel(int destination, int source)
+	{
+		int sourceAlpha = (source >>> 24) & 0xFF;
+		if (sourceAlpha <= 0)
+		{
+			return destination;
+		}
+
+		if (sourceAlpha >= 0xFF)
+		{
+			return source;
+		}
+
+		int destinationAlpha = (destination >>> 24) & 0xFF;
+		int outAlpha = sourceAlpha + ((destinationAlpha * (255 - sourceAlpha)) / 255);
+		if (outAlpha <= 0)
+		{
+			return 0;
+		}
+
+		int inverseAlpha = 255 - sourceAlpha;
+		int sourceRed = (source >> 16) & 0xFF;
+		int sourceGreen = (source >> 8) & 0xFF;
+		int sourceBlue = source & 0xFF;
+		int destinationRed = (destination >> 16) & 0xFF;
+		int destinationGreen = (destination >> 8) & 0xFF;
+		int destinationBlue = destination & 0xFF;
+		int outRed = ((sourceRed * sourceAlpha) + (destinationRed * destinationAlpha * inverseAlpha / 255)) / outAlpha;
+		int outGreen = ((sourceGreen * sourceAlpha) + (destinationGreen * destinationAlpha * inverseAlpha / 255)) / outAlpha;
+		int outBlue = ((sourceBlue * sourceAlpha) + (destinationBlue * destinationAlpha * inverseAlpha / 255)) / outAlpha;
+		return (outAlpha << 24) | (outRed << 16) | (outGreen << 8) | outBlue;
 	}
 
 	private Rectangle buildDrawRect(Rectangle cachedBounds, int anchorX, int anchorY, int targetWidth, int targetHeight)
@@ -2104,12 +2582,16 @@ class NpcBillboardOverlay extends Overlay
 		private final Polygon polygon;
 		private final Color color;
 		private final double depth;
+		private final TextureSample textureSample;
+		private final TextureUvs textureUvs;
 
-		private FaceDraw(Polygon polygon, Color color, double depth)
+		private FaceDraw(Polygon polygon, Color color, double depth, TextureSample textureSample, TextureUvs textureUvs)
 		{
 			this.polygon = polygon;
 			this.color = color;
 			this.depth = depth;
+			this.textureSample = textureSample;
+			this.textureUvs = textureUvs;
 		}
 
 		private Polygon getPolygon()
@@ -2125,6 +2607,74 @@ class NpcBillboardOverlay extends Overlay
 		private double getDepth()
 		{
 			return depth;
+		}
+
+		private boolean isTextured()
+		{
+			return textureSample != null && textureUvs != null;
+		}
+
+		private TextureSample getTextureSample()
+		{
+			return textureSample;
+		}
+
+		private TextureUvs getTextureUvs()
+		{
+			return textureUvs;
+		}
+	}
+
+	private interface TimedCacheEntry
+	{
+		long lastUsedMillis();
+	}
+
+	private static final class BuiltFaces
+	{
+		private final List<FaceDraw> faces;
+		private final int textureStateHash;
+
+		private BuiltFaces(List<FaceDraw> faces, int textureStateHash)
+		{
+			this.faces = faces;
+			this.textureStateHash = textureStateHash;
+		}
+	}
+
+	private static final class TextureSample
+	{
+		private final TextureCacheEntry entry;
+		private final float uOffset;
+		private final float vOffset;
+		private final int stateHash;
+
+		private TextureSample(TextureCacheEntry entry, float uOffset, float vOffset, int stateHash)
+		{
+			this.entry = entry;
+			this.uOffset = uOffset;
+			this.vOffset = vOffset;
+			this.stateHash = stateHash;
+		}
+	}
+
+	private static final class TextureUvs
+	{
+		private final float u0;
+		private final float v0;
+		private final float u1;
+		private final float v1;
+		private final float u2;
+		private final float v2;
+
+		private TextureUvs(float u0, float v0, float u1, float v1, float u2, float v2)
+		{
+			this.u0 = u0;
+			this.v0 = v0;
+			this.u1 = u1;
+			this.v1 = v1;
+			this.u2 = u2;
+			this.v2 = v2;
 		}
 	}
 
@@ -2147,6 +2697,7 @@ class NpcBillboardOverlay extends Overlay
 		private final boolean solidInline;
 		private final int outlineColor;
 		private final int renderQuality;
+		private final int textureStateHash;
 
 		private BillboardCacheKey(
 			int animationId,
@@ -2165,7 +2716,8 @@ class NpcBillboardOverlay extends Overlay
 			boolean shadowInline,
 			boolean solidInline,
 			int outlineColor,
-			int renderQuality)
+			int renderQuality,
+			int textureStateHash)
 		{
 			this.animationId = animationId;
 			this.animationFrame = animationFrame;
@@ -2184,6 +2736,7 @@ class NpcBillboardOverlay extends Overlay
 			this.solidInline = solidInline;
 			this.outlineColor = outlineColor;
 			this.renderQuality = renderQuality;
+			this.textureStateHash = textureStateHash;
 		}
 
 		@Override
@@ -2214,7 +2767,8 @@ class NpcBillboardOverlay extends Overlay
 				&& shadowInline == that.shadowInline
 				&& solidInline == that.solidInline
 				&& outlineColor == that.outlineColor
-				&& renderQuality == that.renderQuality;
+				&& renderQuality == that.renderQuality
+				&& textureStateHash == that.textureStateHash;
 		}
 
 		@Override
@@ -2237,21 +2791,78 @@ class NpcBillboardOverlay extends Overlay
 			result = 31 * result + (solidInline ? 1 : 0);
 			result = 31 * result + outlineColor;
 			result = 31 * result + renderQuality;
+			result = 31 * result + textureStateHash;
 			return result;
 		}
 	}
 
-	private static final class CachedBillboard
+	private static final class CachedBillboard implements TimedCacheEntry
 	{
 		private final BillboardCacheKey key;
 		private final Rectangle bounds;
 		private final BufferedImage image;
+		private long lastUsedMillis;
+		private long lastRedrawMillis;
+		private boolean dirty;
 
-		private CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image)
+		private CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image, long lastUsedMillis)
 		{
 			this.key = key;
 			this.bounds = new Rectangle(bounds);
 			this.image = image;
+			this.lastUsedMillis = lastUsedMillis;
+			this.lastRedrawMillis = lastUsedMillis;
+			this.dirty = true;
+		}
+
+		private void touch(long nowMillis)
+		{
+			lastUsedMillis = nowMillis;
+		}
+
+		@Override
+		public long lastUsedMillis()
+		{
+			return lastUsedMillis;
+		}
+
+		private long lastRedrawMillis()
+		{
+			return lastRedrawMillis;
+		}
+
+		private boolean consumeDirty()
+		{
+			boolean wasDirty = dirty;
+			dirty = false;
+			return wasDirty;
+		}
+	}
+
+	private static final class TextureCacheEntry implements TimedCacheEntry
+	{
+		private final int[] pixels;
+		private final int width;
+		private final int height;
+		private long lastUsedMillis;
+
+		private TextureCacheEntry(int[] pixels, int width, int height, long lastUsedMillis)
+		{
+			this.pixels = pixels;
+			this.width = width;
+			this.height = height;
+			this.lastUsedMillis = lastUsedMillis;
+		}
+
+		private void touch(long nowMillis)
+		{
+			lastUsedMillis = nowMillis;
+		}
+
+		@Override
+		public long lastUsedMillis()
+		{
+			return lastUsedMillis;
 		}
 	}
 
@@ -2648,6 +3259,7 @@ class NpcBillboardOverlay extends Overlay
 		private final int animationFrame;
 		private final int poseAnimationId;
 		private final int poseAnimationFrame;
+		private final int animatedTextureId;
 		private final Rectangle hullBounds;
 		private final VerticalAnchor verticalAnchor;
 		private final NpcSnapDebug.FrameDebugInfo frameDebugInfo;
@@ -2664,6 +3276,7 @@ class NpcBillboardOverlay extends Overlay
 			int animationFrame,
 			int poseAnimationId,
 			int poseAnimationFrame,
+			int animatedTextureId,
 			Rectangle hullBounds,
 			VerticalAnchor verticalAnchor,
 			NpcSnapDebug.FrameDebugInfo frameDebugInfo
@@ -2680,6 +3293,7 @@ class NpcBillboardOverlay extends Overlay
 			this.animationFrame = animationFrame;
 			this.poseAnimationId = poseAnimationId;
 			this.poseAnimationFrame = poseAnimationFrame;
+			this.animatedTextureId = animatedTextureId;
 			this.hullBounds = hullBounds;
 			this.verticalAnchor = verticalAnchor;
 			this.frameDebugInfo = frameDebugInfo;

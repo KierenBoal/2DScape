@@ -31,6 +31,7 @@ class NpcSnapDebug
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 	private static final int LOCAL_TILE_SIZE = 128;
+	private static final int REDRAW_UNDERLAY_PADDING = 4;
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -82,15 +83,29 @@ class NpcSnapDebug
 			return;
 		}
 
-		if (config.debugShowCacheInvalidations() && renderDebug.cacheInvalidated)
-		{
-			graphics.setColor(INVALIDATION_RED);
-			graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-		}
-
 		if (config.debugShowRedraws() && renderDebug.spriteRedrawn && renderDebug.redrawFlashColor != null)
 		{
 			graphics.setColor(renderDebug.redrawFlashColor);
+			graphics.fillRect(
+				bounds.x - REDRAW_UNDERLAY_PADDING,
+				bounds.y - REDRAW_UNDERLAY_PADDING,
+				bounds.width + (REDRAW_UNDERLAY_PADDING * 2),
+				bounds.height + (REDRAW_UNDERLAY_PADDING * 2)
+			);
+		}
+	}
+
+	void drawBillboardDebugForeground(Graphics2D graphics, RenderDebug renderDebug)
+	{
+		Rectangle bounds = renderDebug.bounds;
+		if (bounds == null)
+		{
+			return;
+		}
+
+		if (config.debugShowCacheInvalidations() && renderDebug.cacheInvalidated)
+		{
+			graphics.setColor(INVALIDATION_RED);
 			graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 		}
 

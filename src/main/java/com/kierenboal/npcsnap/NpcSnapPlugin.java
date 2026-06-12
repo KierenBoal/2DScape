@@ -110,6 +110,7 @@ public class NpcSnapPlugin extends Plugin
 		restoreNpcState();
 		billboardOverlay.clearGroundItems();
 		billboardOverlay.clearTileObjects();
+		billboardOverlay.clearTextureCache();
 		skillingActivityTracker.clear();
 		pendingSkillXpSeed = false;
 		animationFrameSnapper.clear();
@@ -237,6 +238,7 @@ public class NpcSnapPlugin extends Plugin
 			|| "globalTextureColorBands".equals(configChanged.getKey()))
 		{
 			textureBandingPending = true;
+			billboardOverlay.clearTextureCache();
 		}
 	}
 
