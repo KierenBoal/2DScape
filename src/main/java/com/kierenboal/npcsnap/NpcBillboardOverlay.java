@@ -67,10 +67,21 @@ class NpcBillboardOverlay extends Overlay
 	private static final int MAX_DRAW_BILLBOARD_SIZE = 8192;
 	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
 	private static final int OUTLINE_PADDING = 1;
-	private static final long CACHE_TTL_MILLIS = 10_000L;
+	private static final long CACHE_TTL_MILLIS = 60_000L;
+	
 	private static final int[] ANIMATED_TEXTURE_IDS = {
+		
 		ItemID.TZHAAR_CAPE_FIRE,
-		ItemID.INFERNAL_CAPE
+		ItemID.TZHAAR_CAPE_FIRE_DUMMY,
+		ItemID.TZHAAR_CAPE_FIRE_TROUVER, 
+		ItemID.TZHAAR_CAPE_FIRE_BROKEN, 
+		
+		ItemID.INFERNAL_CAPE,
+		ItemID.INFERNAL_CAPE_DUMMY ,
+		ItemID.INFERNAL_CAPE_TROUVER,
+		ItemID.INFERNAL_CAPE_BROKEN,
+		ItemID.BR_INFERNAL_CAPE
+		
 	};
 	private static final float ANIMATED_TEXTURE_V_SCROLL_PER_SECOND = -0.25f;
 	private static final int RENDER_PRIORITY_NONE = -1;
@@ -95,8 +106,12 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
+	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
+	private float[] spriteXScratch = new float[0];
+	private float[] spriteYScratch = new float[0];
+	private float[] spriteDepthScratch = new float[0];
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 
 	@Inject
@@ -117,6 +132,7 @@ class NpcBillboardOverlay extends Overlay
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
 			clearActiveState();
+			clearBillboardCache();
 			return null;
 		}
 
@@ -124,12 +140,14 @@ class NpcBillboardOverlay extends Overlay
 		if (worldView == null)
 		{
 			clearActiveState();
+			clearBillboardCache();
 			return null;
 		}
 
 		if (!config.enable2dBillboardSprites())
 		{
 			clearActiveState();
+			clearBillboardCache();
 			return null;
 		}
 
@@ -166,7 +184,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		groundItems.remove(item);
-		billboardCache.remove(item);
+		removeCachedBillboard(item);
 		activeRenderableTargets.remove(item);
 		activeBillboards.remove(item);
 	}
@@ -175,7 +193,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		for (TileItem item : groundItems.keySet())
 		{
-			billboardCache.remove(item);
+			removeCachedBillboard(item);
 			activeRenderableTargets.remove(item);
 			activeBillboards.remove(item);
 		}
@@ -287,6 +305,8 @@ class NpcBillboardOverlay extends Overlay
 	{
 		synchronized (observedTileObjectsLock)
 		{
+			clearObservedTileObjectBillboards(observedTileObjects.values());
+			clearObservedTileObjectBillboards(visibleTileObjects.values());
 			observedTileObjects.clear();
 			visibleTileObjects.clear();
 		}
@@ -297,6 +317,35 @@ class NpcBillboardOverlay extends Overlay
 	void clearTextureCache()
 	{
 		textureCache.clear();
+	}
+
+	void clearBillboardCache()
+	{
+		for (CachedBillboard cached : billboardCache.values())
+		{
+			cached.flush();
+		}
+
+		billboardCache.clear();
+	}
+
+	private void clearObservedTileObjectBillboards(Collection<ObservedTileObject> observedTileObjects)
+	{
+		for (ObservedTileObject observed : observedTileObjects)
+		{
+			if (observed == null)
+			{
+				continue;
+			}
+
+			for (ObjectRenderablePart part : observed.parts)
+			{
+				if (part.renderable != null)
+				{
+					removeCachedBillboard(part.renderable);
+				}
+			}
+		}
 	}
 
 	void beginFrame()
@@ -1587,31 +1636,24 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		BufferedImage image = new BufferedImage(imageWidth, imageHeight, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D imageGraphics = image.createGraphics();
-		try
+		int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		for (FaceDraw face : faces)
 		{
-			int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-			for (FaceDraw face : faces)
+			if (face.isTextured())
 			{
-				if (face.isTextured())
-				{
-					rasterizeTexturedFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face);
-					continue;
-				}
-
-				imageGraphics.setColor(NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands()));
-				imageGraphics.fillPolygon(scalePolygon(face.getPolygon(), imageBounds, qualityScale));
+				rasterizeTexturedFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face);
+				continue;
 			}
-		}
-		finally
-		{
-			imageGraphics.dispose();
+
+			Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
+			rasterizeSolidFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face, snappedColor.getRGB());
 		}
 
 		if (hasAnyEdgeEffect())
 		{
 			BillboardOutlineRenderer.applyOutline(
 				image,
+				outlineScratch,
 				config.enableBillboardHighlightOutline(),
 				config.enableBillboardShadowOutline(),
 				config.enableBillboardSpriteOutline(),
@@ -1733,8 +1775,41 @@ class NpcBillboardOverlay extends Overlay
 
 	private void expireCaches(long nowMillis)
 	{
-		expireIdleEntries(billboardCache.entrySet().iterator(), nowMillis);
+		expireBillboardCache(nowMillis);
 		expireIdleEntries(textureCache.entrySet().iterator(), nowMillis);
+	}
+
+	private void expireBillboardCache(long nowMillis)
+	{
+		Iterator<Map.Entry<Renderable, CachedBillboard>> iterator = billboardCache.entrySet().iterator();
+		while (iterator.hasNext())
+		{
+			Map.Entry<Renderable, CachedBillboard> entry = iterator.next();
+			CachedBillboard cached = entry.getValue();
+			if (nowMillis - cached.lastUsedMillis() > CACHE_TTL_MILLIS)
+			{
+				cached.flush();
+				iterator.remove();
+			}
+		}
+	}
+
+	private void putCachedBillboard(Renderable renderable, CachedBillboard cached)
+	{
+		CachedBillboard previous = billboardCache.put(renderable, cached);
+		if (previous != null && previous != cached)
+		{
+			previous.flush();
+		}
+	}
+
+	private void removeCachedBillboard(Renderable renderable)
+	{
+		CachedBillboard cached = billboardCache.remove(renderable);
+		if (cached != null)
+		{
+			cached.flush();
+		}
 	}
 
 	private static <K, V extends TimedCacheEntry> void expireIdleEntries(Iterator<Map.Entry<K, V>> iterator, long nowMillis)
@@ -1767,6 +1842,18 @@ class NpcBillboardOverlay extends Overlay
 	private int qualityKey(double qualityScale)
 	{
 		return (int) Math.round(renderQualityScale(qualityScale) * 10_000.0d);
+	}
+
+	private void ensureSpriteScratchCapacity(int vertexCount)
+	{
+		if (spriteXScratch.length >= vertexCount)
+		{
+			return;
+		}
+
+		spriteXScratch = new float[vertexCount];
+		spriteYScratch = new float[vertexCount];
+		spriteDepthScratch = new float[vertexCount];
 	}
 
 	private double seededQualityScale(int nearPriorityIndex, int maxUpdatesPerFrame)
@@ -1961,12 +2048,6 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			Polygon polygon = new Polygon(
-				new int[]{Math.round(spriteX[a]), Math.round(spriteX[b]), Math.round(spriteX[c])},
-				new int[]{Math.round(spriteY[a]), Math.round(spriteY[b]), Math.round(spriteY[c])},
-				3
-			);
-
 			int alpha = transparencies == null || face >= transparencies.length ? 255 : 255 - (transparencies[face] & 0xFF);
 			Color color = applyLightBoost(resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha));
 
@@ -1984,12 +2065,34 @@ class NpcBillboardOverlay extends Overlay
 				if (textureSample != null && textureUvs != null)
 				{
 					textureStateHash = (31 * textureStateHash) + textureSample.stateHash;
-					faces.add(new FaceDraw(polygon, color, depth, textureSample, textureUvs));
+					faces.add(new FaceDraw(
+						Math.round(spriteX[a]),
+						Math.round(spriteY[a]),
+						Math.round(spriteX[b]),
+						Math.round(spriteY[b]),
+						Math.round(spriteX[c]),
+						Math.round(spriteY[c]),
+						color,
+						depth,
+						textureSample,
+						textureUvs
+					));
 					continue;
 				}
 			}
 
-			faces.add(new FaceDraw(polygon, color, depth, null, null));
+			faces.add(new FaceDraw(
+				Math.round(spriteX[a]),
+				Math.round(spriteY[a]),
+				Math.round(spriteX[b]),
+				Math.round(spriteY[b]),
+				Math.round(spriteX[c]),
+				Math.round(spriteY[c]),
+				color,
+				depth,
+				null,
+				null
+			));
 		}
 
 		return new BuiltFaces(faces, textureStateHash);
@@ -2029,14 +2132,10 @@ class NpcBillboardOverlay extends Overlay
 
 		for (FaceDraw face : faces)
 		{
-			Polygon polygon = face.getPolygon();
-			for (int i = 0; i < polygon.npoints; i++)
-			{
-				minX = Math.min(minX, polygon.xpoints[i]);
-				minY = Math.min(minY, polygon.ypoints[i]);
-				maxX = Math.max(maxX, polygon.xpoints[i]);
-				maxY = Math.max(maxY, polygon.ypoints[i]);
-			}
+			minX = Math.min(minX, Math.min(face.x0, Math.min(face.x1, face.x2)));
+			minY = Math.min(minY, Math.min(face.y0, Math.min(face.y1, face.y2)));
+			maxX = Math.max(maxX, Math.max(face.x0, Math.max(face.x1, face.x2)));
+			maxY = Math.max(maxY, Math.max(face.y0, Math.max(face.y1, face.y2)));
 		}
 
 		if (minX == Integer.MAX_VALUE)
@@ -2085,16 +2184,22 @@ class NpcBillboardOverlay extends Overlay
 			float[] verticesX = model.getVerticesX();
 			float[] verticesY = model.getVerticesY();
 			float[] verticesZ = model.getVerticesZ();
-			float[] spriteX = new float[vertexCount];
-			float[] spriteY = new float[vertexCount];
-			float[] spriteDepth = new float[vertexCount];
+			ensureSpriteScratchCapacity(vertexCount);
+			float[] spriteX = spriteXScratch;
+			float[] spriteY = spriteYScratch;
+			float[] spriteDepth = spriteDepthScratch;
+			double yawSin = Perspective.SINE[request.relativeYaw] / 65536.0;
+			double yawCos = Perspective.COSINE[request.relativeYaw] / 65536.0;
+			int inversePitch = Math.floorMod(-request.relativePitch, FULL_CIRCLE);
+			double pitchSin = Perspective.SINE[inversePitch] / 65536.0;
+			double pitchCos = Perspective.COSINE[inversePitch] / 65536.0;
 			for (int i = 0; i < vertexCount; i++)
 			{
-				double[] yawRotated = rotateYaw(verticesX[i], verticesZ[i], request.relativeYaw);
-				double[] pitchRotated = rotatePitch(verticesY[i], yawRotated[1], request.relativePitch);
-				spriteX[i] = (float) yawRotated[0];
-				spriteY[i] = (float) pitchRotated[0];
-				spriteDepth[i] = (float) pitchRotated[1];
+				double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
+				double rotatedZ = (verticesZ[i] * yawCos) - (verticesX[i] * yawSin);
+				spriteX[i] = (float) rotatedX;
+				spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
+				spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
 			}
 
 			BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId);
@@ -2107,6 +2212,11 @@ class NpcBillboardOverlay extends Overlay
 				{
 					int outlinePadding = outlinePadding();
 					Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
+					if (buildDrawRect(request, renderable, imageBounds) == null)
+					{
+						return null;
+					}
+
 					BillboardCacheKey cacheKey = buildCacheKey(
 						request,
 						outlinePadding,
@@ -2120,7 +2230,7 @@ class NpcBillboardOverlay extends Overlay
 						if (image != null)
 						{
 							cached = new CachedBillboard(cacheKey, imageBounds, image, nowMillis);
-							billboardCache.put(renderable, cached);
+							putCachedBillboard(renderable, cached);
 							spriteRedrawn = true;
 						}
 					}
@@ -2142,36 +2252,7 @@ class NpcBillboardOverlay extends Overlay
 			cached.touch(nowMillis);
 		}
 
-		Point basePoint = Perspective.localToCanvas(client, localPoint, request.plane, request.verticalOffset);
-		Point topPoint = Perspective.localToCanvas(client, localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
-		Rectangle hullBounds = request.hullBounds;
-		if (basePoint == null)
-		{
-			return null;
-		}
-
-		double distance = cameraDistance(localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
-		if (!isUsableDistance(distance))
-		{
-			return null;
-		}
-
-		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
-		int distanceHeight = scaledSize(cached.bounds.height, perspectiveScale);
-		int projectedHeight = projectedHeight(basePoint, topPoint);
-		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
-		int targetHeight = hullHeight > 0
-			? hullHeight
-			: distanceHeight > 0 ? distanceHeight : projectedHeight;
-		int targetWidth = aspectWidth(cached.bounds, targetHeight);
-		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
-		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
-		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
-		{
-			return null;
-		}
-
-		Rectangle drawRect = buildDrawRect(cached.bounds, anchorX, anchorY, targetWidth, targetHeight);
+		Rectangle drawRect = buildDrawRect(request, renderable, cached.bounds);
 		if (drawRect == null)
 		{
 			return null;
@@ -2419,23 +2500,23 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		float x0 = scaleCoordinate(face.getPolygon().xpoints[0], imageBounds.x, qualityScale);
-		float y0 = scaleCoordinate(face.getPolygon().ypoints[0], imageBounds.y, qualityScale);
-		float x1 = scaleCoordinate(face.getPolygon().xpoints[1], imageBounds.x, qualityScale);
-		float y1 = scaleCoordinate(face.getPolygon().ypoints[1], imageBounds.y, qualityScale);
-		float x2 = scaleCoordinate(face.getPolygon().xpoints[2], imageBounds.x, qualityScale);
-		float y2 = scaleCoordinate(face.getPolygon().ypoints[2], imageBounds.y, qualityScale);
+		float x0 = scaleCoordinate(face.x0, imageBounds.x, qualityScale);
+		float y0 = scaleCoordinate(face.y0, imageBounds.y, qualityScale);
+		float x1 = scaleCoordinate(face.x1, imageBounds.x, qualityScale);
+		float y1 = scaleCoordinate(face.y1, imageBounds.y, qualityScale);
+		float x2 = scaleCoordinate(face.x2, imageBounds.x, qualityScale);
+		float y2 = scaleCoordinate(face.y2, imageBounds.y, qualityScale);
 
-		float area = edge(x0, y0, x1, y1, x2, y2);
+		float area = BillboardTriangleRasterizer.edge(x0, y0, x1, y1, x2, y2);
 		if (Math.abs(area) < 1.0e-6f)
 		{
 			return;
 		}
 
-		int minX = clampRasterCoordinate((int) Math.floor(Math.min(x0, Math.min(x1, x2))), imageWidth);
-		int maxX = clampRasterCoordinate((int) Math.ceil(Math.max(x0, Math.max(x1, x2))), imageWidth);
-		int minY = clampRasterCoordinate((int) Math.floor(Math.min(y0, Math.min(y1, y2))), imageHeight);
-		int maxY = clampRasterCoordinate((int) Math.ceil(Math.max(y0, Math.max(y1, y2))), imageHeight);
+		int minX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(x0, Math.min(x1, x2))), imageWidth);
+		int maxX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(x0, Math.max(x1, x2))), imageWidth);
+		int minY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(y0, Math.min(y1, y2))), imageHeight);
+		int maxY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(y0, Math.max(y1, y2))), imageHeight);
 		if (minX > maxX || minY > maxY)
 		{
 			return;
@@ -2446,11 +2527,12 @@ class NpcBillboardOverlay extends Overlay
 		for (int y = minY; y <= maxY; y++)
 		{
 			float py = y + 0.5f;
+			int row = y * imageWidth;
 			for (int x = minX; x <= maxX; x++)
 			{
 				float px = x + 0.5f;
-				float w0 = edge(x1, y1, x2, y2, px, py) / area;
-				float w1 = edge(x2, y2, x0, y0, px, py) / area;
+				float w0 = BillboardTriangleRasterizer.edge(x1, y1, x2, y2, px, py) / area;
+				float w1 = BillboardTriangleRasterizer.edge(x2, y2, x0, y0, px, py) / area;
 				float w2 = 1.0f - w0 - w1;
 				if (w0 < 0f || w1 < 0f || w2 < 0f)
 				{
@@ -2468,38 +2550,38 @@ class NpcBillboardOverlay extends Overlay
 				}
 
 				int shadedPixel = modulateTexturePixel(samplePixel, shade);
-				int pixelIndex = (y * imageWidth) + x;
-				imagePixels[pixelIndex] = blendPixel(imagePixels[pixelIndex], shadedPixel);
+				int pixelIndex = row + x;
+				imagePixels[pixelIndex] = BillboardTriangleRasterizer.blendPixel(imagePixels[pixelIndex], shadedPixel);
 			}
 		}
 	}
 
-	private static Polygon scalePolygon(Polygon source, Rectangle imageBounds, double qualityScale)
+	private static void rasterizeSolidFace(
+		int[] imagePixels,
+		int imageWidth,
+		int imageHeight,
+		Rectangle imageBounds,
+		double qualityScale,
+		FaceDraw face,
+		int argb)
 	{
-		int[] xPoints = new int[source.npoints];
-		int[] yPoints = new int[source.npoints];
-		for (int i = 0; i < source.npoints; i++)
-		{
-			xPoints[i] = Math.round(scaleCoordinate(source.xpoints[i], imageBounds.x, qualityScale));
-			yPoints[i] = Math.round(scaleCoordinate(source.ypoints[i], imageBounds.y, qualityScale));
-		}
-
-		return new Polygon(xPoints, yPoints, source.npoints);
+		BillboardTriangleRasterizer.rasterizeSolidTriangle(
+			imagePixels,
+			imageWidth,
+			imageHeight,
+			scaleCoordinate(face.x0, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y0, imageBounds.y, qualityScale),
+			scaleCoordinate(face.x1, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y1, imageBounds.y, qualityScale),
+			scaleCoordinate(face.x2, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y2, imageBounds.y, qualityScale),
+			argb
+		);
 	}
 
 	private static float scaleCoordinate(int coordinate, int origin, double qualityScale)
 	{
 		return (float) ((coordinate - origin) * qualityScale);
-	}
-
-	private static int clampRasterCoordinate(int coordinate, int dimension)
-	{
-		return Math.max(0, Math.min(dimension - 1, coordinate));
-	}
-
-	private static float edge(float ax, float ay, float bx, float by, float px, float py)
-	{
-		return ((px - ax) * (by - ay)) - ((py - ay) * (bx - ax));
 	}
 
 	private static float normalizeTextureOffset(float offset, int dimension)
@@ -2578,39 +2660,6 @@ class NpcBillboardOverlay extends Overlay
 		return NpcSnapColorBanding.snapTexturePixel((alpha << 24) | (red << 16) | (green << 8) | blue, config.billboardColorBands());
 	}
 
-	private static int blendPixel(int destination, int source)
-	{
-		int sourceAlpha = (source >>> 24) & 0xFF;
-		if (sourceAlpha <= 0)
-		{
-			return destination;
-		}
-
-		if (sourceAlpha >= 0xFF)
-		{
-			return source;
-		}
-
-		int destinationAlpha = (destination >>> 24) & 0xFF;
-		int outAlpha = sourceAlpha + ((destinationAlpha * (255 - sourceAlpha)) / 255);
-		if (outAlpha <= 0)
-		{
-			return 0;
-		}
-
-		int inverseAlpha = 255 - sourceAlpha;
-		int sourceRed = (source >> 16) & 0xFF;
-		int sourceGreen = (source >> 8) & 0xFF;
-		int sourceBlue = source & 0xFF;
-		int destinationRed = (destination >> 16) & 0xFF;
-		int destinationGreen = (destination >> 8) & 0xFF;
-		int destinationBlue = destination & 0xFF;
-		int outRed = ((sourceRed * sourceAlpha) + (destinationRed * destinationAlpha * inverseAlpha / 255)) / outAlpha;
-		int outGreen = ((sourceGreen * sourceAlpha) + (destinationGreen * destinationAlpha * inverseAlpha / 255)) / outAlpha;
-		int outBlue = ((sourceBlue * sourceAlpha) + (destinationBlue * destinationAlpha * inverseAlpha / 255)) / outAlpha;
-		return (outAlpha << 24) | (outRed << 16) | (outGreen << 8) | outBlue;
-	}
-
 	private Rectangle buildDrawRect(Rectangle cachedBounds, int anchorX, int anchorY, int targetWidth, int targetHeight)
 	{
 		double originX = (-cachedBounds.x) * (targetWidth / (double) cachedBounds.width);
@@ -2623,6 +2672,40 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return new Rectangle(drawX, drawY, targetWidth, targetHeight);
+	}
+
+	private Rectangle buildDrawRect(BillboardRenderRequest request, Renderable renderable, Rectangle billboardBounds)
+	{
+		Point basePoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
+		if (basePoint == null)
+		{
+			return null;
+		}
+
+		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
+		double distance = cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
+		if (!isUsableDistance(distance))
+		{
+			return null;
+		}
+
+		Rectangle hullBounds = request.hullBounds;
+		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
+		int distanceHeight = scaledSize(billboardBounds.height, perspectiveScale);
+		int projectedHeight = projectedHeight(basePoint, topPoint);
+		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
+		int targetHeight = hullHeight > 0
+			? hullHeight
+			: distanceHeight > 0 ? distanceHeight : projectedHeight;
+		int targetWidth = aspectWidth(billboardBounds, targetHeight);
+		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
+		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
+		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
+		{
+			return null;
+		}
+
+		return buildDrawRect(billboardBounds, anchorX, anchorY, targetWidth, targetHeight);
 	}
 
 	private int outlinePadding()
@@ -2842,25 +2925,6 @@ class NpcBillboardOverlay extends Overlay
 		return new Color(red, green, blue, color.getAlpha());
 	}
 
-	private static double[] rotateYaw(float x, float z, int orientation)
-	{
-		double sin = Perspective.SINE[orientation] / 65536.0;
-		double cos = Perspective.COSINE[orientation] / 65536.0;
-		double rotatedX = (x * cos) + (z * sin);
-		double rotatedZ = (z * cos) - (x * sin);
-		return new double[]{rotatedX, rotatedZ};
-	}
-
-	private static double[] rotatePitch(float y, double depth, int pitch)
-	{
-		int inversePitch = Math.floorMod(-pitch, FULL_CIRCLE);
-		double sin = Perspective.SINE[inversePitch] / 65536.0;
-		double cos = Perspective.COSINE[inversePitch] / 65536.0;
-		double rotatedY = (y * cos) - (depth * sin);
-		double rotatedDepth = (depth * cos) + (y * sin);
-		return new double[]{rotatedY, rotatedDepth};
-	}
-
 	private static Color packedHslToColor(int packedHsl, int alpha)
 	{
 		int hue = (packedHsl >> 10) & 0x3F;
@@ -2924,24 +2988,39 @@ class NpcBillboardOverlay extends Overlay
 
 	private static final class FaceDraw
 	{
-		private final Polygon polygon;
+		private final int x0;
+		private final int y0;
+		private final int x1;
+		private final int y1;
+		private final int x2;
+		private final int y2;
 		private final Color color;
 		private final double depth;
 		private final TextureSample textureSample;
 		private final TextureUvs textureUvs;
 
-		private FaceDraw(Polygon polygon, Color color, double depth, TextureSample textureSample, TextureUvs textureUvs)
+		private FaceDraw(
+			int x0,
+			int y0,
+			int x1,
+			int y1,
+			int x2,
+			int y2,
+			Color color,
+			double depth,
+			TextureSample textureSample,
+			TextureUvs textureUvs)
 		{
-			this.polygon = polygon;
+			this.x0 = x0;
+			this.y0 = y0;
+			this.x1 = x1;
+			this.y1 = y1;
+			this.x2 = x2;
+			this.y2 = y2;
 			this.color = color;
 			this.depth = depth;
 			this.textureSample = textureSample;
 			this.textureUvs = textureUvs;
-		}
-
-		private Polygon getPolygon()
-		{
-			return polygon;
 		}
 
 		private Color getColor()
@@ -3262,6 +3341,11 @@ class NpcBillboardOverlay extends Overlay
 			boolean wasDirty = dirty;
 			dirty = false;
 			return wasDirty;
+		}
+
+		private void flush()
+		{
+			image.flush();
 		}
 	}
 

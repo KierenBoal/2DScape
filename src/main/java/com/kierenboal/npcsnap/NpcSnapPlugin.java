@@ -110,6 +110,7 @@ public class NpcSnapPlugin extends Plugin
 		restoreNpcState();
 		billboardOverlay.clearGroundItems();
 		billboardOverlay.clearTileObjects();
+		billboardOverlay.clearBillboardCache();
 		billboardOverlay.clearTextureCache();
 		skillingActivityTracker.clear();
 		pendingSkillXpSeed = false;

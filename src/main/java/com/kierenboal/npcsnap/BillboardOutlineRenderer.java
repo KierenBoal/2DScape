@@ -2,6 +2,8 @@ package com.kierenboal.npcsnap;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+import java.util.Arrays;
 import java.util.ArrayDeque;
 
 final class BillboardOutlineRenderer
@@ -27,6 +29,20 @@ final class BillboardOutlineRenderer
 		boolean solidInline,
 		Color solidOutlineColor)
 	{
+		applyOutline(image, new Scratch(), highlightOutline, shadowOutline, solidOutline, highlightInline, shadowInline, solidInline, solidOutlineColor);
+	}
+
+	static void applyOutline(
+		BufferedImage image,
+		Scratch scratch,
+		boolean highlightOutline,
+		boolean shadowOutline,
+		boolean solidOutline,
+		boolean highlightInline,
+		boolean shadowInline,
+		boolean solidInline,
+		Color solidOutlineColor)
+	{
 		int width = image.getWidth();
 		int height = image.getHeight();
 		if (width <= 0 || height <= 0 || (!highlightOutline && !shadowOutline && !solidOutline && !highlightInline && !shadowInline && !solidInline))
@@ -34,23 +50,30 @@ final class BillboardOutlineRenderer
 			return;
 		}
 
-		int[] sourcePixels = image.getRGB(0, 0, width, height, null, 0, width);
-		int[] resultPixels = sourcePixels.clone();
-		boolean[] visited = new boolean[width * height];
-		boolean[] exteriorTransparentBoundary = new boolean[width * height];
-		boolean[] exteriorOpaqueBoundary = new boolean[width * height];
-		ArrayDeque<Integer> queue = new ArrayDeque<>();
-
-		enqueueBorderTransparentPixels(sourcePixels, width, height, visited, queue);
-		while (!queue.isEmpty())
+		if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt))
 		{
-			int index = queue.removeFirst();
+			return;
+		}
+
+		int pixelCount = width * height;
+		int[] sourcePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		scratch.ensureCapacity(pixelCount);
+		System.arraycopy(sourcePixels, 0, scratch.resultPixels, 0, pixelCount);
+		Arrays.fill(scratch.visited, 0, pixelCount, false);
+		Arrays.fill(scratch.exteriorTransparentBoundary, 0, pixelCount, false);
+		Arrays.fill(scratch.exteriorOpaqueBoundary, 0, pixelCount, false);
+		scratch.queue.clear();
+
+		enqueueBorderTransparentPixels(sourcePixels, width, height, scratch.visited, scratch.queue);
+		while (!scratch.queue.isEmpty())
+		{
+			int index = scratch.queue.removeFirst();
 			int x = index % width;
 			int y = index / width;
 			if (hasOpaqueNeighbor(sourcePixels, width, height, x, y))
 			{
-				exteriorTransparentBoundary[index] = true;
-				markOpaqueNeighbors(sourcePixels, width, height, x, y, exteriorOpaqueBoundary);
+				scratch.exteriorTransparentBoundary[index] = true;
+				markOpaqueNeighbors(sourcePixels, width, height, x, y, scratch.exteriorOpaqueBoundary);
 			}
 
 			for (int i = 0; i < CARDINAL_X.length; i++)
@@ -63,19 +86,41 @@ final class BillboardOutlineRenderer
 				}
 
 				int nextIndex = nextY * width + nextX;
-				if (visited[nextIndex] || isOpaque(sourcePixels[nextIndex]))
+				if (scratch.visited[nextIndex] || isOpaque(sourcePixels[nextIndex]))
 				{
 					continue;
 				}
 
-				visited[nextIndex] = true;
-				queue.addLast(nextIndex);
+				scratch.visited[nextIndex] = true;
+				scratch.queue.addLast(nextIndex);
 			}
 		}
 
-		applyExteriorBoundary(sourcePixels, resultPixels, width, height, exteriorTransparentBoundary, highlightOutline, shadowOutline, solidOutline, solidOutlineColor);
-		applyInteriorBoundary(sourcePixels, resultPixels, width, height, exteriorOpaqueBoundary, highlightInline, shadowInline, solidInline, solidOutlineColor);
-		image.setRGB(0, 0, width, height, resultPixels, 0, width);
+		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, shadowOutline, solidOutline, solidOutlineColor);
+		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, highlightInline, shadowInline, solidInline, solidOutlineColor);
+		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
+	}
+
+	static final class Scratch
+	{
+		private int[] resultPixels = new int[0];
+		private boolean[] visited = new boolean[0];
+		private boolean[] exteriorTransparentBoundary = new boolean[0];
+		private boolean[] exteriorOpaqueBoundary = new boolean[0];
+		private final ArrayDeque<Integer> queue = new ArrayDeque<>();
+
+		private void ensureCapacity(int capacity)
+		{
+			if (resultPixels.length >= capacity)
+			{
+				return;
+			}
+
+			resultPixels = new int[capacity];
+			visited = new boolean[capacity];
+			exteriorTransparentBoundary = new boolean[capacity];
+			exteriorOpaqueBoundary = new boolean[capacity];
+		}
 	}
 
 	private static void applyExteriorBoundary(
