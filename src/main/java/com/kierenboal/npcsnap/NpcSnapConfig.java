@@ -293,21 +293,6 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@Range(
-		min = 2,
-		max = 256
-	)
-	@ConfigItem(
-		keyName = "billboardPaletteSize",
-		name = "(unused) Billboard palette size",
-		description = "Maximum number of colors used by each billboard sprite after quantization and dithering",
-		section = billboardSection
-	)
-	default int billboardPaletteSize()
-	{
-		return 128;
-	}
-
-	@Range(
 		min = 1,
 		max = 64
 	)

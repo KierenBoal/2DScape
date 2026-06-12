@@ -49,7 +49,6 @@ class NpcBillboardOverlay extends Overlay
 	private static final int FULL_CIRCLE = 2048;
 	private static final int MAX_PITCH = 512;
 	private static final int LOCAL_TILE_SIZE = 128;
-	private static final int TRANSPARENT = 0;
 	private static final int COMBAT_YAW = 512;
 	private static final int OPPOSITE_COMBAT_YAW = 1536;
 	private static final boolean USE_UNLIT_COLORS = true;
@@ -96,26 +95,20 @@ class NpcBillboardOverlay extends Overlay
 	{
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
-			activeBillboards.clear();
-			activeTileObjects.clear();
-			clearActiveSnapshots();
+			clearActiveState();
 			return null;
 		}
 
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView == null)
 		{
-			activeBillboards.clear();
-			activeTileObjects.clear();
-			clearActiveSnapshots();
+			clearActiveState();
 			return null;
 		}
 
 		if (!config.enable2dBillboardSprites())
 		{
-			activeBillboards.clear();
-			activeTileObjects.clear();
-			clearActiveSnapshots();
+			clearActiveState();
 			drawDebugBoundingBoxes(graphics, worldView);
 			return null;
 		}
@@ -195,6 +188,14 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		groundItems.clear();
+	}
+
+	private void clearActiveState()
+	{
+		activeRenderableTargets.clear();
+		activeBillboards.clear();
+		activeTileObjects.clear();
+		clearActiveSnapshots();
 	}
 
 	private void clearActiveSnapshots()
@@ -403,13 +404,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		debug.drawBillboardDebug(graphics, NpcSnapDebug.RenderDebug.forBounds(
-			result.bounds,
-			paintOrder,
-			result.cacheInvalidated,
-			result.spriteRedrawn,
-			request.frameDebugInfo
-		));
+		drawRenderDebug(graphics, result, request, paintOrder);
 	}
 
 	private void renderTileObjectTarget(Graphics2D graphics, BillboardTarget target, int paintOrder)
@@ -433,14 +428,19 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			debug.drawBillboardDebug(graphics, NpcSnapDebug.RenderDebug.forBounds(
-				result.bounds,
-				paintOrder,
-				result.cacheInvalidated,
-				result.spriteRedrawn,
-				request.frameDebugInfo
-			));
+			drawRenderDebug(graphics, result, request, paintOrder);
 		}
+	}
+
+	private void drawRenderDebug(Graphics2D graphics, BillboardRenderResult result, BillboardRenderRequest request, int paintOrder)
+	{
+		debug.drawBillboardDebug(graphics, NpcSnapDebug.RenderDebug.forBounds(
+			result.bounds,
+			paintOrder,
+			result.cacheInvalidated,
+			result.spriteRedrawn,
+			request.frameDebugInfo
+		));
 	}
 
 	private List<BillboardTarget> getVisibleTargets(WorldView worldView)
@@ -528,6 +528,7 @@ class NpcBillboardOverlay extends Overlay
 		activeBillboardsGameCycle = gameCycle;
 		if (!config.enable2dBillboardSprites() || client.getGameState() != GameState.LOGGED_IN || worldView == null)
 		{
+			clearActiveSnapshots();
 			return;
 		}
 
@@ -549,9 +550,15 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
+		updateActiveSnapshots();
+	}
+
+	private void updateActiveSnapshots()
+	{
 		activeBillboardSnapshot = new HashSet<>(activeBillboards);
-		activeTileObjectSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
-		activeTileObjectSnapshot.addAll(activeTileObjects);
+		Set<TileObject> tileObjectSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
+		tileObjectSnapshot.addAll(activeTileObjects);
+		activeTileObjectSnapshot = tileObjectSnapshot;
 	}
 
 	private List<BillboardTarget> collectCandidates(WorldView worldView)
@@ -1270,7 +1277,6 @@ class NpcBillboardOverlay extends Overlay
 			imageGraphics.translate(-imageBounds.x, -imageBounds.y);
 			for (FaceDraw face : faces)
 			{
-				//imageGraphics.setColor(face.getColor());
 				imageGraphics.setColor(NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands()));
 				imageGraphics.fillPolygon(face.getPolygon());
 			}
@@ -1294,8 +1300,6 @@ class NpcBillboardOverlay extends Overlay
 			);
 		}
 
-		//disabled quantize for now
-		//quantize(image, config.billboardPaletteSize());
 		return image;
 	}
 
@@ -1658,167 +1662,6 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
-	private static void quantize(BufferedImage image, int paletteSize)
-	{
-		int width = image.getWidth();
-		int height = image.getHeight();
-		int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
-		int[] palette = buildPalette(pixels, Math.max(2, paletteSize));
-		if (palette.length == 0)
-		{
-			return;
-		}
-
-		float[] redError = new float[pixels.length];
-		float[] greenError = new float[pixels.length];
-		float[] blueError = new float[pixels.length];
-
-		for (int y = 0; y < height; y++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				int index = (y * width) + x;
-				int argb = pixels[index];
-				int alpha = (argb >>> 24) & 0xFF;
-				if (alpha == 0)
-				{
-					pixels[index] = TRANSPARENT;
-					continue;
-				}
-
-				float sourceR = clampChannel(((argb >> 16) & 0xFF) + redError[index]);
-				float sourceG = clampChannel(((argb >> 8) & 0xFF) + greenError[index]);
-				float sourceB = clampChannel((argb & 0xFF) + blueError[index]);
-				int nearest = nearestColor(palette, sourceR, sourceG, sourceB);
-				pixels[index] = (alpha << 24) | nearest;
-
-				float errorR = sourceR - ((nearest >> 16) & 0xFF);
-				float errorG = sourceG - ((nearest >> 8) & 0xFF);
-				float errorB = sourceB - (nearest & 0xFF);
-
-				diffuse(width, height, x, y, redError, greenError, blueError, errorR, errorG, errorB);
-			}
-		}
-
-		image.setRGB(0, 0, width, height, pixels, 0, width);
-	}
-
-	private static int[] buildPalette(int[] pixels, int paletteSize)
-	{
-		Map<Integer, Integer> histogram = new HashMap<>();
-		for (int pixel : pixels)
-		{
-			int alpha = (pixel >>> 24) & 0xFF;
-			if (alpha == 0)
-			{
-				continue;
-			}
-
-			int bucket = quantizeBucket(pixel);
-			histogram.merge(bucket, 1, Integer::sum);
-		}
-
-		if (histogram.isEmpty())
-		{
-			return new int[0];
-		}
-
-		return histogram.entrySet().stream()
-			.sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
-			.limit(paletteSize)
-			.mapToInt(entry -> bucketToColor(entry.getKey()))
-			.toArray();
-	}
-
-	private static int quantizeBucket(int argb)
-	{
-		int red = (argb >> 16) & 0xFF;
-		int green = (argb >> 8) & 0xFF;
-		int blue = argb & 0xFF;
-		int r = red >> 3;
-		int g = green >> 3;
-		int b = blue >> 3;
-		return (r << 10) | (g << 5) | b;
-	}
-
-	private static int bucketToColor(int bucket)
-	{
-		int red = ((bucket >> 10) & 0x1F) * 255 / 31;
-		int green = ((bucket >> 5) & 0x1F) * 255 / 31;
-		int blue = (bucket & 0x1F) * 255 / 31;
-		return (red << 16) | (green << 8) | blue;
-	}
-
-	private static int nearestColor(int[] palette, float red, float green, float blue)
-	{
-		int nearest = palette[0];
-		float bestDistance = Float.MAX_VALUE;
-
-		for (int color : palette)
-		{
-			float dr = red - ((color >> 16) & 0xFF);
-			float dg = green - ((color >> 8) & 0xFF);
-			float db = blue - (color & 0xFF);
-			float distance = (dr * dr) + (dg * dg) + (db * db);
-			if (distance < bestDistance)
-			{
-				bestDistance = distance;
-				nearest = color;
-			}
-		}
-
-		return nearest;
-	}
-
-	private static void diffuse(
-		int width,
-		int height,
-		int x,
-		int y,
-		float[] redError,
-		float[] greenError,
-		float[] blueError,
-		float errorR,
-		float errorG,
-		float errorB
-	)
-	{
-		applyError(width, height, x + 1, y, redError, greenError, blueError, errorR, errorG, errorB, 7.0f / 16.0f);
-		applyError(width, height, x - 1, y + 1, redError, greenError, blueError, errorR, errorG, errorB, 3.0f / 16.0f);
-		applyError(width, height, x, y + 1, redError, greenError, blueError, errorR, errorG, errorB, 5.0f / 16.0f);
-		applyError(width, height, x + 1, y + 1, redError, greenError, blueError, errorR, errorG, errorB, 1.0f / 16.0f);
-	}
-
-	private static void applyError(
-		int width,
-		int height,
-		int x,
-		int y,
-		float[] redError,
-		float[] greenError,
-		float[] blueError,
-		float errorR,
-		float errorG,
-		float errorB,
-		float weight
-	)
-	{
-		if (x < 0 || y < 0 || x >= width || y >= height)
-		{
-			return;
-		}
-
-		int index = (y * width) + x;
-		redError[index] += errorR * weight;
-		greenError[index] += errorG * weight;
-		blueError[index] += errorB * weight;
-	}
-
-	private static float clampChannel(float channel)
-	{
-		return Math.max(0.0f, Math.min(255.0f, channel));
-	}
-
 	private BillboardRenderResult renderRenderableBillboard(Graphics2D graphics, BillboardRenderRequest request)
 	{
 		Renderable renderable = request.renderable;
@@ -1866,25 +1709,7 @@ class NpcBillboardOverlay extends Overlay
 		int outlinePadding = outlinePadding();
 		Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
 
-		BillboardCacheKey cacheKey = new BillboardCacheKey(
-			request.animationId,
-			request.animationFrame,
-			request.poseAnimationId,
-			request.poseAnimationFrame,
-			request.relativeYaw,
-			request.relativePitch,
-			config.billboardColorBands(),
-			config.billboardLightBoostPercent(),
-			outlinePadding,
-			config.enableBillboardHighlightOutline(),
-			config.enableBillboardShadowOutline(),
-			config.enableBillboardSpriteOutline(),
-			config.enableBillboardHighlightInline(),
-			config.enableBillboardShadowInline(),
-			config.enableBillboardSpriteInline(),
-			config.billboardSpriteOutlineColor().getRGB(),
-			qualityKey()
-		);
+		BillboardCacheKey cacheKey = buildCacheKey(request, outlinePadding);
 		CachedBillboard cached = billboardCache.get(renderable);
 		boolean cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds);
 		boolean spriteRedrawn = false;
@@ -1930,8 +1755,43 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		double originX = (-cached.bounds.x) * (targetWidth / (double) cached.bounds.width);
-		double originY = (-cached.bounds.y) * (targetHeight / (double) cached.bounds.height);
+		Rectangle drawRect = buildDrawRect(cached.bounds, anchorX, anchorY, targetWidth, targetHeight);
+		if (drawRect == null)
+		{
+			return null;
+		}
+
+		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
+		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteRedrawn);
+	}
+
+	private BillboardCacheKey buildCacheKey(BillboardRenderRequest request, int outlinePadding)
+	{
+		return new BillboardCacheKey(
+			request.animationId,
+			request.animationFrame,
+			request.poseAnimationId,
+			request.poseAnimationFrame,
+			request.relativeYaw,
+			request.relativePitch,
+			config.billboardColorBands(),
+			config.billboardLightBoostPercent(),
+			outlinePadding,
+			config.enableBillboardHighlightOutline(),
+			config.enableBillboardShadowOutline(),
+			config.enableBillboardSpriteOutline(),
+			config.enableBillboardHighlightInline(),
+			config.enableBillboardShadowInline(),
+			config.enableBillboardSpriteInline(),
+			config.billboardSpriteOutlineColor().getRGB(),
+			qualityKey()
+		);
+	}
+
+	private Rectangle buildDrawRect(Rectangle cachedBounds, int anchorX, int anchorY, int targetWidth, int targetHeight)
+	{
+		double originX = (-cachedBounds.x) * (targetWidth / (double) cachedBounds.width);
+		double originY = (-cachedBounds.y) * (targetHeight / (double) cachedBounds.height);
 		int drawX = (int) Math.round(anchorX - originX);
 		int drawY = (int) Math.round(anchorY - originY);
 		if (!isUsableDrawSize(targetWidth, targetHeight) || isOutsideViewport(drawX, drawY, targetWidth, targetHeight))
@@ -1939,9 +1799,7 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		Rectangle drawRect = new Rectangle(drawX, drawY, targetWidth, targetHeight);
-		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
-		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteRedrawn);
+		return new Rectangle(drawX, drawY, targetWidth, targetHeight);
 	}
 
 	private int outlinePadding()
@@ -2030,7 +1888,6 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativeYaw(Actor actor)
 	{
-		//int rawRelativeYaw = actor.getCurrentOrientation() - client.getCameraYaw();
 		int rawRelativeYaw = client.getCameraYaw() + actor.getCurrentOrientation();
 		if (shouldCombatSnap(actor))
 		{
@@ -2106,7 +1963,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		int res = snapPitchByAngles(rawPitch, 0, config.numberOfPitchRotationAngles());
-		//invert as NPCs rotate negatively to look upwards
+		// Invert because model pitch is applied opposite to camera pitch.
 		return -res;
 	}
 
