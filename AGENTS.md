@@ -161,3 +161,6 @@ New high-end PvM boss plugins are not accepted as a blanket policy.
 
 - No adult or overtly sexual content
 - No plugins that use player-provided IDs for their entire functionality (causes moderation issues)
+
+## Bonus Instructions
+- Stop offering to run RuneLite for me, I will run it myself.

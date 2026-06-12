@@ -398,6 +398,9 @@ public class NpcSnapPlugin extends Plugin
 
 	private void applyGlobalTextureQuality()
 	{
+		
+		log.debug("applyGlobalTextureQuality");
+		
 		TextureProvider textureProvider = client.getTextureProvider();
 		if (textureProvider == null)
 		{
@@ -426,6 +429,7 @@ public class NpcSnapPlugin extends Plugin
 
 			if (pixels == null || pixels.length == 0)
 			{
+				log.debug("pixels null/empty for {}", textureId);
 				continue;
 			}
 

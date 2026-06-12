@@ -463,17 +463,6 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "debugDrawBoundingBox",
-		name = "Draw bounding box",
-		description = "Draw a static footprint and height box for billboarded NPCs, players, projectiles, and ground items",
-		section = debugSection
-	)
-	default boolean debugDrawBoundingBox()
-	{
-		return false;
-	}
-
-	@ConfigItem(
 		keyName = "debugDrawFrameNumber",
 		name = "Draw frame number",
 		description = "Draw the in-game animation frame and the frame currently forced by snapping",
@@ -491,17 +480,6 @@ public interface NpcSnapConfig extends Config
 		section = debugSection
 	)
 	default boolean debugShowCacheInvalidations()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "debugShowRedraws",
-		name = "Show redraws",
-		description = "Flash a random color for the frame where the cached billboard image is actually redrawn",
-		section = debugSection
-	)
-	default boolean debugShowRedraws()
 	{
 		return false;
 	}

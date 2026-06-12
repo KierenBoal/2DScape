@@ -85,6 +85,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
+	private final Object observedTileObjectsLock = new Object();
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = new HashSet<>();
 	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -123,7 +124,6 @@ class NpcBillboardOverlay extends Overlay
 		if (!config.enable2dBillboardSprites())
 		{
 			clearActiveState();
-			drawDebugBoundingBoxes(graphics, worldView);
 			return null;
 		}
 
@@ -133,34 +133,7 @@ class NpcBillboardOverlay extends Overlay
 			renderTarget(graphics, visibleTargets.get(i), i + 1);
 		}
 
-		drawDebugBoundingBoxes(graphics, visibleTargets);
 		return null;
-	}
-
-	private void drawDebugBoundingBoxes(Graphics2D graphics, WorldView worldView)
-	{
-		if (!config.debugDrawBoundingBox())
-		{
-			return;
-		}
-
-		List<BillboardTarget> candidates = collectCandidates(worldView);
-		candidates.sort(Comparator.comparingDouble(BillboardTarget::getDepth));
-		int limit = Math.max(1, config.billboardMaxEntities());
-		drawDebugBoundingBoxes(graphics, candidates.subList(0, Math.min(limit, candidates.size())));
-	}
-
-	private void drawDebugBoundingBoxes(Graphics2D graphics, List<BillboardTarget> targets)
-	{
-		if (!config.debugDrawBoundingBox())
-		{
-			return;
-		}
-
-		for (BillboardTarget target : targets)
-		{
-			drawDebugBoundingBox(graphics, target);
-		}
 	}
 
 	void trackGroundItem(TileItem item, Tile tile)
@@ -292,8 +265,11 @@ class NpcBillboardOverlay extends Overlay
 
 	void clearTileObjects()
 	{
-		observedTileObjects.clear();
-		visibleTileObjects.clear();
+		synchronized (observedTileObjectsLock)
+		{
+			observedTileObjects.clear();
+			visibleTileObjects.clear();
+		}
 		activeTileObjects.clear();
 		activeTileObjectSnapshot = Collections.emptySet();
 	}
@@ -306,9 +282,12 @@ class NpcBillboardOverlay extends Overlay
 	void beginFrame()
 	{
 		expireCaches(System.currentTimeMillis());
-		visibleTileObjects.clear();
-		visibleTileObjects.putAll(observedTileObjects);
-		observedTileObjects.clear();
+		synchronized (observedTileObjectsLock)
+		{
+			visibleTileObjects.clear();
+			visibleTileObjects.putAll(observedTileObjects);
+			observedTileObjects.clear();
+		}
 		activeBillboards.clear();
 		activeTileObjects.clear();
 		activeBillboardsGameCycle = Integer.MIN_VALUE;
@@ -319,7 +298,10 @@ class NpcBillboardOverlay extends Overlay
 		ObservedTileObject observed = buildObservedTileObject(tileObject);
 		if (observed != null)
 		{
-			observedTileObjects.put(tileObject, observed);
+			synchronized (observedTileObjectsLock)
+			{
+				observedTileObjects.put(tileObject, observed);
+			}
 		}
 	}
 
@@ -913,64 +895,6 @@ class NpcBillboardOverlay extends Overlay
 			VerticalAnchor.BOTTOM,
 			null
 		);
-	}
-
-	private void drawDebugBoundingBox(Graphics2D graphics, BillboardTarget target)
-	{
-		switch (target.type)
-		{
-			case NPC:
-			case PLAYER:
-			{
-				Actor actor = (Actor) target.renderable;
-				debug.drawRenderableBoundingBox(graphics, actor, actor.getLocalLocation(), actor.getWorldView().getPlane(), Math.max(0, actor.getAnimationHeightOffset()));
-				return;
-			}
-			case PROJECTILE:
-			{
-				Projectile projectile = (Projectile) target.renderable;
-				debug.drawRenderableBoundingBox(graphics, projectile, projectileLocalPoint(projectile), projectile.getFloor(), projectileVerticalOffset(projectile));
-				return;
-			}
-			case ACTOR_SPOT_ANIM:
-			{
-				Actor actor = target.parentActor;
-				ActorSpotAnim actorSpotAnim = (ActorSpotAnim) target.renderable;
-				if (actor == null)
-				{
-					return;
-				}
-
-				debug.drawRenderableBoundingBox(graphics, actorSpotAnim, actor.getLocalLocation(), actor.getWorldView().getPlane(), Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight()));
-				return;
-			}
-			case GRAPHICS_OBJECT:
-			{
-				GraphicsObject graphicsObject = (GraphicsObject) target.renderable;
-				debug.drawRenderableBoundingBox(graphics, graphicsObject, graphicsObject.getLocation(), graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()));
-				return;
-			}
-			case GROUND_ITEM:
-			{
-				debug.drawRenderableBoundingBox(graphics, target.renderable, target.groundItem.localPoint, target.groundItem.plane, 0);
-				return;
-			}
-			case TILE_OBJECT:
-			{
-				if (target.observedTileObject == null)
-				{
-					return;
-				}
-
-				for (ObjectRenderablePart part : target.observedTileObject.parts)
-				{
-					debug.drawRenderableBoundingBox(graphics, part.renderable, part.localPoint, part.plane, 0);
-				}
-				return;
-			}
-			default:
-				return;
-		}
 	}
 
 	private boolean isEligibleActor(LocalPoint localPlayerLocation, LocalPoint actorLocation, Actor actor, Rectangle viewport)

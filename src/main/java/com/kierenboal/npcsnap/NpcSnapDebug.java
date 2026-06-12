@@ -7,31 +7,20 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Stroke;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
-import net.runelite.api.Model;
-import net.runelite.api.Perspective;
-import net.runelite.api.Point;
-import net.runelite.api.Projectile;
-import net.runelite.api.Renderable;
-import net.runelite.api.TileItem;
-import net.runelite.api.coords.LocalPoint;
 
 @Singleton
 class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
 	private static final Color INVALIDATION_RED = new Color(255, 0, 0);
-	private static final Color BOUNDING_BOX_CYAN = new Color(0, 220, 255, 220);
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
-	private static final int LOCAL_TILE_SIZE = 128;
-	private static final int REDRAW_UNDERLAY_PADDING = 4;
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -77,22 +66,6 @@ class NpcSnapDebug
 
 	void drawBillboardDebug(Graphics2D graphics, RenderDebug renderDebug)
 	{
-		Rectangle bounds = renderDebug.bounds;
-		if (bounds == null)
-		{
-			return;
-		}
-
-		if (config.debugShowRedraws() && renderDebug.spriteRedrawn && renderDebug.redrawFlashColor != null)
-		{
-			graphics.setColor(renderDebug.redrawFlashColor);
-			graphics.fillRect(
-				bounds.x - REDRAW_UNDERLAY_PADDING,
-				bounds.y - REDRAW_UNDERLAY_PADDING,
-				bounds.width + (REDRAW_UNDERLAY_PADDING * 2),
-				bounds.height + (REDRAW_UNDERLAY_PADDING * 2)
-			);
-		}
 	}
 
 	void drawBillboardDebugForeground(Graphics2D graphics, RenderDebug renderDebug)
@@ -133,99 +106,6 @@ class NpcSnapDebug
 		}
 	}
 
-	void drawRenderableBoundingBox(Graphics2D graphics, Renderable renderable, LocalPoint localPoint, int plane, int verticalOffset)
-	{
-		if (renderable == null || localPoint == null)
-		{
-			return;
-		}
-
-		Model model = renderable.getModel();
-		if (model == null)
-		{
-			return;
-		}
-
-		int height = Math.max(1, renderable.getModelHeight());
-		drawProjectedBox(graphics, modelBox(localPoint.getX(), localPoint.getY(), plane, verticalOffset, height, model));
-	}
-
-	private void drawProjectedBox(Graphics2D graphics, ProjectedBox box)
-	{
-		Stroke stroke = graphics.getStroke();
-		graphics.setStroke(new BasicStroke(1.5f));
-		graphics.setColor(BOUNDING_BOX_CYAN);
-		for (int i = 0; i < 4; i++)
-		{
-			int next = (i + 1) % 4;
-			drawProjectedLine(graphics, box.base[i], box.base[next]);
-			drawProjectedLine(graphics, box.top[i], box.top[next]);
-			drawProjectedLine(graphics, box.base[i], box.top[i]);
-		}
-		graphics.setStroke(stroke);
-	}
-
-	private ProjectedBox modelBox(int localX, int localY, int plane, int verticalOffset, int height, Model model)
-	{
-		ModelBounds bounds = modelBounds(model);
-		Point[] base = new Point[4];
-		Point[] top = new Point[4];
-		int[] x = new int[]{localX + bounds.minX, localX + bounds.maxX, localX + bounds.maxX, localX + bounds.minX};
-		int[] y = new int[]{localY + bounds.minZ, localY + bounds.minZ, localY + bounds.maxZ, localY + bounds.maxZ};
-		for (int i = 0; i < x.length; i++)
-		{
-			LocalPoint point = new LocalPoint(x[i], y[i]);
-			base[i] = Perspective.localToCanvas(client, point, plane, verticalOffset);
-			top[i] = Perspective.localToCanvas(client, point, plane, verticalOffset + height);
-		}
-
-		return new ProjectedBox(base, top);
-	}
-
-	private static ModelBounds modelBounds(Model model)
-	{
-		int vertexCount = model.getVerticesCount();
-		float[] verticesX = model.getVerticesX();
-		float[] verticesZ = model.getVerticesZ();
-		if (vertexCount <= 0 || verticesX == null || verticesZ == null)
-		{
-			int half = LOCAL_TILE_SIZE / 2;
-			return new ModelBounds(-half, half, -half, half);
-		}
-
-		int minX = Integer.MAX_VALUE;
-		int maxX = Integer.MIN_VALUE;
-		int minZ = Integer.MAX_VALUE;
-		int maxZ = Integer.MIN_VALUE;
-		for (int i = 0; i < vertexCount; i++)
-		{
-			int x = Math.round(verticesX[i]);
-			int z = Math.round(verticesZ[i]);
-			minX = Math.min(minX, x);
-			maxX = Math.max(maxX, x);
-			minZ = Math.min(minZ, z);
-			maxZ = Math.max(maxZ, z);
-		}
-
-		if (minX == Integer.MAX_VALUE)
-		{
-			int half = LOCAL_TILE_SIZE / 2;
-			return new ModelBounds(-half, half, -half, half);
-		}
-
-		return new ModelBounds(minX, maxX, minZ, maxZ);
-	}
-
-	private static void drawProjectedLine(Graphics2D graphics, Point a, Point b)
-	{
-		if (a == null || b == null)
-		{
-			return;
-		}
-
-		graphics.drawLine(a.getX(), a.getY(), b.getX(), b.getY());
-	}
-
 	private String frameText(RenderDebug renderDebug)
 	{
 		FrameDebugInfo frameDebugInfo = renderDebug.frameDebugInfo;
@@ -261,36 +141,24 @@ class NpcSnapDebug
 		private final Rectangle bounds;
 		private final int paintOrder;
 		private final boolean cacheInvalidated;
-		private final boolean spriteRedrawn;
-		private final Color redrawFlashColor;
 		private final FrameDebugInfo frameDebugInfo;
 
 		private RenderDebug(
 			Rectangle bounds,
 			int paintOrder,
 			boolean cacheInvalidated,
-			boolean spriteRedrawn,
-			Color redrawFlashColor,
 			FrameDebugInfo frameDebugInfo
 		)
 		{
 			this.bounds = bounds;
 			this.paintOrder = paintOrder;
 			this.cacheInvalidated = cacheInvalidated;
-			this.spriteRedrawn = spriteRedrawn;
-			this.redrawFlashColor = redrawFlashColor;
 			this.frameDebugInfo = frameDebugInfo;
 		}
 
 		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, boolean spriteRedrawn, FrameDebugInfo frameDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, cacheInvalidated, spriteRedrawn, spriteRedrawn ? randomFlashColor() : null, frameDebugInfo);
-		}
-
-		private static Color randomFlashColor()
-		{
-			ThreadLocalRandom random = ThreadLocalRandom.current();
-			return new Color(random.nextInt(256), random.nextInt(256), random.nextInt(256), 220);
+			return new RenderDebug(bounds, paintOrder, cacheInvalidated, frameDebugInfo);
 		}
 	}
 
@@ -332,34 +200,6 @@ class NpcSnapDebug
 			this.forcedAnimationFrame = forcedAnimationFrame;
 			this.poseFrame = poseFrame;
 			this.forcedPoseFrame = forcedPoseFrame;
-		}
-	}
-
-	private static final class ProjectedBox
-	{
-		private final Point[] base;
-		private final Point[] top;
-
-		private ProjectedBox(Point[] base, Point[] top)
-		{
-			this.base = base;
-			this.top = top;
-		}
-	}
-
-	private static final class ModelBounds
-	{
-		private final int minX;
-		private final int maxX;
-		private final int minZ;
-		private final int maxZ;
-
-		private ModelBounds(int minX, int maxX, int minZ, int maxZ)
-		{
-			this.minX = minX;
-			this.maxX = maxX;
-			this.minZ = minZ;
-			this.maxZ = maxZ;
 		}
 	}
 }
