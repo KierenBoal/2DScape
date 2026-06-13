@@ -18,7 +18,6 @@ import net.runelite.api.Client;
 class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
-	private static final Color INVALIDATION_RED = new Color(255, 0, 0);
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 
@@ -76,10 +75,13 @@ class NpcSnapDebug
 			return;
 		}
 
-		if (config.debugShowCacheInvalidations() && renderDebug.cacheInvalidated)
+		if (config.debugShowFrameRedraws() && renderDebug.frameRedrawn)
 		{
-			graphics.setColor(INVALIDATION_RED);
-			graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+			Stroke stroke = graphics.getStroke();
+			graphics.setStroke(new BasicStroke(2.0f));
+			graphics.setColor(frameRedrawColor(renderDebug));
+			graphics.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+			graphics.setStroke(stroke);
 		}
 
 		if (config.debugDrawBillboardOutline())
@@ -117,6 +119,40 @@ class NpcSnapDebug
 		return null;
 	}
 
+	private Color frameRedrawColor(RenderDebug renderDebug)
+	{
+		int seed = 1;
+		seed = (31 * seed) + client.getGameCycle();
+		seed = (31 * seed) + renderDebug.paintOrder;
+		seed = (31 * seed) + renderDebug.bounds.x;
+		seed = (31 * seed) + renderDebug.bounds.y;
+		seed = (31 * seed) + renderDebug.bounds.width;
+		seed = (31 * seed) + renderDebug.bounds.height;
+		int pattern = 1 + Math.floorMod(seed, 6);
+		int red = 0;
+		int green = 0;
+		int blue = 0;
+		if ((pattern & 0x1) != 0)
+		{
+			red = brightColorChannel(seed, 0);
+		}
+		if ((pattern & 0x2) != 0)
+		{
+			green = brightColorChannel(seed, 8);
+		}
+		if ((pattern & 0x4) != 0)
+		{
+			blue = brightColorChannel(seed, 16);
+		}
+
+		return new Color(red, green, blue, 255);
+	}
+
+	private static int brightColorChannel(int seed, int shift)
+	{
+		return 128 + Math.floorMod(seed >> shift, 128);
+	}
+
 	private void drawCenteredText(Graphics2D graphics, String text, int centerX, int centerY)
 	{
 		Font font = graphics.getFont().deriveFont(Font.BOLD, 12.0f);
@@ -140,19 +176,19 @@ class NpcSnapDebug
 	{
 		private final Rectangle bounds;
 		private final int paintOrder;
-		private final boolean cacheInvalidated;
+		private final boolean frameRedrawn;
 		private final FrameDebugInfo frameDebugInfo;
 
 		private RenderDebug(
 			Rectangle bounds,
 			int paintOrder,
-			boolean cacheInvalidated,
+			boolean frameRedrawn,
 			FrameDebugInfo frameDebugInfo
 		)
 		{
 			this.bounds = bounds;
 			this.paintOrder = paintOrder;
-			this.cacheInvalidated = cacheInvalidated;
+			this.frameRedrawn = frameRedrawn;
 			this.frameDebugInfo = frameDebugInfo;
 		}
 

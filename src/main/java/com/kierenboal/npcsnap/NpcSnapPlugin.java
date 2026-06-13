@@ -50,12 +50,17 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class NpcSnapPlugin extends Plugin
 	implements RenderCallback
 {
+	private static final int LOGIN_XP_DROP_GRACE_TICKS = 10;
+
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
 	private final Map<Integer, int[]> originalTexturePixels = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
 	private boolean textureBandingApplied;
 	private boolean textureBandingPending = true;
 	private boolean pendingSkillXpSeed;
+	private int gameTickCounter;
+	private int loginXpDropGraceUntilTick = Integer.MIN_VALUE;
+	private int ignoredLoginXpDropTick = Integer.MIN_VALUE;
 	private int appliedTextureBands = -1;
 
 	@Inject
@@ -196,6 +201,12 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged)
 	{
+		if (shouldIgnoreLoginXpDrop(statChanged))
+		{
+			skillingActivityTracker.seedXp(statChanged.getSkill(), statChanged.getXp());
+			return;
+		}
+
 		long timeoutMillis = Math.max(1, config.skillingTimeoutSeconds()) * 1000L;
 		skillingActivityTracker.recordXp(statChanged.getSkill(), statChanged.getXp(), System.currentTimeMillis(), timeoutMillis);
 	}
@@ -203,6 +214,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
+		gameTickCounter++;
 		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
@@ -219,11 +231,15 @@ public class NpcSnapPlugin extends Plugin
 		{
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = true;
+			loginXpDropGraceUntilTick = gameTickCounter + LOGIN_XP_DROP_GRACE_TICKS;
+			ignoredLoginXpDropTick = Integer.MIN_VALUE;
 		}
 		else
 		{
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = false;
+			loginXpDropGraceUntilTick = Integer.MIN_VALUE;
+			ignoredLoginXpDropTick = Integer.MIN_VALUE;
 		}
 	}
 
@@ -251,6 +267,23 @@ public class NpcSnapPlugin extends Plugin
 			return true;
 		}
 
+		// IMPORTANT: addEntity is the actor interaction path, not the actor hiding path.
+		// NPCs and players must continue through addEntity even when a billboard is active,
+		// because RuneLite builds their hover/right-click targeting from this callback chain.
+		// If an actor starts becoming unclickable after changes around billboard hiding,
+		// the first thing to check is whether addEntity was changed to return false for
+		// NPCs/players with billboards. That will remove the clickbox/menu state entirely.
+		//
+		// Visual suppression for billboarded actors is handled indirectly elsewhere by the
+		// renderer; do not "optimize" actor hiding here unless you have verified in-game
+		// that NPC/player clickboxes and targeting still work correctly.
+		billboardOverlay.noteSceneRenderable(renderable);
+
+		if (renderable instanceof NPC || renderable instanceof Player)
+		{
+			return true;
+		}
+
 		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
@@ -264,7 +297,20 @@ public class NpcSnapPlugin extends Plugin
 
 		if (tileObject instanceof GameObject)
 		{
-			if (config.applyToObjects())
+			// IMPORTANT: drawObject is the visual suppression path for TileObjects and their
+			// backing renderables. This method is easy to regress because addEntity must keep
+			// actors alive for clickboxes, while drawObject must aggressively return false for
+			// billboarded TileObject renderables so the original 3D model does not render
+			// underneath the sprite.
+			//
+			// The common failure modes here are:
+			// 1. Returning true unconditionally after observeTileObject()/shouldHideTileObject(),
+			//    which causes the original model to render under the billboard.
+			// 2. Removing the per-renderable shouldHideRenderable() checks below, which breaks
+			//    suppression for GameObject/GroundObject/DecorativeObject/WallObject parts.
+			// 3. Moving actor clickbox logic into drawObject(), even though NPCs/players do not
+			//    use this callback path for their interaction state.
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -273,12 +319,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return true;
+			return !billboardOverlay.shouldHideRenderable(((GameObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof GroundObject)
 		{
-			if (config.applyToObjects())
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -287,12 +333,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return true;
+			return !billboardOverlay.shouldHideRenderable(((GroundObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof DecorativeObject)
 		{
-			if (config.applyToObjects())
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -301,12 +347,13 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return true;
+			return !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable())
+				&& !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable2());
 		}
 
 		if (tileObject instanceof WallObject)
 		{
-			if (config.applyToObjects())
+			if (config.applyToObjects() || config.applyToGraphicsObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -315,14 +362,19 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return true;
+			return !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable1())
+				&& !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable2());
 		}
 
 		if (tileObject instanceof ItemLayer)
 		{
-			return !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getBottom())
-				&& !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getMiddle())
-				&& !billboardOverlay.shouldHideRenderable(((ItemLayer) tileObject).getTop());
+			ItemLayer itemLayer = (ItemLayer) tileObject;
+			billboardOverlay.noteSceneRenderable(itemLayer.getBottom());
+			billboardOverlay.noteSceneRenderable(itemLayer.getMiddle());
+			billboardOverlay.noteSceneRenderable(itemLayer.getTop());
+			return !billboardOverlay.shouldHideRenderable(itemLayer.getBottom())
+				&& !billboardOverlay.shouldHideRenderable(itemLayer.getMiddle())
+				&& !billboardOverlay.shouldHideRenderable(itemLayer.getTop());
 		}
 
 		return true;
@@ -511,6 +563,25 @@ public class NpcSnapPlugin extends Plugin
 		{
 			skillingActivityTracker.seedXp(skill, client.getSkillExperience(skill));
 		}
+	}
+
+	private boolean shouldIgnoreLoginXpDrop(StatChanged statChanged)
+	{
+		if (statChanged == null
+			|| client.getGameState() != GameState.LOGGED_IN
+			|| gameTickCounter > loginXpDropGraceUntilTick
+			|| !skillingActivityTracker.isTrackedXpIncrease(statChanged.getSkill(), statChanged.getXp()))
+		{
+			return false;
+		}
+
+		if (ignoredLoginXpDropTick == Integer.MIN_VALUE)
+		{
+			ignoredLoginXpDropTick = gameTickCounter;
+			return true;
+		}
+
+		return ignoredLoginXpDropTick == gameTickCounter;
 	}
 
 	@Value

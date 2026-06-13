@@ -14,7 +14,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(1, 1));
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 1));
@@ -40,7 +40,7 @@ public class BillboardOutlineRendererTest
 			}
 		}
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0x00000000, image.getRGB(3, 3));
 		assertEquals(0xFFDDDDDD, image.getRGB(0, 3));
@@ -52,7 +52,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFF0000);
 
-		BillboardOutlineRenderer.applyOutline(image, false, true, false, false, false, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, true, false, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFAB0000, image.getRGB(2, 1));
 		assertEquals(0xFFFF0000, image.getRGB(2, 2));
@@ -64,7 +64,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, false, false, false, true, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, false, false, false, false, true, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 2));
 		assertEquals(0x00000000, image.getRGB(2, 1));
@@ -77,7 +77,7 @@ public class BillboardOutlineRendererTest
 		image.setRGB(2, 2, 0xFFFF0000);
 		image.setRGB(2, 3, 0xFF00FF00);
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, false, false, true, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, false, false, false, true, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFF00AB00, image.getRGB(2, 2));
 		assertEquals(0xFFAB0000, image.getRGB(2, 3));
@@ -89,7 +89,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, true, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, true, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 2));
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 1));
@@ -101,7 +101,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFF804000);
 
-		BillboardOutlineRenderer.applyOutline(image, true, false, false, false, false, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, true, false, false, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFAA5500, image.getRGB(2, 1));
 		assertEquals(0xFF804000, image.getRGB(2, 2));
@@ -114,9 +114,22 @@ public class BillboardOutlineRendererTest
 		image.setRGB(2, 2, 0xFFFF0000);
 		image.setRGB(2, 3, 0xFF00FF00);
 
-		BillboardOutlineRenderer.applyOutline(image, false, false, false, true, false, false, new Color(0xDDDDDD));
+		BillboardOutlineRenderer.applyOutline(image, false, false, false, false, true, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFF00FF00, image.getRGB(2, 2));
 		assertEquals(0xFFFF0000, image.getRGB(2, 3));
+	}
+
+	@Test
+	public void applyOutlineDrawsSpriteShadowOnlyInTransparentPixels()
+	{
+		BufferedImage image = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(10, 19, 0xFFFFFFFF);
+
+		BillboardOutlineRenderer.applyOutline(image, false, false, false, true, false, false, false, new Color(0xDDDDDD));
+
+		assertEquals(0xFFFFFFFF, image.getRGB(10, 19));
+		assertEquals(0x3C000000, image.getRGB(9, 19));
+		assertEquals(0x00000000, image.getRGB(10, 18));
 	}
 }

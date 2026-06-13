@@ -338,6 +338,17 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "enableBillboardSpriteShadows",
+		name = "Add sprite shadows",
+		description = "Draw a contact shadow in transparent pixels beneath the lower half of each billboard sprite",
+		section = billboardSection
+	)
+	default boolean enableBillboardSpriteShadows()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "enableBillboardSpriteOutline",
 		name = "Enable sprite outline",
 		description = "Draw a 1-pixel outline around each billboard sprite using the selected color",
@@ -490,11 +501,11 @@ public interface NpcSnapConfig extends Config
 
 	@ConfigItem(
 		keyName = "debugShowCacheInvalidations",
-		name = "Show cache invalidations",
-		description = "Draw billboards as solid red for the frame where their cache entry is invalidated",
+		name = "Show frame redraws",
+		description = "Draw a bright random-color outline for the frame where a billboard sprite is redrawn",
 		section = debugSection
 	)
-	default boolean debugShowCacheInvalidations()
+	default boolean debugShowFrameRedraws()
 	{
 		return false;
 	}

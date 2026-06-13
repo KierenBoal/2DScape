@@ -57,6 +57,7 @@ class NpcBillboardOverlay extends Overlay
 {
 	private static final int FULL_CIRCLE = 2048;
 	private static final int MAX_PITCH = 512;
+	private static final int GROUND_ITEM_MIN_PITCH = 128;
 	private static final int LOCAL_TILE_SIZE = 128;
 	private static final int COMBAT_YAW = 512;
 	private static final int OPPOSITE_COMBAT_YAW = 1536;
@@ -102,6 +103,8 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<Renderable> sceneRenderablesThisFrame = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<Renderable> sceneRenderablesLastFrame = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Deque<BillboardTargetKey> renderQueue = new ArrayDeque<>();
 	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
@@ -329,6 +332,14 @@ class NpcBillboardOverlay extends Overlay
 		billboardCache.clear();
 	}
 
+	void noteSceneRenderable(Renderable renderable)
+	{
+		if (renderable != null)
+		{
+			sceneRenderablesThisFrame.add(renderable);
+		}
+	}
+
 	private void clearObservedTileObjectBillboards(Collection<ObservedTileObject> observedTileObjects)
 	{
 		for (ObservedTileObject observed : observedTileObjects)
@@ -351,6 +362,9 @@ class NpcBillboardOverlay extends Overlay
 	void beginFrame()
 	{
 		expireCaches(System.currentTimeMillis());
+		sceneRenderablesLastFrame.clear();
+		sceneRenderablesLastFrame.addAll(sceneRenderablesThisFrame);
+		sceneRenderablesThisFrame.clear();
 		synchronized (observedTileObjectsLock)
 		{
 			visibleTileObjects.clear();
@@ -359,6 +373,11 @@ class NpcBillboardOverlay extends Overlay
 		}
 		clearActiveSelections();
 		activeBillboardsGameCycle = Integer.MIN_VALUE;
+	}
+
+	private boolean wasSceneRenderableDrawnLastFrame(Renderable renderable)
+	{
+		return renderable != null && sceneRenderablesLastFrame.contains(renderable);
 	}
 
 	void observeTileObject(TileObject tileObject)
@@ -842,7 +861,9 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (NPC npc : worldView.npcs())
 			{
-				if (npc == null || !isEligibleActor(localPlayerLocation, npc.getLocalLocation(), npc, viewport))
+				if (npc == null
+					|| !wasSceneRenderableDrawnLastFrame(npc)
+					|| !isEligibleActor(localPlayerLocation, npc.getLocalLocation(), npc, viewport))
 				{
 					continue;
 				}
@@ -863,7 +884,9 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (Player player : worldView.players())
 			{
-				if (player == null || !isEligibleActor(localPlayerLocation, player.getLocalLocation(), player, viewport))
+				if (player == null
+					|| !wasSceneRenderableDrawnLastFrame(player)
+					|| !isEligibleActor(localPlayerLocation, player.getLocalLocation(), player, viewport))
 				{
 					continue;
 				}
@@ -884,7 +907,9 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (Projectile projectile : client.getProjectiles())
 			{
-				if (projectile == null || !isEligibleProjectile(localPlayerLocation, projectile, viewport))
+				if (projectile == null
+					|| !wasSceneRenderableDrawnLastFrame(projectile)
+					|| !isEligibleProjectile(localPlayerLocation, projectile, viewport))
 				{
 					continue;
 				}
@@ -904,7 +929,9 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (GraphicsObject graphicsObject : worldView.getGraphicsObjects())
 			{
-				if (graphicsObject == null || !isEligibleGraphicsObject(localPlayerLocation, graphicsObject, viewport))
+				if (graphicsObject == null
+					|| !wasSceneRenderableDrawnLastFrame(graphicsObject)
+					|| !isEligibleGraphicsObject(localPlayerLocation, graphicsObject, viewport))
 				{
 					continue;
 				}
@@ -936,7 +963,10 @@ class NpcBillboardOverlay extends Overlay
 			{
 				TileItem item = entry.getKey();
 				GroundItemBillboard groundItem = entry.getValue();
-				if (item == null || groundItem == null || !isEligibleGroundItem(localPlayerLocation, item, groundItem, viewport))
+				if (item == null
+					|| groundItem == null
+					|| !wasSceneRenderableDrawnLastFrame(item)
+					|| !isEligibleGroundItem(localPlayerLocation, item, groundItem, viewport))
 				{
 					continue;
 				}
@@ -1069,14 +1099,14 @@ class NpcBillboardOverlay extends Overlay
 			actor.getWorldView().getPlane(),
 			Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight()),
 			relativeYaw(actor),
-			relativePitch(),
+			relativePitch(actorSpotAnim),
 			actorSpotAnim.getId(),
 			actorSpotAnim.getFrame(),
 			-1,
 			-1,
 			-1,
 			null,
-			VerticalAnchor.BOTTOM,
+			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(actorSpotAnim.getId(), actorSpotAnim.getFrame(), actorSpotAnim.getFrame())
 		);
 	}
@@ -1113,14 +1143,14 @@ class NpcBillboardOverlay extends Overlay
 			graphicsObject.getLevel(),
 			Math.max(0, graphicsObject.getZ()),
 			relativeYaw(),
-			relativePitch(),
+			relativePitch(graphicsObject),
 			graphicsObject.getId(),
 			snappedFrame,
 			-1,
 			-1,
 			-1,
 			null,
-			VerticalAnchor.BOTTOM,
+			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), snappedFrame)
 		);
 	}
@@ -1139,7 +1169,7 @@ class NpcBillboardOverlay extends Overlay
 			groundItem.plane,
 			0,
 			relativeYaw(item),
-			relativePitch(),
+			relativePitch(item),
 			item.getId(),
 			item.getQuantity(),
 			-1,
@@ -1217,7 +1247,7 @@ class NpcBillboardOverlay extends Overlay
 
 		for (ActorSpotAnim actorSpotAnim : spotAnims)
 		{
-			if (!isEligibleActorSpotAnim(actor, actorSpotAnim, viewport))
+			if (!wasSceneRenderableDrawnLastFrame(actorSpotAnim) || !isEligibleActorSpotAnim(actor, actorSpotAnim, viewport))
 			{
 				continue;
 			}
@@ -1563,6 +1593,7 @@ class NpcBillboardOverlay extends Overlay
 				config.enableBillboardHighlightOutline(),
 				config.enableBillboardShadowOutline(),
 				config.enableBillboardSpriteOutline(),
+				config.enableBillboardSpriteShadows(),
 				config.enableBillboardHighlightInline(),
 				config.enableBillboardShadowInline(),
 				config.enableBillboardSpriteInline(),
@@ -2198,6 +2229,7 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),
 			config.enableBillboardSpriteOutline(),
+			config.enableBillboardSpriteShadows(),
 			config.enableBillboardHighlightInline(),
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
@@ -2223,6 +2255,7 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),
 			config.enableBillboardSpriteOutline(),
+			config.enableBillboardSpriteShadows(),
 			config.enableBillboardHighlightInline(),
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
@@ -2606,6 +2639,7 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
+		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
 		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
 		double distance = cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
 		if (!isUsableDistance(distance))
@@ -2622,8 +2656,12 @@ class NpcBillboardOverlay extends Overlay
 			? hullHeight
 			: distanceHeight > 0 ? distanceHeight : projectedHeight;
 		int targetWidth = aspectWidth(billboardBounds, targetHeight);
-		int anchorX = hullBounds != null ? hullBounds.x + (hullBounds.width / 2) : basePoint.getX();
-		int anchorY = hullBounds != null ? hullBounds.y + hullBounds.height : basePoint.getY();
+		int anchorX = hullBounds != null
+			? hullBounds.x + (hullBounds.width / 2)
+			: request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getX() : basePoint.getX();
+		int anchorY = hullBounds != null
+			? hullBounds.y + hullBounds.height
+			: request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getY() : basePoint.getY();
 		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
 		{
 			return null;
@@ -2634,7 +2672,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private int outlinePadding()
 	{
-		return config.enableBillboardShadowOutline() || config.enableBillboardSpriteOutline()
+		return config.enableBillboardShadowOutline() || config.enableBillboardSpriteOutline() || config.enableBillboardSpriteShadows()
 			? OUTLINE_PADDING
 			: 0;
 	}
@@ -2644,6 +2682,7 @@ class NpcBillboardOverlay extends Overlay
 		return config.enableBillboardHighlightOutline()
 			|| config.enableBillboardShadowOutline()
 			|| config.enableBillboardSpriteOutline()
+			|| config.enableBillboardSpriteShadows()
 			|| config.enableBillboardHighlightInline()
 			|| config.enableBillboardShadowInline()
 			|| config.enableBillboardSpriteInline();
@@ -2805,6 +2844,27 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return relativePitch();
+	}
+
+	private int relativePitch(ActorSpotAnim actorSpotAnim)
+	{
+		return relativePitch();
+	}
+
+	private int relativePitch(GraphicsObject graphicsObject)
+	{
+		return relativePitch();
+	}
+
+	private int relativePitch(TileItem item)
+	{
+		int rawPitch = Math.max(0, Math.min(MAX_PITCH, client.getCameraPitch()));
+		if (!config.enableRotationSnapping())
+		{
+			return rawPitch;
+		}
+
+		return -snapPitchByAngles(rawPitch, GROUND_ITEM_MIN_PITCH, config.numberOfPitchRotationAngles());
 	}
 
 	private static int snapJauByAngles(int jau, int angleCount)
@@ -3040,6 +3100,7 @@ class NpcBillboardOverlay extends Overlay
 		private final boolean highlightOutline;
 		private final boolean shadowOutline;
 		private final boolean solidOutline;
+		private final boolean spriteShadow;
 		private final boolean highlightInline;
 		private final boolean shadowInline;
 		private final boolean solidInline;
@@ -3061,6 +3122,7 @@ class NpcBillboardOverlay extends Overlay
 			boolean highlightOutline,
 			boolean shadowOutline,
 			boolean solidOutline,
+			boolean spriteShadow,
 			boolean highlightInline,
 			boolean shadowInline,
 			boolean solidInline,
@@ -3081,6 +3143,7 @@ class NpcBillboardOverlay extends Overlay
 			this.highlightOutline = highlightOutline;
 			this.shadowOutline = shadowOutline;
 			this.solidOutline = solidOutline;
+			this.spriteShadow = spriteShadow;
 			this.highlightInline = highlightInline;
 			this.shadowInline = shadowInline;
 			this.solidInline = solidInline;
@@ -3114,6 +3177,7 @@ class NpcBillboardOverlay extends Overlay
 				&& highlightOutline == that.highlightOutline
 				&& shadowOutline == that.shadowOutline
 				&& solidOutline == that.solidOutline
+				&& spriteShadow == that.spriteShadow
 				&& highlightInline == that.highlightInline
 				&& shadowInline == that.shadowInline
 				&& solidInline == that.solidInline
@@ -3138,6 +3202,7 @@ class NpcBillboardOverlay extends Overlay
 			result = 31 * result + (highlightOutline ? 1 : 0);
 			result = 31 * result + (shadowOutline ? 1 : 0);
 			result = 31 * result + (solidOutline ? 1 : 0);
+			result = 31 * result + (spriteShadow ? 1 : 0);
 			result = 31 * result + (highlightInline ? 1 : 0);
 			result = 31 * result + (shadowInline ? 1 : 0);
 			result = 31 * result + (solidInline ? 1 : 0);
@@ -3163,6 +3228,7 @@ class NpcBillboardOverlay extends Overlay
 		private final boolean highlightOutline;
 		private final boolean shadowOutline;
 		private final boolean solidOutline;
+		private final boolean spriteShadow;
 		private final boolean highlightInline;
 		private final boolean shadowInline;
 		private final boolean solidInline;
@@ -3183,6 +3249,7 @@ class NpcBillboardOverlay extends Overlay
 			boolean highlightOutline,
 			boolean shadowOutline,
 			boolean solidOutline,
+			boolean spriteShadow,
 			boolean highlightInline,
 			boolean shadowInline,
 			boolean solidInline,
@@ -3202,6 +3269,7 @@ class NpcBillboardOverlay extends Overlay
 			this.highlightOutline = highlightOutline;
 			this.shadowOutline = shadowOutline;
 			this.solidOutline = solidOutline;
+			this.spriteShadow = spriteShadow;
 			this.highlightInline = highlightInline;
 			this.shadowInline = shadowInline;
 			this.solidInline = solidInline;
@@ -3261,6 +3329,7 @@ class NpcBillboardOverlay extends Overlay
 				&& key.highlightOutline == previewKey.highlightOutline
 				&& key.shadowOutline == previewKey.shadowOutline
 				&& key.solidOutline == previewKey.solidOutline
+				&& key.spriteShadow == previewKey.spriteShadow
 				&& key.highlightInline == previewKey.highlightInline
 				&& key.shadowInline == previewKey.shadowInline
 				&& key.solidInline == previewKey.solidInline

@@ -40,9 +40,25 @@ class SkillingActivityTracker
 		return TRACKED_SKILLS;
 	}
 
+	boolean isTrackedSkill(Skill skill)
+	{
+		return skill != null && TRACKED_SKILLS.contains(skill);
+	}
+
+	boolean isTrackedXpIncrease(Skill skill, int xp)
+	{
+		if (!isTrackedSkill(skill))
+		{
+			return false;
+		}
+
+		Integer previousXp = lastXp.get(skill);
+		return previousXp != null && xp > previousXp;
+	}
+
 	void seedXp(Skill skill, int xp)
 	{
-		if (skill == null || !TRACKED_SKILLS.contains(skill))
+		if (!isTrackedSkill(skill))
 		{
 			return;
 		}
@@ -58,7 +74,7 @@ class SkillingActivityTracker
 		}
 
 		Integer previousXp = lastXp.put(skill, xp);
-		if (previousXp == null || xp <= previousXp || !TRACKED_SKILLS.contains(skill))
+		if (previousXp == null || xp <= previousXp || !isTrackedSkill(skill))
 		{
 			return false;
 		}
