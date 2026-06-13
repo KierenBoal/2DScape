@@ -251,13 +251,6 @@ public class NpcSnapPlugin extends Plugin
 			return true;
 		}
 
-		// Actors must stay in the scene entity pipeline so right-click targeting still works.
-		// Their visual replacement happens without suppressing addEntity().
-		if (renderable instanceof NPC || renderable instanceof Player)
-		{
-			return true;
-		}
-
 		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
@@ -271,7 +264,7 @@ public class NpcSnapPlugin extends Plugin
 
 		if (tileObject instanceof GameObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (config.applyToObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -280,12 +273,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((GameObject) tileObject).getRenderable());
+			return true;
 		}
 
 		if (tileObject instanceof GroundObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (config.applyToObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -294,12 +287,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((GroundObject) tileObject).getRenderable());
+			return true;
 		}
 
 		if (tileObject instanceof DecorativeObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (config.applyToObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -308,13 +301,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable())
-				&& !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable2());
+			return true;
 		}
 
 		if (tileObject instanceof WallObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (config.applyToObjects())
 			{
 				billboardOverlay.observeTileObject(tileObject);
 				if (billboardOverlay.shouldHideTileObject(tileObject))
@@ -323,8 +315,7 @@ public class NpcSnapPlugin extends Plugin
 				}
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable1())
-				&& !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable2());
+			return true;
 		}
 
 		if (tileObject instanceof ItemLayer)
