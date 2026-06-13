@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import java.awt.Color;
+import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigGroup;
@@ -304,7 +305,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardMaxDrawsPerFrame()
 	{
-		return 3;
+		return 10;
 	}
 
 	@Range(
@@ -365,9 +366,10 @@ public interface NpcSnapConfig extends Config
 		description = "Color used for the billboard sprite outline",
 		section = billboardOutlineSection
 	)
+	@Alpha
 	default Color billboardSpriteOutlineColor()
 	{
-		return new Color(0xDDDDDD);
+		return new Color(0x40000000, true);
 	}
 
 	@ConfigItem(
@@ -425,6 +427,52 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "enableBillboardHoverOutline",
+		name = "Outline on hover",
+		description = "Draw a live outline when hovering an NPC or player billboard through RuneLite's clickbox targeting",
+		section = billboardOutlineSection
+	)
+	default boolean enableBillboardHoverOutline()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "enableBillboardInteractionOutline",
+		name = "Outline on interact",
+		description = "Draw a live outline when interacting with an NPC or player billboard",
+		section = billboardOutlineSection
+	)
+	default boolean enableBillboardInteractionOutline()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "billboardInteractionOutlineColor",
+		name = "Interaction outline color",
+		description = "Color used for the live interaction outline",
+		section = billboardOutlineSection
+	)
+	@Alpha
+	default Color billboardInteractionOutlineColor()
+	{
+		return new Color(0x90FF0000, true);
+	}
+
+	@ConfigItem(
+		keyName = "billboardHoverOutlineColor",
+		name = "Hover outline color",
+		description = "Color used for the live hover outline",
+		section = billboardOutlineSection
+	)
+	@Alpha
+	default Color billboardHoverOutlineColor()
+	{
+		return new Color(0x90FFFF00, true);
+	}
+
 	@Range(
 		min = 1,
 		max = 60
@@ -437,7 +485,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default int skillingTimeoutSeconds()
 	{
-		return 12;
+		return 15;
 	}
 
 	@ConfigItem(

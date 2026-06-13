@@ -14,6 +14,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.ItemLayer;
+import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
@@ -28,9 +29,13 @@ import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
+import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.NpcDespawned;
+import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
@@ -215,6 +220,7 @@ public class NpcSnapPlugin extends Plugin
 	public void onGameTick(GameTick gameTick)
 	{
 		gameTickCounter++;
+		billboardOverlay.clearStaleInteraction(client.getLocalPlayer(), client.getTickCount());
 		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
@@ -240,7 +246,43 @@ public class NpcSnapPlugin extends Plugin
 			pendingSkillXpSeed = false;
 			loginXpDropGraceUntilTick = Integer.MIN_VALUE;
 			ignoredLoginXpDropTick = Integer.MIN_VALUE;
+			billboardOverlay.clearInteractionState();
 		}
+	}
+
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked menuOptionClicked)
+	{
+		if (isActorInteraction(menuOptionClicked.getMenuAction()))
+		{
+			billboardOverlay.noteActorInteraction(menuOptionClicked.getMenuEntry().getActor(), client.getTickCount());
+			return;
+		}
+
+		billboardOverlay.clearInteractionState();
+	}
+
+	@Subscribe
+	public void onInteractingChanged(InteractingChanged interactingChanged)
+	{
+		if (interactingChanged.getSource() != client.getLocalPlayer())
+		{
+			return;
+		}
+
+		billboardOverlay.onLocalPlayerInteractionChanged(interactingChanged.getTarget(), client.getTickCount());
+	}
+
+	@Subscribe
+	public void onNpcDespawned(NpcDespawned npcDespawned)
+	{
+		billboardOverlay.clearInteractionIfMatches(npcDespawned.getNpc());
+	}
+
+	@Subscribe
+	public void onPlayerDespawned(PlayerDespawned playerDespawned)
+	{
+		billboardOverlay.clearInteractionIfMatches(playerDespawned.getPlayer());
 	}
 
 	@Subscribe
@@ -285,6 +327,38 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		return !billboardOverlay.shouldHideRenderable(renderable);
+	}
+
+	private static boolean isActorInteraction(MenuAction action)
+	{
+		if (action == null)
+		{
+			return false;
+		}
+
+		switch (action)
+		{
+			case ITEM_USE_ON_NPC:
+			case WIDGET_TARGET_ON_NPC:
+			case NPC_FIRST_OPTION:
+			case NPC_SECOND_OPTION:
+			case NPC_THIRD_OPTION:
+			case NPC_FOURTH_OPTION:
+			case NPC_FIFTH_OPTION:
+			case ITEM_USE_ON_PLAYER:
+			case WIDGET_TARGET_ON_PLAYER:
+			case PLAYER_FIRST_OPTION:
+			case PLAYER_SECOND_OPTION:
+			case PLAYER_THIRD_OPTION:
+			case PLAYER_FOURTH_OPTION:
+			case PLAYER_FIFTH_OPTION:
+			case PLAYER_SIXTH_OPTION:
+			case PLAYER_SEVENTH_OPTION:
+			case PLAYER_EIGHTH_OPTION:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	@Override

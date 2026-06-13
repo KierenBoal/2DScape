@@ -32,6 +32,8 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.Model;
+import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
@@ -109,6 +111,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
+	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
@@ -116,6 +119,12 @@ class NpcBillboardOverlay extends Overlay
 	private float[] spriteYScratch = new float[0];
 	private float[] spriteDepthScratch = new float[0];
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
+	private Actor interactedActor;
+	private int interactedActorClickTick = Integer.MIN_VALUE;
+	private Actor frameHoveredActor;
+	private Actor frameInteractionActor;
+	private Actor lastHoveredActor;
+	private Actor lastInteractionActor;
 
 	@Inject
 	private NpcBillboardOverlay(Client client, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper)
@@ -154,7 +163,10 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		List<BillboardTarget> visibleTargets = sortTargetsForRender(getVisibleTargets(worldView));
+		List<BillboardTarget> visibleTargets = getVisibleTargets(worldView);
+		updateHoverInteractionState();
+		applyForcedHoverInteractionPlans(visibleTargets);
+		visibleTargets = sortTargetsForRender(visibleTargets);
 		for (int i = 0; i < visibleTargets.size(); i++)
 		{
 			renderTarget(graphics, visibleTargets.get(i), i + 1);
@@ -207,6 +219,7 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		activeRenderableTargets.clear();
+		clearInteractionState();
 		clearActiveSelections();
 		clearRenderQueue();
 		clearActiveSnapshots();
@@ -230,6 +243,7 @@ class NpcBillboardOverlay extends Overlay
 		renderQueueEntries.clear();
 		billboardUpdateStates.clear();
 		frameUpdatePlans.clear();
+		forceHoverInteractionRedraws.clear();
 	}
 
 	void syncGroundItems(WorldView worldView)
@@ -373,6 +387,50 @@ class NpcBillboardOverlay extends Overlay
 		}
 		clearActiveSelections();
 		activeBillboardsGameCycle = Integer.MIN_VALUE;
+	}
+
+	void noteActorInteraction(Actor actor, int tickCount)
+	{
+		interactedActor = actor;
+		interactedActorClickTick = actor != null ? tickCount : Integer.MIN_VALUE;
+	}
+
+	void clearStaleInteraction(Player localPlayer, int tickCount)
+	{
+		if (interactedActor == null || tickCount <= interactedActorClickTick)
+		{
+			return;
+		}
+
+		Actor currentTarget = localPlayer != null ? localPlayer.getInteracting() : null;
+		if (currentTarget != interactedActor)
+		{
+			clearInteractionState();
+		}
+	}
+
+	void onLocalPlayerInteractionChanged(Actor target, int tickCount)
+	{
+		if (interactedActor != null && target != interactedActor && tickCount > interactedActorClickTick)
+		{
+			clearInteractionState();
+		}
+	}
+
+	void clearInteractionIfMatches(Actor actor)
+	{
+		if (actor == interactedActor)
+		{
+			clearInteractionState();
+		}
+	}
+
+	void clearInteractionState()
+	{
+		interactedActor = null;
+		interactedActorClickTick = Integer.MIN_VALUE;
+		frameInteractionActor = null;
+		lastInteractionActor = null;
 	}
 
 	private boolean wasSceneRenderableDrawnLastFrame(Renderable renderable)
@@ -651,6 +709,55 @@ class NpcBillboardOverlay extends Overlay
 		updateActiveSnapshots();
 	}
 
+	private void updateHoverInteractionState()
+	{
+		Actor hoveredActor = hoveredActor();
+		Actor interactionActor = interactedActor();
+		frameHoveredActor = hoveredActor;
+		frameInteractionActor = interactionActor;
+		if (hoveredActor == lastHoveredActor && interactionActor == lastInteractionActor)
+		{
+			return;
+		}
+
+		Player localPlayer = client.getLocalPlayer();
+		markHoverInteractionStateDirty(lastHoveredActor);
+		markHoverInteractionStateDirty(hoveredActor);
+		markHoverInteractionStateDirty(lastInteractionActor);
+		markHoverInteractionStateDirty(interactionActor);
+		if (interactionActor != lastInteractionActor)
+		{
+			markHoverInteractionStateDirty(localPlayer);
+		}
+
+		lastHoveredActor = hoveredActor;
+		lastInteractionActor = interactionActor;
+	}
+
+	private void applyForcedHoverInteractionPlans(List<BillboardTarget> visibleTargets)
+	{
+		for (BillboardTarget target : visibleTargets)
+		{
+			if (shouldForceHoverInteractionRedraw(target))
+			{
+				frameUpdatePlans.put(target.targetKey, new FrameUpdatePlan(renderQualityScale(), true));
+			}
+		}
+	}
+
+	private void markHoverInteractionStateDirty(Renderable renderable)
+	{
+		if (renderable != null)
+		{
+			forceHoverInteractionRedraws.add(renderable);
+		}
+	}
+
+	private boolean shouldForceHoverInteractionRedraw(BillboardTarget target)
+	{
+		return target != null && target.renderable != null && forceHoverInteractionRedraws.contains(target.renderable);
+	}
+
 	private void scheduleFrameUpdates(List<BillboardTarget> orderedTargets, int gameCycle)
 	{
 		Map<BillboardTargetKey, BillboardTarget> candidatesByKey = new HashMap<>();
@@ -683,22 +790,23 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
+			boolean forceHoverInteractionRedraw = shouldForceHoverInteractionRedraw(target);
 			BillboardUpdateState updateState = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
-			if (!updateState.isReady(gameCycle, targetHasCachedBillboard(target)))
+			if (!forceHoverInteractionRedraw && !updateState.isReady(gameCycle, targetHasCachedBillboard(target)))
 			{
 				requeueTarget(key);
 				continue;
 			}
 
 			double qualityScale = updateState.qualityScale;
-			if (!needsBillboardRedraw(target, qualityScale))
+			if (!forceHoverInteractionRedraw && !needsBillboardRedraw(target, qualityScale))
 			{
 				updateState.defer(gameCycle, baseRefreshInterval);
 				requeueTarget(key);
 				continue;
 			}
 
-			frameUpdatePlans.put(key, new FrameUpdatePlan(qualityScale));
+			frameUpdatePlans.put(key, new FrameUpdatePlan(qualityScale, forceHoverInteractionRedraw));
 			updateState.advance(gameCycle, baseRefreshInterval, renderQualityScale());
 			requeueTarget(key);
 			scheduled++;
@@ -756,6 +864,19 @@ class NpcBillboardOverlay extends Overlay
 			score += 10_000.0d;
 		}
 
+		if (shouldForceHoverInteractionRedraw(target))
+		{
+			score += 50_000.0d;
+			if (target.renderable == priorityHoverInteractionActor())
+			{
+				score += 10_000.0d;
+			}
+			else if (target.renderable == client.getLocalPlayer())
+			{
+				score += 9_000.0d;
+			}
+		}
+
 		if (state.hasMoved(snapshot))
 		{
 			score += 1_200.0d;
@@ -781,6 +902,11 @@ class NpcBillboardOverlay extends Overlay
 
 		score -= queueIndex * 0.01d;
 		return score;
+	}
+
+	private Actor priorityHoverInteractionActor()
+	{
+		return frameInteractionActor != null ? frameInteractionActor : frameHoveredActor;
 	}
 
 	private void pruneRenderQueue(Set<BillboardTargetKey> validKeys)
@@ -854,6 +980,8 @@ class NpcBillboardOverlay extends Overlay
 		LocalPoint localPlayerLocation = localPlayer != null ? localPlayer.getLocalLocation() : null;
 		Rectangle viewport = getViewportBounds();
 		List<BillboardTarget> candidates = new ArrayList<>();
+		Map<OccupiedTileKey, Actor> topActorsByTile = new HashMap<>();
+		Map<Actor, BillboardTarget> actorTargets = new IdentityHashMap<>();
 		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
 		Set<OccupiedTileKey> claimedActorEffectTiles = new HashSet<>();
 
@@ -868,15 +996,19 @@ class NpcBillboardOverlay extends Overlay
 					continue;
 				}
 
-				candidates.add(BillboardTarget.forRenderable(
-					BillboardTargetType.NPC,
+				considerTopActorCandidate(
+					topActorsByTile,
+					actorTargets,
 					npc,
-					billboardDepth(npc),
-					RENDER_PRIORITY_ACTOR,
-					npc.getLocalLocation(),
-					npc.getWorldView().getPlane()
-				));
-				addActorSpotAnimCandidates(candidates, npc, viewport, claimedActorEffects, claimedActorEffectTiles);
+					BillboardTarget.forRenderable(
+						BillboardTargetType.NPC,
+						npc,
+						billboardDepth(npc),
+						RENDER_PRIORITY_ACTOR,
+						npc.getLocalLocation(),
+						npc.getWorldView().getPlane()
+					)
+				);
 			}
 		}
 
@@ -891,16 +1023,26 @@ class NpcBillboardOverlay extends Overlay
 					continue;
 				}
 
-				candidates.add(BillboardTarget.forRenderable(
-					BillboardTargetType.PLAYER,
+				considerTopActorCandidate(
+					topActorsByTile,
+					actorTargets,
 					player,
-					billboardDepth(player),
-					RENDER_PRIORITY_ACTOR,
-					player.getLocalLocation(),
-					player.getWorldView().getPlane()
-				));
-				addActorSpotAnimCandidates(candidates, player, viewport, claimedActorEffects, claimedActorEffectTiles);
+					BillboardTarget.forRenderable(
+						BillboardTargetType.PLAYER,
+						player,
+						billboardDepth(player),
+						RENDER_PRIORITY_ACTOR,
+						player.getLocalLocation(),
+						player.getWorldView().getPlane()
+					)
+				);
 			}
+		}
+
+		for (BillboardTarget actorTarget : actorTargets.values())
+		{
+			candidates.add(actorTarget);
+			addActorSpotAnimCandidates(candidates, (Actor) actorTarget.renderable, viewport, claimedActorEffects, claimedActorEffectTiles);
 		}
 
 		if (config.applyToProjectiles())
@@ -991,6 +1133,45 @@ class NpcBillboardOverlay extends Overlay
 		return candidates;
 	}
 
+	private void considerTopActorCandidate(
+		Map<OccupiedTileKey, Actor> topActorsByTile,
+		Map<Actor, BillboardTarget> actorTargets,
+		Actor actor,
+		BillboardTarget candidate
+	)
+	{
+		if (actor == null || candidate == null)
+		{
+			return;
+		}
+
+		LocalPoint localPoint = actor.getLocalLocation();
+		OccupiedTileKey tileKey = OccupiedTileKey.of(localPoint, actor.getWorldView().getPlane());
+		if (tileKey == null)
+		{
+			actorTargets.put(actor, candidate);
+			return;
+		}
+
+		Actor currentActor = topActorsByTile.get(tileKey);
+		if (currentActor == null)
+		{
+			topActorsByTile.put(tileKey, actor);
+			actorTargets.put(actor, candidate);
+			return;
+		}
+
+		BillboardTarget currentTarget = actorTargets.get(currentActor);
+		if (currentTarget != null && currentTarget.getDepth() <= candidate.getDepth())
+		{
+			return;
+		}
+
+		actorTargets.remove(currentActor);
+		topActorsByTile.put(tileKey, actor);
+		actorTargets.put(actor, candidate);
+	}
+
 	private BillboardTarget buildActiveTarget(WorldView worldView, TileObject tileObject)
 	{
 		ObservedTileObject observed = visibleTileObjects.get(tileObject);
@@ -1052,6 +1233,8 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			null,
+			false,
+			false,
 			VerticalAnchor.BOTTOM,
 			frameDebugInfo
 		);
@@ -1060,6 +1243,8 @@ class NpcBillboardOverlay extends Overlay
 	private BillboardRenderRequest buildActorRenderRequest(Actor actor)
 	{
 		LocalPoint localPoint = actor.getLocalLocation();
+		boolean shouldInteractOutline = config.enableBillboardInteractionOutline() && actor == frameInteractionActor;
+		boolean shouldHoverOutline = !shouldInteractOutline && config.enableBillboardHoverOutline() && actor == frameHoveredActor;
 		return new BillboardRenderRequest(
 			actor,
 			actor.getModel(),
@@ -1074,6 +1259,8 @@ class NpcBillboardOverlay extends Overlay
 			actor.getPoseAnimationFrame(),
 			animatedTextureId(actor),
 			actorHullBounds(actor),
+			shouldHoverOutline,
+			shouldInteractOutline,
 			VerticalAnchor.BOTTOM,
 			debug.actorFrameDebugInfo(actor)
 		);
@@ -1106,6 +1293,8 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			null,
+			false,
+			false,
 			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(actorSpotAnim.getId(), actorSpotAnim.getFrame(), actorSpotAnim.getFrame())
 		);
@@ -1128,6 +1317,8 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			null,
+			false,
+			false,
 			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), snappedFrame)
 		);
@@ -1150,6 +1341,8 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			null,
+			false,
+			false,
 			VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), snappedFrame)
 		);
@@ -1176,6 +1369,8 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			item.getId(),
 			null,
+			false,
+			false,
 			VerticalAnchor.BOTTOM,
 			null
 		);
@@ -1560,7 +1755,7 @@ class NpcBillboardOverlay extends Overlay
 		);
 	}
 
-	private BufferedImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride)
+	private RenderedBillboardImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride, boolean shouldHoverOutline, boolean shouldInteractOutline)
 	{
 		Rectangle imageBounds = expandedBounds(bounds, outlinePadding);
 		double qualityScale = renderQualityScale(qualityScaleOverride);
@@ -1585,6 +1780,8 @@ class NpcBillboardOverlay extends Overlay
 			rasterizeSolidFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face, snappedColor.getRGB());
 		}
 
+		int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
+
 		if (hasAnyEdgeEffect())
 		{
 			BillboardOutlineRenderer.applyOutline(
@@ -1601,7 +1798,12 @@ class NpcBillboardOverlay extends Overlay
 			);
 		}
 
-		return image;
+		if (shouldHoverOutline || shouldInteractOutline)
+		{
+			applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
+		}
+
+		return new RenderedBillboardImage(image);
 	}
 
 	private static Rectangle expandedBounds(Rectangle bounds, int padding)
@@ -2161,13 +2363,21 @@ class NpcBillboardOverlay extends Overlay
 						qualityKey(updatePlan.qualityScale),
 						animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
 					);
-					cacheInvalidated = shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+					cacheInvalidated = updatePlan.forceHoverInteractionRedraw
+						|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
 					if (cacheInvalidated)
 					{
-						BufferedImage image = renderBillboardImage(faces, sourceBounds, outlinePadding, updatePlan.qualityScale);
-						if (image != null)
+						RenderedBillboardImage rendered = renderBillboardImage(
+							faces,
+							sourceBounds,
+							outlinePadding,
+							updatePlan.qualityScale,
+							request.shouldHoverOutline,
+							request.shouldInteractOutline
+						);
+						if (rendered != null)
 						{
-							cached = new CachedBillboard(cacheKey, imageBounds, image, nowMillis);
+							cached = new CachedBillboard(cacheKey, imageBounds, rendered.image, nowMillis);
 							putCachedBillboard(renderable, cached);
 							spriteRedrawn = true;
 						}
@@ -2175,6 +2385,11 @@ class NpcBillboardOverlay extends Overlay
 					else if (cached != null)
 					{
 						cached.touch(nowMillis);
+					}
+
+					if (cacheInvalidated)
+					{
+						forceHoverInteractionRedraws.remove(renderable);
 					}
 				}
 			}
@@ -2234,6 +2449,10 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
+			request.shouldHoverOutline,
+			request.shouldInteractOutline,
+			config.billboardHoverOutlineColor().getRGB(),
+			config.billboardInteractionOutlineColor().getRGB(),
 			renderQualityKey,
 			textureStateHash,
 			animatedTextureOffsetStateHash
@@ -2260,6 +2479,10 @@ class NpcBillboardOverlay extends Overlay
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
+			request.shouldHoverOutline,
+			request.shouldInteractOutline,
+			config.billboardHoverOutlineColor().getRGB(),
+			config.billboardInteractionOutlineColor().getRGB(),
 			qualityKey(qualityScale),
 			animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
 		);
@@ -2672,7 +2895,12 @@ class NpcBillboardOverlay extends Overlay
 
 	private int outlinePadding()
 	{
-		return config.enableBillboardShadowOutline() || config.enableBillboardSpriteOutline() || config.enableBillboardSpriteShadows()
+		return config.enableBillboardHighlightOutline()
+			|| config.enableBillboardShadowOutline()
+			|| config.enableBillboardSpriteOutline()
+			|| config.enableBillboardSpriteShadows()
+			|| config.enableBillboardHoverOutline()
+			|| config.enableBillboardInteractionOutline()
 			? OUTLINE_PADDING
 			: 0;
 	}
@@ -2686,6 +2914,117 @@ class NpcBillboardOverlay extends Overlay
 			|| config.enableBillboardHighlightInline()
 			|| config.enableBillboardShadowInline()
 			|| config.enableBillboardSpriteInline();
+	}
+
+	private void applyHoverInteractionOutline(BufferedImage image, int[] exteriorOutlineIndices, boolean shouldHoverOutline, boolean shouldInteractOutline)
+	{
+		if (image == null || exteriorOutlineIndices == null || exteriorOutlineIndices.length == 0)
+		{
+			return;
+		}
+
+		if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt))
+		{
+			return;
+		}
+
+		Color color = shouldInteractOutline
+			? config.billboardInteractionOutlineColor()
+			: shouldHoverOutline ? config.billboardHoverOutlineColor() : null;
+		if (color == null || color.getAlpha() == 0)
+		{
+			return;
+		}
+
+		int[] pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		int argb = color.getRGB();
+		for (int index : exteriorOutlineIndices)
+		{
+			pixels[index] = argb;
+		}
+	}
+
+	private Actor hoveredActor()
+	{
+		MenuEntry[] menuEntries = client.getMenuEntries();
+		if (menuEntries == null || menuEntries.length == 0)
+		{
+			return null;
+		}
+
+		MenuEntry hoveredEntry = client.isMenuOpen()
+			? hoveredMenuEntry(menuEntries)
+			: menuEntries[menuEntries.length - 1];
+		if (hoveredEntry == null || !isActorHoverAction(hoveredEntry.getType()))
+		{
+			return null;
+		}
+
+		return hoveredEntry.getActor();
+	}
+
+	private Actor interactedActor()
+	{
+		if (interactedActor != null)
+		{
+			return interactedActor;
+		}
+
+		Player localPlayer = client.getLocalPlayer();
+		return localPlayer != null ? localPlayer.getInteracting() : null;
+	}
+
+	private MenuEntry hoveredMenuEntry(MenuEntry[] menuEntries)
+	{
+		int menuX = client.getMenuX();
+		int menuY = client.getMenuY();
+		int menuWidth = client.getMenuWidth();
+		Point mouse = client.getMouseCanvasPosition();
+		int row = mouse.getY() - menuY - 19;
+		if (row < 0)
+		{
+			return menuEntries[menuEntries.length - 1];
+		}
+
+		row = (menuEntries.length - 1) - (row / 15);
+		if (mouse.getX() > menuX && mouse.getX() < menuX + menuWidth && row >= 0 && row < menuEntries.length)
+		{
+			return menuEntries[row];
+		}
+
+		return menuEntries[menuEntries.length - 1];
+	}
+
+	private static boolean isActorHoverAction(MenuAction action)
+	{
+		if (action == null)
+		{
+			return false;
+		}
+
+		switch (action)
+		{
+			case ITEM_USE_ON_NPC:
+			case WIDGET_TARGET_ON_NPC:
+			case NPC_FIRST_OPTION:
+			case NPC_SECOND_OPTION:
+			case NPC_THIRD_OPTION:
+			case NPC_FOURTH_OPTION:
+			case NPC_FIFTH_OPTION:
+			case ITEM_USE_ON_PLAYER:
+			case WIDGET_TARGET_ON_PLAYER:
+			case PLAYER_FIRST_OPTION:
+			case PLAYER_SECOND_OPTION:
+			case PLAYER_THIRD_OPTION:
+			case PLAYER_FOURTH_OPTION:
+			case PLAYER_FIFTH_OPTION:
+			case PLAYER_SIXTH_OPTION:
+			case PLAYER_SEVENTH_OPTION:
+			case PLAYER_EIGHTH_OPTION:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)
@@ -3105,6 +3444,10 @@ class NpcBillboardOverlay extends Overlay
 		private final boolean shadowInline;
 		private final boolean solidInline;
 		private final int outlineColor;
+		private final boolean hoverOutline;
+		private final boolean interactOutline;
+		private final int hoverOutlineColor;
+		private final int interactOutlineColor;
 		private final int renderQuality;
 		private final int textureStateHash;
 		private final int animatedTextureOffsetStateHash;
@@ -3127,6 +3470,10 @@ class NpcBillboardOverlay extends Overlay
 			boolean shadowInline,
 			boolean solidInline,
 			int outlineColor,
+			boolean hoverOutline,
+			boolean interactOutline,
+			int hoverOutlineColor,
+			int interactOutlineColor,
 			int renderQuality,
 			int textureStateHash,
 			int animatedTextureOffsetStateHash)
@@ -3148,6 +3495,10 @@ class NpcBillboardOverlay extends Overlay
 			this.shadowInline = shadowInline;
 			this.solidInline = solidInline;
 			this.outlineColor = outlineColor;
+			this.hoverOutline = hoverOutline;
+			this.interactOutline = interactOutline;
+			this.hoverOutlineColor = hoverOutlineColor;
+			this.interactOutlineColor = interactOutlineColor;
 			this.renderQuality = renderQuality;
 			this.textureStateHash = textureStateHash;
 			this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
@@ -3182,6 +3533,10 @@ class NpcBillboardOverlay extends Overlay
 				&& shadowInline == that.shadowInline
 				&& solidInline == that.solidInline
 				&& outlineColor == that.outlineColor
+				&& hoverOutline == that.hoverOutline
+				&& interactOutline == that.interactOutline
+				&& hoverOutlineColor == that.hoverOutlineColor
+				&& interactOutlineColor == that.interactOutlineColor
 				&& renderQuality == that.renderQuality
 				&& textureStateHash == that.textureStateHash
 				&& animatedTextureOffsetStateHash == that.animatedTextureOffsetStateHash;
@@ -3207,6 +3562,10 @@ class NpcBillboardOverlay extends Overlay
 			result = 31 * result + (shadowInline ? 1 : 0);
 			result = 31 * result + (solidInline ? 1 : 0);
 			result = 31 * result + outlineColor;
+			result = 31 * result + (hoverOutline ? 1 : 0);
+			result = 31 * result + (interactOutline ? 1 : 0);
+			result = 31 * result + hoverOutlineColor;
+			result = 31 * result + interactOutlineColor;
 			result = 31 * result + renderQuality;
 			result = 31 * result + textureStateHash;
 			result = 31 * result + animatedTextureOffsetStateHash;
@@ -3233,6 +3592,10 @@ class NpcBillboardOverlay extends Overlay
 		private final boolean shadowInline;
 		private final boolean solidInline;
 		private final int outlineColor;
+		private final boolean hoverOutline;
+		private final boolean interactOutline;
+		private final int hoverOutlineColor;
+		private final int interactOutlineColor;
 		private final int renderQuality;
 		private final int animatedTextureOffsetStateHash;
 
@@ -3254,6 +3617,10 @@ class NpcBillboardOverlay extends Overlay
 			boolean shadowInline,
 			boolean solidInline,
 			int outlineColor,
+			boolean hoverOutline,
+			boolean interactOutline,
+			int hoverOutlineColor,
+			int interactOutlineColor,
 			int renderQuality,
 			int animatedTextureOffsetStateHash)
 		{
@@ -3274,8 +3641,22 @@ class NpcBillboardOverlay extends Overlay
 			this.shadowInline = shadowInline;
 			this.solidInline = solidInline;
 			this.outlineColor = outlineColor;
+			this.hoverOutline = hoverOutline;
+			this.interactOutline = interactOutline;
+			this.hoverOutlineColor = hoverOutlineColor;
+			this.interactOutlineColor = interactOutlineColor;
 			this.renderQuality = renderQuality;
 			this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
+		}
+	}
+
+	private static final class RenderedBillboardImage
+	{
+		private final BufferedImage image;
+
+		private RenderedBillboardImage(BufferedImage image)
+		{
+			this.image = image;
 		}
 	}
 
@@ -3334,6 +3715,10 @@ class NpcBillboardOverlay extends Overlay
 				&& key.shadowInline == previewKey.shadowInline
 				&& key.solidInline == previewKey.solidInline
 				&& key.outlineColor == previewKey.outlineColor
+				&& key.hoverOutline == previewKey.hoverOutline
+				&& key.interactOutline == previewKey.interactOutline
+				&& key.hoverOutlineColor == previewKey.hoverOutlineColor
+				&& key.interactOutlineColor == previewKey.interactOutlineColor
 				&& key.renderQuality == previewKey.renderQuality
 				&& key.animatedTextureOffsetStateHash == previewKey.animatedTextureOffsetStateHash;
 		}
@@ -3781,10 +4166,12 @@ class NpcBillboardOverlay extends Overlay
 	private static final class FrameUpdatePlan
 	{
 		private final double qualityScale;
+		private final boolean forceHoverInteractionRedraw;
 
-		private FrameUpdatePlan(double qualityScale)
+		private FrameUpdatePlan(double qualityScale, boolean forceHoverInteractionRedraw)
 		{
 			this.qualityScale = qualityScale;
+			this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
 		}
 	}
 
@@ -4096,6 +4483,8 @@ class NpcBillboardOverlay extends Overlay
 		private final int poseAnimationFrame;
 		private final int animatedTextureId;
 		private final Rectangle hullBounds;
+		private final boolean shouldHoverOutline;
+		private final boolean shouldInteractOutline;
 		private final VerticalAnchor verticalAnchor;
 		private final NpcSnapDebug.FrameDebugInfo frameDebugInfo;
 
@@ -4113,6 +4502,8 @@ class NpcBillboardOverlay extends Overlay
 			int poseAnimationFrame,
 			int animatedTextureId,
 			Rectangle hullBounds,
+			boolean shouldHoverOutline,
+			boolean shouldInteractOutline,
 			VerticalAnchor verticalAnchor,
 			NpcSnapDebug.FrameDebugInfo frameDebugInfo
 		)
@@ -4130,6 +4521,8 @@ class NpcBillboardOverlay extends Overlay
 			this.poseAnimationFrame = poseAnimationFrame;
 			this.animatedTextureId = animatedTextureId;
 			this.hullBounds = hullBounds;
+			this.shouldHoverOutline = shouldHoverOutline;
+			this.shouldInteractOutline = shouldInteractOutline;
 			this.verticalAnchor = verticalAnchor;
 			this.frameDebugInfo = frameDebugInfo;
 		}

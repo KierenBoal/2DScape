@@ -1,6 +1,8 @@
 package com.kierenboal.npcsnap;
 
 import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.Arrays;
@@ -64,50 +66,96 @@ final class BillboardOutlineRenderer
 		int[] sourcePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
 		scratch.ensureCapacity(pixelCount);
 		System.arraycopy(sourcePixels, 0, scratch.resultPixels, 0, pixelCount);
-		Arrays.fill(scratch.visited, 0, pixelCount, false);
-		Arrays.fill(scratch.exteriorTransparentBoundary, 0, pixelCount, false);
-		Arrays.fill(scratch.exteriorOpaqueBoundary, 0, pixelCount, false);
-		scratch.queue.clear();
+		populateBoundaryMasks(sourcePixels, width, height, scratch);
 
-		enqueueBorderTransparentPixels(sourcePixels, width, height, scratch.visited, scratch.queue);
-		while (!scratch.queue.isEmpty())
-		{
-			int index = scratch.queue.removeFirst();
-			int x = index % width;
-			int y = index / width;
-			if (hasOpaqueNeighbor(sourcePixels, width, height, x, y))
-			{
-				scratch.exteriorTransparentBoundary[index] = true;
-				markOpaqueNeighbors(sourcePixels, width, height, x, y, scratch.exteriorOpaqueBoundary);
-			}
-
-			for (int i = 0; i < CARDINAL_X.length; i++)
-			{
-				int nextX = x + CARDINAL_X[i];
-				int nextY = y + CARDINAL_Y[i];
-				if (!isInBounds(width, height, nextX, nextY))
-				{
-					continue;
-				}
-
-				int nextIndex = nextY * width + nextX;
-				if (scratch.visited[nextIndex] || isOpaque(sourcePixels[nextIndex]))
-				{
-					continue;
-				}
-
-				scratch.visited[nextIndex] = true;
-				scratch.queue.addLast(nextIndex);
-			}
-		}
-
-		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, shadowOutline, solidOutline, solidOutlineColor);
+		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, false, solidInline, solidOutlineColor);
+		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, shadowInline, false, solidOutlineColor);
+		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, highlightInline, false, false, solidOutlineColor);
+		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, false, solidOutline, solidOutlineColor);
+		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, shadowOutline, false, solidOutlineColor);
+		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, false, false, solidOutlineColor);
 		if (spriteShadow)
 		{
 			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height);
 		}
-		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, highlightInline, shadowInline, solidInline, solidOutlineColor);
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
+	}
+
+	static int[] captureExteriorBoundaryIndices(BufferedImage image, Scratch scratch)
+	{
+		if (image == null)
+		{
+			return new int[0];
+		}
+
+		int width = image.getWidth();
+		int height = image.getHeight();
+		if (width <= 0 || height <= 0)
+		{
+			return new int[0];
+		}
+
+		if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt))
+		{
+			return new int[0];
+		}
+
+		int[] sourcePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		int pixelCount = width * height;
+		scratch.ensureCapacity(pixelCount);
+		populateBoundaryMasks(sourcePixels, width, height, scratch);
+		int count = 0;
+		for (int index = 0; index < pixelCount; index++)
+		{
+			if (scratch.exteriorTransparentBoundary[index])
+			{
+				count++;
+			}
+		}
+
+		int[] indices = new int[count];
+		int next = 0;
+		for (int index = 0; index < pixelCount; index++)
+		{
+			if (scratch.exteriorTransparentBoundary[index])
+			{
+				indices[next++] = index;
+			}
+		}
+
+		return indices;
+	}
+
+	static void drawDynamicOutline(Graphics2D graphics, BufferedImage image, Rectangle drawRect, int[] exteriorBoundaryIndices, Color outlineColor)
+	{
+		if (graphics == null || image == null || drawRect == null || outlineColor == null || outlineColor.getAlpha() == 0 || exteriorBoundaryIndices == null || exteriorBoundaryIndices.length == 0)
+		{
+			return;
+		}
+
+		int width = image.getWidth();
+		int height = image.getHeight();
+		if (width <= 0 || height <= 0 || drawRect.width <= 0 || drawRect.height <= 0)
+		{
+			return;
+		}
+
+		graphics.setColor(outlineColor);
+		for (int index : exteriorBoundaryIndices)
+		{
+			int x = index % width;
+			int y = index / width;
+			int minX = drawRect.x + (int) Math.floor((x * (double) drawRect.width) / width);
+			int maxX = drawRect.x + (int) Math.ceil(((x + 1) * (double) drawRect.width) / width);
+			int minY = drawRect.y + (int) Math.floor((y * (double) drawRect.height) / height);
+			int maxY = drawRect.y + (int) Math.ceil(((y + 1) * (double) drawRect.height) / height);
+			if (maxX <= minX || maxY <= minY)
+			{
+				continue;
+			}
+
+			graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
+		}
 	}
 
 	static final class Scratch
@@ -355,10 +403,11 @@ final class BillboardOutlineRenderer
 			return 0;
 		}
 
+		int alpha = (color >>> 24) & 0xFF;
 		int avgRed = darken((color >>> 16) & 0xFF);
 		int avgGreen = darken((color >>> 8) & 0xFF);
 		int avgBlue = darken(color & 0xFF);
-		return 0xFF000000 | (avgRed << 16) | (avgGreen << 8) | avgBlue;
+		return (alpha << 24) | (avgRed << 16) | (avgGreen << 8) | avgBlue;
 	}
 
 	private static int brightenedAverageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
@@ -369,14 +418,16 @@ final class BillboardOutlineRenderer
 			return 0;
 		}
 
+		int alpha = (color >>> 24) & 0xFF;
 		int avgRed = brighten((color >>> 16) & 0xFF);
 		int avgGreen = brighten((color >>> 8) & 0xFF);
 		int avgBlue = brighten(color & 0xFF);
-		return 0xFF000000 | (avgRed << 16) | (avgGreen << 8) | avgBlue;
+		return (alpha << 24) | (avgRed << 16) | (avgGreen << 8) | avgBlue;
 	}
 
 	private static int averageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
 	{
+		int alpha = 0;
 		int red = 0;
 		int green = 0;
 		int blue = 0;
@@ -396,6 +447,7 @@ final class BillboardOutlineRenderer
 				continue;
 			}
 
+			alpha += (argb >>> 24) & 0xFF;
 			red += (argb >>> 16) & 0xFF;
 			green += (argb >>> 8) & 0xFF;
 			blue += argb & 0xFF;
@@ -407,18 +459,19 @@ final class BillboardOutlineRenderer
 			return 0;
 		}
 
+		int avgAlpha = clampToByte((int) Math.round(alpha / (double) count));
 		int avgRed = clampToByte((int) Math.round(red / (double) count));
 		int avgGreen = clampToByte((int) Math.round(green / (double) count));
 		int avgBlue = clampToByte((int) Math.round(blue / (double) count));
-		return (avgRed << 16) | (avgGreen << 8) | avgBlue;
+		return (avgAlpha << 24) | (avgRed << 16) | (avgGreen << 8) | avgBlue;
 	}
 
 	private static boolean hasOpaqueNeighbor(int[] pixels, int width, int height, int x, int y)
 	{
-		for (int i = 0; i < ADJACENT_X.length; i++)
+		for (int i = 0; i < CARDINAL_X.length; i++)
 		{
-			int neighborX = x + ADJACENT_X[i];
-			int neighborY = y + ADJACENT_Y[i];
+			int neighborX = x + CARDINAL_X[i];
+			int neighborY = y + CARDINAL_Y[i];
 			if (!isInBounds(width, height, neighborX, neighborY))
 			{
 				continue;
@@ -435,10 +488,10 @@ final class BillboardOutlineRenderer
 
 	private static void markOpaqueNeighbors(int[] pixels, int width, int height, int x, int y, boolean[] exteriorOpaqueBoundary)
 	{
-		for (int i = 0; i < ADJACENT_X.length; i++)
+		for (int i = 0; i < CARDINAL_X.length; i++)
 		{
-			int neighborX = x + ADJACENT_X[i];
-			int neighborY = y + ADJACENT_Y[i];
+			int neighborX = x + CARDINAL_X[i];
+			int neighborY = y + CARDINAL_Y[i];
 			if (!isInBounds(width, height, neighborX, neighborY))
 			{
 				continue;
@@ -465,6 +518,47 @@ final class BillboardOutlineRenderer
 	private static int clampToByte(int value)
 	{
 		return Math.max(0, Math.min(255, value));
+	}
+
+	private static void populateBoundaryMasks(int[] sourcePixels, int width, int height, Scratch scratch)
+	{
+		int pixelCount = width * height;
+		Arrays.fill(scratch.visited, 0, pixelCount, false);
+		Arrays.fill(scratch.exteriorTransparentBoundary, 0, pixelCount, false);
+		Arrays.fill(scratch.exteriorOpaqueBoundary, 0, pixelCount, false);
+		scratch.queue.clear();
+
+		enqueueBorderTransparentPixels(sourcePixels, width, height, scratch.visited, scratch.queue);
+		while (!scratch.queue.isEmpty())
+		{
+			int index = scratch.queue.removeFirst();
+			int x = index % width;
+			int y = index / width;
+			if (hasOpaqueNeighbor(sourcePixels, width, height, x, y))
+			{
+				scratch.exteriorTransparentBoundary[index] = true;
+				markOpaqueNeighbors(sourcePixels, width, height, x, y, scratch.exteriorOpaqueBoundary);
+			}
+
+			for (int i = 0; i < CARDINAL_X.length; i++)
+			{
+				int nextX = x + CARDINAL_X[i];
+				int nextY = y + CARDINAL_Y[i];
+				if (!isInBounds(width, height, nextX, nextY))
+				{
+					continue;
+				}
+
+				int nextIndex = nextY * width + nextX;
+				if (scratch.visited[nextIndex] || isOpaque(sourcePixels[nextIndex]))
+				{
+					continue;
+				}
+
+				scratch.visited[nextIndex] = true;
+				scratch.queue.addLast(nextIndex);
+			}
+		}
 	}
 
 	private static boolean isOpaque(int argb)

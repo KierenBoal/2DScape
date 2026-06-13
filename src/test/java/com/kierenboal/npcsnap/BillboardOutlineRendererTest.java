@@ -16,9 +16,12 @@ public class BillboardOutlineRendererTest
 
 		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, false, new Color(0xDDDDDD));
 
-		assertEquals(0xFFDDDDDD, image.getRGB(1, 1));
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 1));
-		assertEquals(0xFFDDDDDD, image.getRGB(3, 3));
+		assertEquals(0xFFDDDDDD, image.getRGB(1, 2));
+		assertEquals(0xFFDDDDDD, image.getRGB(3, 2));
+		assertEquals(0xFFDDDDDD, image.getRGB(2, 3));
+		assertEquals(0x00000000, image.getRGB(1, 1));
+		assertEquals(0x00000000, image.getRGB(3, 3));
 		assertEquals(0xFFFFFFFF, image.getRGB(2, 2));
 		assertEquals(0x00000000, image.getRGB(0, 0));
 	}
@@ -131,5 +134,61 @@ public class BillboardOutlineRendererTest
 		assertEquals(0xFFFFFFFF, image.getRGB(10, 19));
 		assertEquals(0x3C000000, image.getRGB(9, 19));
 		assertEquals(0x00000000, image.getRGB(10, 18));
+	}
+
+	@Test
+	public void applyOutlinePreservesSolidOutlineAlpha()
+	{
+		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(2, 2, 0xFFFFFFFF);
+
+		BillboardOutlineRenderer.applyOutline(image, false, false, true, false, false, false, false, new Color(0x90FF0000, true));
+
+		assertEquals(0x90FF0000, image.getRGB(2, 1));
+	}
+
+	@Test
+	public void applyOutlinePreservesNeighborAlphaForGeneratedColors()
+	{
+		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(2, 2, 0x80804000);
+
+		BillboardOutlineRenderer.applyOutline(image, true, false, false, false, false, false, false, new Color(0xDDDDDD));
+
+		assertEquals(0x80AA5500, image.getRGB(2, 1));
+	}
+
+	@Test
+	public void applyOutlineUsesHighestPriorityExteriorColorOnSingleFootprint()
+	{
+		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(2, 2, 0xFF804000);
+
+		BillboardOutlineRenderer.applyOutline(image, true, true, true, false, false, false, false, new Color(0x9000FF00, true));
+
+		assertEquals(0xFFAA5500, image.getRGB(2, 1));
+		assertEquals(0x00000000, image.getRGB(1, 1));
+	}
+
+	@Test
+	public void captureExteriorBoundaryIndicesDoesNotLeakStaleIndicesFromLargerImage()
+	{
+		BillboardOutlineRenderer.Scratch scratch = new BillboardOutlineRenderer.Scratch();
+
+		BufferedImage largeImage = new BufferedImage(9, 9, BufferedImage.TYPE_INT_ARGB);
+		largeImage.setRGB(4, 4, 0xFFFFFFFF);
+		BillboardOutlineRenderer.captureExteriorBoundaryIndices(largeImage, scratch);
+
+		BufferedImage smallImage = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
+		smallImage.setRGB(1, 1, 0xFFFFFFFF);
+		int[] indices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(smallImage, scratch);
+
+		for (int index : indices)
+		{
+			if (index < 0 || index >= 9)
+			{
+				throw new AssertionError("Boundary index leaked past current image: " + index);
+			}
+		}
 	}
 }
