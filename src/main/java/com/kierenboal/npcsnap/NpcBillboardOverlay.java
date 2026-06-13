@@ -5,7 +5,6 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.Rectangle;
-import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.ArrayDeque;
@@ -1232,7 +1231,6 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			-1,
-			null,
 			false,
 			false,
 			VerticalAnchor.BOTTOM,
@@ -1258,7 +1256,6 @@ class NpcBillboardOverlay extends Overlay
 			actor.getPoseAnimation(),
 			actor.getPoseAnimationFrame(),
 			animatedTextureId(actor),
-			actorHullBounds(actor),
 			shouldHoverOutline,
 			shouldInteractOutline,
 			VerticalAnchor.BOTTOM,
@@ -1292,7 +1289,6 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			-1,
-			null,
 			false,
 			false,
 			VerticalAnchor.CENTER,
@@ -1316,7 +1312,6 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			-1,
-			null,
 			false,
 			false,
 			VerticalAnchor.CENTER,
@@ -1340,7 +1335,6 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			-1,
-			null,
 			false,
 			false,
 			VerticalAnchor.CENTER,
@@ -1368,7 +1362,6 @@ class NpcBillboardOverlay extends Overlay
 			-1,
 			-1,
 			item.getId(),
-			null,
 			false,
 			false,
 			VerticalAnchor.BOTTOM,
@@ -2285,19 +2278,6 @@ class NpcBillboardOverlay extends Overlay
 		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
 	}
 
-	private static Rectangle actorHullBounds(Actor actor)
-	{
-		try
-		{
-			Shape hull = actor.getConvexHull();
-			return hull != null ? hull.getBounds() : null;
-		}
-		catch (AssertionError ex)
-		{
-			return null;
-		}
-	}
-
 	private BillboardRenderResult renderRenderableBillboard(Graphics2D graphics, BillboardRenderRequest request, FrameUpdatePlan updatePlan)
 	{
 		Renderable renderable = request.renderable;
@@ -2870,21 +2850,13 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		Rectangle hullBounds = request.hullBounds;
 		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
 		int distanceHeight = scaledSize(billboardBounds.height, perspectiveScale);
 		int projectedHeight = projectedHeight(basePoint, topPoint);
-		int hullHeight = hullBounds != null && isUsableDrawDimension(hullBounds.height) ? hullBounds.height : 0;
-		int targetHeight = hullHeight > 0
-			? hullHeight
-			: distanceHeight > 0 ? distanceHeight : projectedHeight;
+		int targetHeight = distanceHeight > 0 ? distanceHeight : projectedHeight;
 		int targetWidth = aspectWidth(billboardBounds, targetHeight);
-		int anchorX = hullBounds != null
-			? hullBounds.x + (hullBounds.width / 2)
-			: request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getX() : basePoint.getX();
-		int anchorY = hullBounds != null
-			? hullBounds.y + hullBounds.height
-			: request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getY() : basePoint.getY();
+		int anchorX = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getX() : basePoint.getX();
+		int anchorY = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getY() : basePoint.getY();
 		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
 		{
 			return null;
@@ -4482,7 +4454,6 @@ class NpcBillboardOverlay extends Overlay
 		private final int poseAnimationId;
 		private final int poseAnimationFrame;
 		private final int animatedTextureId;
-		private final Rectangle hullBounds;
 		private final boolean shouldHoverOutline;
 		private final boolean shouldInteractOutline;
 		private final VerticalAnchor verticalAnchor;
@@ -4501,7 +4472,6 @@ class NpcBillboardOverlay extends Overlay
 			int poseAnimationId,
 			int poseAnimationFrame,
 			int animatedTextureId,
-			Rectangle hullBounds,
 			boolean shouldHoverOutline,
 			boolean shouldInteractOutline,
 			VerticalAnchor verticalAnchor,
@@ -4520,7 +4490,6 @@ class NpcBillboardOverlay extends Overlay
 			this.poseAnimationId = poseAnimationId;
 			this.poseAnimationFrame = poseAnimationFrame;
 			this.animatedTextureId = animatedTextureId;
-			this.hullBounds = hullBounds;
 			this.shouldHoverOutline = shouldHoverOutline;
 			this.shouldInteractOutline = shouldInteractOutline;
 			this.verticalAnchor = verticalAnchor;
