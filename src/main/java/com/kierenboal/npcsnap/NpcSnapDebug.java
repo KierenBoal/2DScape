@@ -74,22 +74,24 @@ class NpcSnapDebug
 		{
 			return;
 		}
-
-		if (config.debugShowFrameRedraws() && renderDebug.frameRedrawn)
+		
+		if (config.debugDrawBillboardOutline())
 		{
+			int size = 2;
 			Stroke stroke = graphics.getStroke();
-			graphics.setStroke(new BasicStroke(2.0f));
-			graphics.setColor(frameRedrawColor(renderDebug));
-			graphics.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+			graphics.setStroke(new BasicStroke(size));
+			graphics.setColor(BILLBOARD_RED);
+			graphics.drawRect(bounds.x - (size / 2), bounds.y - (size / 2), bounds.width + size, bounds.height + size);
 			graphics.setStroke(stroke);
 		}
 
-		if (config.debugDrawBillboardOutline())
+		if (config.debugShowFrameRedraws() && renderDebug.frameRedrawn)
 		{
+			int size = 4;
 			Stroke stroke = graphics.getStroke();
-			graphics.setStroke(new BasicStroke(2.0f));
-			graphics.setColor(BILLBOARD_RED);
-			graphics.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+			graphics.setStroke(new BasicStroke(size));
+			graphics.setColor(frameRedrawColor(renderDebug));
+			graphics.drawRect(bounds.x + (size / 2), bounds.y + (size / 2), bounds.width - size, bounds.height - size);
 			graphics.setStroke(stroke);
 		}
 
@@ -106,6 +108,7 @@ class NpcSnapDebug
 				drawCenteredText(graphics, frameText, bounds.x + (bounds.width / 2), bounds.y + Math.max(12, bounds.height / 4));
 			}
 		}
+		
 	}
 
 	private String frameText(RenderDebug renderDebug)
@@ -121,6 +124,7 @@ class NpcSnapDebug
 
 	private Color frameRedrawColor(RenderDebug renderDebug)
 	{
+		
 		int seed = 1;
 		seed = (31 * seed) + client.getGameCycle();
 		seed = (31 * seed) + renderDebug.paintOrder;
@@ -128,21 +132,50 @@ class NpcSnapDebug
 		seed = (31 * seed) + renderDebug.bounds.y;
 		seed = (31 * seed) + renderDebug.bounds.width;
 		seed = (31 * seed) + renderDebug.bounds.height;
-		int pattern = 1 + Math.floorMod(seed, 6);
+		
+		int pattern = Math.floorMod(seed, 7);
+		
 		int red = 0;
 		int green = 0;
 		int blue = 0;
-		if ((pattern & 0x1) != 0)
+		
+		if (pattern == 0)
 		{
 			red = brightColorChannel(seed, 0);
 		}
-		if ((pattern & 0x2) != 0)
+		
+		if (pattern == 1)
 		{
 			green = brightColorChannel(seed, 8);
 		}
-		if ((pattern & 0x4) != 0)
+		
+		if (pattern == 2)
 		{
 			blue = brightColorChannel(seed, 16);
+		}
+		
+		if (pattern == 3)
+		{
+			red = brightColorChannel(seed, 0);
+			green = brightColorChannel(seed, 8);
+		}
+		
+		if (pattern == 4)
+		{
+			red = brightColorChannel(seed, 0);
+			blue = brightColorChannel(seed, 8);
+		}
+		
+		if (pattern == 5)
+		{
+			green = brightColorChannel(seed, 0);
+			blue = brightColorChannel(seed, 8);
+		}
+		
+		if (pattern == 6)
+		{
+			red = brightColorChannel(seed, 0);
+			blue = brightColorChannel(seed, 8);
 		}
 
 		return new Color(red, green, blue, 255);
@@ -150,7 +183,7 @@ class NpcSnapDebug
 
 	private static int brightColorChannel(int seed, int shift)
 	{
-		return 128 + Math.floorMod(seed >> shift, 128);
+		return 192 + Math.floorMod(seed >> shift, 64);
 	}
 
 	private void drawCenteredText(Graphics2D graphics, String text, int centerX, int centerY)

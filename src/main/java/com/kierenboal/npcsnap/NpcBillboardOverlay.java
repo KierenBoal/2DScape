@@ -619,36 +619,125 @@ class NpcBillboardOverlay extends Overlay
 			return targets;
 		}
 
-		Map<PriorityTileKey, List<BillboardTarget>> groupedTargets = new HashMap<>();
-		List<BillboardTargetGroup> orderedGroups = new ArrayList<>();
+		List<BillboardPaintOrder.Entry<BillboardTarget>> entries = new ArrayList<>(targets.size());
 		for (BillboardTarget target : targets)
 		{
-			PriorityTileKey priorityTileKey = target.getPriorityTileKey();
-			if (priorityTileKey == null)
+			Rectangle previewBounds = buildSortPreviewBounds(target);
+			entries.add(new BillboardPaintOrder.Entry<>(
+				target,
+				previewBounds,
+				target.getRenderPriority(),
+				target.priorityGroupSortKey(),
+				previewBounds != null ? previewBounds.y + previewBounds.height : Integer.MAX_VALUE,
+				target.getDepth(),
+				target.targetKey.stableSortOrder()
+			));
+		}
+
+		return BillboardPaintOrder.sort(entries);
+	}
+
+	private Rectangle buildSortPreviewBounds(BillboardTarget target)
+	{
+		if (target == null)
+		{
+			return null;
+		}
+
+		if (target.type == BillboardTargetType.TILE_OBJECT)
+		{
+			Rectangle combined = null;
+			if (target.observedTileObject == null)
 			{
-				orderedGroups.add(BillboardTargetGroup.single(target));
+				return null;
+			}
+
+			for (ObjectRenderablePart part : target.observedTileObject.parts)
+			{
+				BillboardRenderRequest request = buildRenderRequest(target, part);
+				Rectangle preview = buildSortPreviewBounds(request);
+				if (preview == null)
+				{
+					continue;
+				}
+
+				combined = combined == null ? new Rectangle(preview) : combined.union(preview);
+			}
+
+			return combined;
+		}
+
+		return buildSortPreviewBounds(buildRenderRequest(target));
+	}
+
+	private Rectangle buildSortPreviewBounds(BillboardRenderRequest request)
+	{
+		if (request == null || request.renderable == null)
+		{
+			return null;
+		}
+
+		CachedBillboard cached = billboardCache.get(request.renderable);
+		Rectangle bounds = cached != null ? cached.bounds : estimateBillboardImageBounds(request);
+		return bounds != null ? buildDrawRect(request, request.renderable, bounds) : null;
+	}
+
+	private Rectangle estimateBillboardImageBounds(BillboardRenderRequest request)
+	{
+		Model model = request != null ? request.model : null;
+		if (model == null)
+		{
+			return null;
+		}
+
+		int vertexCount = model.getVerticesCount();
+		if (vertexCount <= 0)
+		{
+			return null;
+		}
+
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		double yawSin = Perspective.SINE[request.relativeYaw] / 65536.0;
+		double yawCos = Perspective.COSINE[request.relativeYaw] / 65536.0;
+		int inversePitch = Math.floorMod(-request.relativePitch, FULL_CIRCLE);
+		double pitchSin = Perspective.SINE[inversePitch] / 65536.0;
+		double pitchCos = Perspective.COSINE[inversePitch] / 65536.0;
+		int minX = Integer.MAX_VALUE;
+		int minY = Integer.MAX_VALUE;
+		int maxX = Integer.MIN_VALUE;
+		int maxY = Integer.MIN_VALUE;
+		for (int i = 0; i < vertexCount; i++)
+		{
+			double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
+			double rotatedZ = (verticesZ[i] * yawCos) - (verticesX[i] * yawSin);
+			double spriteY = (verticesY[i] * pitchCos) - (rotatedZ * pitchSin);
+			if (!Double.isFinite(rotatedX) || !Double.isFinite(spriteY))
+			{
 				continue;
 			}
 
-			groupedTargets.computeIfAbsent(priorityTileKey, ignored -> new ArrayList<>()).add(target);
+			int projectedX = (int) Math.round(rotatedX);
+			int projectedY = (int) Math.round(spriteY);
+			minX = Math.min(minX, projectedX);
+			minY = Math.min(minY, projectedY);
+			maxX = Math.max(maxX, projectedX);
+			maxY = Math.max(maxY, projectedY);
 		}
 
-		for (List<BillboardTarget> grouped : groupedTargets.values())
+		if (minX == Integer.MAX_VALUE)
 		{
-			grouped.sort(Comparator
-				.comparingInt(BillboardTarget::getRenderPriority)
-				.thenComparing(Comparator.comparingDouble(BillboardTarget::getDepth).reversed()));
-			orderedGroups.add(BillboardTargetGroup.group(grouped));
+			return null;
 		}
 
-		orderedGroups.sort(Comparator.comparingDouble(BillboardTargetGroup::getDepth).reversed());
-		List<BillboardTarget> orderedTargets = new ArrayList<>(targets.size());
-		for (BillboardTargetGroup group : orderedGroups)
+		Rectangle sourceBounds = new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+		if (!isUsableSourceBounds(sourceBounds))
 		{
-			orderedTargets.addAll(group.targets);
+			return null;
 		}
 
-		return orderedTargets;
+		return expandedBounds(sourceBounds, outlinePadding());
 	}
 
 	private void ensureActiveBillboardsCurrent()
@@ -3891,6 +3980,11 @@ class NpcBillboardOverlay extends Overlay
 			return priorityTileKey;
 		}
 
+		private long priorityGroupSortKey()
+		{
+			return priorityTileKey != null ? priorityTileKey.sortKey() : BillboardPaintOrder.NO_PRIORITY_GROUP;
+		}
+
 		private static LocalPoint firstLocalPoint(ObservedTileObject observedTileObject)
 		{
 			if (observedTileObject == null)
@@ -3973,6 +4067,11 @@ class NpcBillboardOverlay extends Overlay
 		{
 			int byOrder = Long.compare(left.orderKey, right.orderKey);
 			return byOrder != 0 ? byOrder : Long.compare(left.uniqueKey, right.uniqueKey);
+		}
+
+		private long stableSortOrder()
+		{
+			return uniqueKey;
 		}
 
 		private static int renderableEntityId(BillboardTargetType type, Renderable renderable)
@@ -4233,39 +4332,6 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
-	private static final class BillboardTargetGroup
-	{
-		private final List<BillboardTarget> targets;
-		private final double depth;
-
-		private BillboardTargetGroup(List<BillboardTarget> targets, double depth)
-		{
-			this.targets = targets;
-			this.depth = depth;
-		}
-
-		private static BillboardTargetGroup single(BillboardTarget target)
-		{
-			return new BillboardTargetGroup(Collections.singletonList(target), target.getDepth());
-		}
-
-		private static BillboardTargetGroup group(List<BillboardTarget> targets)
-		{
-			double maxDepth = Double.NEGATIVE_INFINITY;
-			for (BillboardTarget target : targets)
-			{
-				maxDepth = Math.max(maxDepth, target.getDepth());
-			}
-
-			return new BillboardTargetGroup(targets, maxDepth);
-		}
-
-		private double getDepth()
-		{
-			return depth;
-		}
-	}
-
 	private static final class PriorityTileKey
 	{
 		private final int plane;
@@ -4287,6 +4353,13 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			return new PriorityTileKey(plane, localPoint.getX() / LOCAL_TILE_SIZE, localPoint.getY() / LOCAL_TILE_SIZE);
+		}
+
+		private long sortKey()
+		{
+			return ((long) plane << 48)
+				^ ((long) (tileX & 0xFFFFFF) << 24)
+				^ (tileY & 0xFFFFFFL);
 		}
 
 		@Override
