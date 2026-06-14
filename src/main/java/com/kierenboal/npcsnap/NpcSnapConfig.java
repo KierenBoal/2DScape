@@ -176,7 +176,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 32
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "numberOfRotationAngles",
@@ -191,7 +191,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 8
+		max = 32
 	)
 	@ConfigItem(
 		keyName = "numberOfPitchRotationAngles",
@@ -217,7 +217,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 60
+		max = 120
 	)
 	@ConfigItem(
 		keyName = "animationFrameCount",
@@ -238,7 +238,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default boolean enableBillboardCombatSnapping()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -252,6 +252,10 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
+	@Range(
+		min = 1,
+		max = 100
+	)
 	@ConfigItem(
 		keyName = "renderBillboardQuality",
 		name = "Render billboard quality",
@@ -265,7 +269,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 255
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "billboardRadiusTiles",
@@ -280,7 +284,7 @@ public interface NpcSnapConfig extends Config
 
 	@Range(
 		min = 1,
-		max = 1000
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "billboardMaxEntities",
@@ -290,27 +294,27 @@ public interface NpcSnapConfig extends Config
 	)
 	default int billboardMaxEntities()
 	{
-		return 64;
+		return 128;
 	}
 
 	@Range(
 		min = 1,
-		max = 128
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "billboardMaxDrawsPerFrame",
 		name = "Max billboard updates per frame",
-		description = "Maximum number of billboard sprites that can be rerendered in a single frame",
+		description = "Maximum number of billboard sprites that can be re-calculated in a single frame",
 		section = billboardSection
 	)
 	default int billboardMaxDrawsPerFrame()
 	{
-		return 10;
+		return 16;
 	}
 
 	@Range(
 		min = 1,
-		max = 64
+		max = 256
 	)
 	@ConfigItem(
 		keyName = "BillboardColorBands",
@@ -324,8 +328,8 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@Range(
-		min = 50,
-		max = 300
+		min = 0,
+		max = 512
 	)
 	@ConfigItem(
 		keyName = "billboardLightBoostPercent",

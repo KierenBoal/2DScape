@@ -7,6 +7,7 @@ import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.util.Arrays;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -117,6 +118,11 @@ class NpcBillboardOverlay extends Overlay
 	private float[] spriteXScratch = new float[0];
 	private float[] spriteYScratch = new float[0];
 	private float[] spriteDepthScratch = new float[0];
+	private BufferedImage frameCompositeImage;
+	private int[] frameCompositePixels = new int[0];
+	private char[] paintOrderBuffer = new char[0];
+	private int frameCompositeWidth;
+	private int frameCompositeHeight;
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 	private Actor interactedActor;
 	private int interactedActorClickTick = Integer.MIN_VALUE;
@@ -166,10 +172,12 @@ class NpcBillboardOverlay extends Overlay
 		updateHoverInteractionState();
 		applyForcedHoverInteractionPlans(visibleTargets);
 		visibleTargets = sortTargetsForRender(visibleTargets);
+		List<PreparedBillboardDraw> preparedDraws = new ArrayList<>();
 		for (int i = 0; i < visibleTargets.size(); i++)
 		{
-			renderTarget(graphics, visibleTargets.get(i), i + 1);
+			renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
 		}
+		compositePreparedDraws(graphics, preparedDraws);
 
 		return null;
 	}
@@ -530,11 +538,11 @@ class NpcBillboardOverlay extends Overlay
 		return activeTileObjectSnapshot.contains(tileObject);
 	}
 
-	private void renderTarget(Graphics2D graphics, BillboardTarget target, int paintOrder)
+	private void renderTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
 	{
 		if (target.type == BillboardTargetType.TILE_OBJECT)
 		{
-			renderTileObjectTarget(graphics, target, paintOrder);
+			renderTileObjectTarget(target, paintOrder, preparedDraws);
 			return;
 		}
 
@@ -544,16 +552,16 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		BillboardRenderResult result = renderRenderableBillboard(graphics, request, frameUpdatePlans.get(target.targetKey));
+		BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey));
 		if (result == null)
 		{
 			return;
 		}
 
-		drawRenderDebug(graphics, result, request, paintOrder);
+		preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
 	}
 
-	private void renderTileObjectTarget(Graphics2D graphics, BillboardTarget target, int paintOrder)
+	private void renderTileObjectTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
 	{
 		if (target.observedTileObject == null)
 		{
@@ -568,13 +576,13 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			BillboardRenderResult result = renderRenderableBillboard(graphics, request, frameUpdatePlans.get(target.targetKey));
+			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey));
 			if (result == null)
 			{
 				continue;
 			}
 
-			drawRenderDebug(graphics, result, request, paintOrder);
+			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
 		}
 	}
 
@@ -588,6 +596,108 @@ class NpcBillboardOverlay extends Overlay
 			request.frameDebugInfo
 		);
 		debug.drawBillboardDebugForeground(graphics, renderDebug);
+	}
+
+	private void compositePreparedDraws(Graphics2D graphics, List<PreparedBillboardDraw> preparedDraws)
+	{
+		if (preparedDraws.isEmpty())
+		{
+			return;
+		}
+
+		int viewportX = client.getViewportXOffset();
+		int viewportY = client.getViewportYOffset();
+		int viewportWidth = client.getViewportWidth();
+		int viewportHeight = client.getViewportHeight();
+		if (viewportWidth <= 0 || viewportHeight <= 0)
+		{
+			return;
+		}
+
+		ensureFrameCompositeCapacity(viewportWidth, viewportHeight);
+		Arrays.fill(frameCompositePixels, 0, viewportWidth * viewportHeight, 0);
+		Arrays.fill(paintOrderBuffer, 0, viewportWidth * viewportHeight, (char) 0);
+		for (int i = preparedDraws.size() - 1; i >= 0; i--)
+		{
+			blitPreparedDraw(preparedDraws.get(i), viewportX, viewportY, viewportWidth, viewportHeight);
+		}
+
+		graphics.drawImage(frameCompositeImage, viewportX, viewportY, null);
+		for (PreparedBillboardDraw draw : preparedDraws)
+		{
+			drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
+		}
+	}
+
+	private void ensureFrameCompositeCapacity(int width, int height)
+	{
+		if (frameCompositeImage != null && frameCompositeWidth == width && frameCompositeHeight == height)
+		{
+			return;
+		}
+
+		frameCompositeImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		frameCompositePixels = ((DataBufferInt) frameCompositeImage.getRaster().getDataBuffer()).getData();
+		paintOrderBuffer = new char[width * height];
+		frameCompositeWidth = width;
+		frameCompositeHeight = height;
+	}
+
+	private void blitPreparedDraw(PreparedBillboardDraw draw, int viewportX, int viewportY, int viewportWidth, int viewportHeight)
+	{
+		if (draw == null || draw.image == null || draw.bounds == null || draw.bounds.width <= 0 || draw.bounds.height <= 0)
+		{
+			return;
+		}
+
+		if (!(draw.image.getRaster().getDataBuffer() instanceof DataBufferInt))
+		{
+			return;
+		}
+
+		int[] sourcePixels = ((DataBufferInt) draw.image.getRaster().getDataBuffer()).getData();
+		int sourceWidth = draw.image.getWidth();
+		int sourceHeight = draw.image.getHeight();
+		int clipLeft = Math.max(draw.bounds.x, viewportX);
+		int clipTop = Math.max(draw.bounds.y, viewportY);
+		int clipRight = Math.min(draw.bounds.x + draw.bounds.width, viewportX + viewportWidth);
+		int clipBottom = Math.min(draw.bounds.y + draw.bounds.height, viewportY + viewportHeight);
+		if (clipLeft >= clipRight || clipTop >= clipBottom)
+		{
+			return;
+		}
+
+		int paintOrder = draw.paintOrder;
+		for (int y = clipTop; y < clipBottom; y++)
+		{
+			int destY = y - viewportY;
+			int sourceY = ((y - draw.bounds.y) * sourceHeight) / draw.bounds.height;
+			int destRow = destY * viewportWidth;
+			int sourceRow = sourceY * sourceWidth;
+			for (int x = clipLeft; x < clipRight; x++)
+			{
+				int destX = x - viewportX;
+				int destIndex = destRow + destX;
+				if (paintOrderBuffer[destIndex] > paintOrder)
+				{
+					continue;
+				}
+
+				int sourceX = ((x - draw.bounds.x) * sourceWidth) / draw.bounds.width;
+				int sourcePixel = sourcePixels[sourceRow + sourceX];
+				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
+				if (sourceAlpha == 0)
+				{
+					continue;
+				}
+
+				frameCompositePixels[destIndex] = BillboardTriangleRasterizer.blendPixel(frameCompositePixels[destIndex], sourcePixel);
+				if (sourceAlpha == 0xFF)
+				{
+					paintOrderBuffer[destIndex] = (char) paintOrder;
+				}
+			}
+		}
 	}
 
 	private List<BillboardTarget> getVisibleTargets(WorldView worldView)
@@ -2367,7 +2477,7 @@ class NpcBillboardOverlay extends Overlay
 		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
 	}
 
-	private BillboardRenderResult renderRenderableBillboard(Graphics2D graphics, BillboardRenderRequest request, FrameUpdatePlan updatePlan)
+	private BillboardRenderResult renderRenderableBillboard(BillboardRenderRequest request, FrameUpdatePlan updatePlan)
 	{
 		Renderable renderable = request.renderable;
 		Model model = request.model;
@@ -2481,16 +2591,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		boolean spriteDirty = cached.consumeDirty();
-		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forBounds(
-			drawRect,
-			0,
-			cacheInvalidated,
-			spriteDirty,
-			request.frameDebugInfo
-		);
-		debug.drawBillboardDebug(graphics, renderDebug);
-		graphics.drawImage(cached.image, drawRect.x, drawRect.y, drawRect.width, drawRect.height, null);
-		return new BillboardRenderResult(drawRect, cacheInvalidated, spriteDirty);
+		return new BillboardRenderResult(drawRect, cached.image, cacheInvalidated, spriteDirty);
 	}
 
 	private BillboardCacheKey buildCacheKey(
@@ -4573,14 +4674,34 @@ class NpcBillboardOverlay extends Overlay
 	private static final class BillboardRenderResult
 	{
 		private final Rectangle bounds;
+		private final BufferedImage image;
 		private final boolean cacheInvalidated;
 		private final boolean spriteRedrawn;
 
-		private BillboardRenderResult(Rectangle bounds, boolean cacheInvalidated, boolean spriteRedrawn)
+		private BillboardRenderResult(Rectangle bounds, BufferedImage image, boolean cacheInvalidated, boolean spriteRedrawn)
 		{
 			this.bounds = bounds;
+			this.image = image;
 			this.cacheInvalidated = cacheInvalidated;
 			this.spriteRedrawn = spriteRedrawn;
+		}
+	}
+
+	private static final class PreparedBillboardDraw
+	{
+		private final BillboardRenderRequest request;
+		private final BillboardRenderResult result;
+		private final int paintOrder;
+		private final BufferedImage image;
+		private final Rectangle bounds;
+
+		private PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
+		{
+			this.request = request;
+			this.result = result;
+			this.paintOrder = paintOrder;
+			this.image = result != null ? result.image : null;
+			this.bounds = result != null ? result.bounds : null;
 		}
 	}
 
