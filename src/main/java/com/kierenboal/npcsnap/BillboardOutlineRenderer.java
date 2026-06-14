@@ -16,7 +16,7 @@ final class BillboardOutlineRenderer
 	private static final int[] ADJACENT_Y = {-1, -1, -1, 0, 0, 1, 1, 1};
 	private static final double SHADOW_DARKEN_FACTOR = 0.67d;
 	private static final double HIGHLIGHT_BRIGHTEN_FACTOR = 1.33d;
-	private static final int SPRITE_SHADOW_ALPHA = 120;
+	private static final int SPRITE_SHADOW_ALPHA = 80;
 	private static final int SPRITE_SHADOW_MIN_SPREAD = 2;
 	private static final double SPRITE_SHADOW_HEIGHT_RATIO = 0.05d;
 

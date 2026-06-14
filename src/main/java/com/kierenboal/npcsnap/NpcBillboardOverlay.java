@@ -104,6 +104,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Object observedTileObjectsLock = new Object();
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final Set<Renderable> activeBillboards = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<Renderable> suppressedRenderables = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<TileObject> activeTileObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<Renderable> sceneRenderablesThisFrame = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<Renderable> sceneRenderablesLastFrame = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -114,6 +115,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
+	private volatile Set<Renderable> suppressedRenderableSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
 	private float[] spriteXScratch = new float[0];
 	private float[] spriteYScratch = new float[0];
@@ -235,12 +237,14 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveSelections()
 	{
 		activeBillboards.clear();
+		suppressedRenderables.clear();
 		activeTileObjects.clear();
 	}
 
 	private void clearActiveSnapshots()
 	{
 		activeBillboardSnapshot = Collections.emptySet();
+		suppressedRenderableSnapshot = Collections.emptySet();
 		activeTileObjectSnapshot = Collections.emptySet();
 	}
 
@@ -516,10 +520,10 @@ class NpcBillboardOverlay extends Overlay
 		if (client.isClientThread())
 		{
 			ensureActiveBillboardsCurrent();
-			return activeBillboards.contains(renderable);
+			return activeBillboards.contains(renderable) || suppressedRenderables.contains(renderable);
 		}
 
-		return activeBillboardSnapshot.contains(renderable);
+		return activeBillboardSnapshot.contains(renderable) || suppressedRenderableSnapshot.contains(renderable);
 	}
 
 	boolean shouldHideTileObject(TileObject tileObject)
@@ -879,7 +883,8 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		List<BillboardTarget> candidates = collectCandidates(worldView);
+		CollectedCandidates collected = collectCandidates(worldView);
+		List<BillboardTarget> candidates = collected.candidates;
 		candidates.sort(Comparator.comparingDouble(BillboardTarget::getDepth));
 		int limit = Math.max(1, config.billboardMaxEntities());
 		if (candidates.size() > limit)
@@ -903,8 +908,40 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
+		markSuppressedStackedActors(collected);
 		scheduleFrameUpdates(sortTargetsForRender(new ArrayList<>(candidates)), gameCycle);
 		updateActiveSnapshots();
+	}
+
+	private void markSuppressedStackedActors(CollectedCandidates collected)
+	{
+		if (collected == null)
+		{
+			return;
+		}
+
+		for (Map.Entry<OccupiedTileKey, List<Actor>> entry : collected.actorsByTile.entrySet())
+		{
+			List<Actor> actors = entry.getValue();
+			if (actors == null || actors.size() < 2)
+			{
+				continue;
+			}
+
+			Actor topActor = collected.topActorsByTile.get(entry.getKey());
+			if (topActor == null || !activeRenderableTargets.containsKey(topActor) || !billboardCache.containsKey(topActor))
+			{
+				continue;
+			}
+
+			for (Actor actor : actors)
+			{
+				if (actor != null && actor != topActor)
+				{
+					suppressedRenderables.add(actor);
+				}
+			}
+		}
 	}
 
 	private void updateHoverInteractionState()
@@ -1167,12 +1204,15 @@ class NpcBillboardOverlay extends Overlay
 		Set<Renderable> billboardSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
 		billboardSnapshot.addAll(activeBillboards);
 		activeBillboardSnapshot = billboardSnapshot;
+		Set<Renderable> suppressedSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
+		suppressedSnapshot.addAll(suppressedRenderables);
+		suppressedRenderableSnapshot = suppressedSnapshot;
 		Set<TileObject> tileObjectSnapshot = Collections.newSetFromMap(new IdentityHashMap<>());
 		tileObjectSnapshot.addAll(activeTileObjects);
 		activeTileObjectSnapshot = tileObjectSnapshot;
 	}
 
-	private List<BillboardTarget> collectCandidates(WorldView worldView)
+	private CollectedCandidates collectCandidates(WorldView worldView)
 	{
 		Player localPlayer = client.getLocalPlayer();
 		LocalPoint localPlayerLocation = localPlayer != null ? localPlayer.getLocalLocation() : null;
@@ -1180,6 +1220,7 @@ class NpcBillboardOverlay extends Overlay
 		List<BillboardTarget> candidates = new ArrayList<>();
 		Map<OccupiedTileKey, Actor> topActorsByTile = new HashMap<>();
 		Map<Actor, BillboardTarget> actorTargets = new IdentityHashMap<>();
+		Map<OccupiedTileKey, List<Actor>> actorsByTile = new HashMap<>();
 		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
 		Set<OccupiedTileKey> claimedActorEffectTiles = new HashSet<>();
 
@@ -1196,6 +1237,7 @@ class NpcBillboardOverlay extends Overlay
 
 				considerTopActorCandidate(
 					topActorsByTile,
+					actorsByTile,
 					actorTargets,
 					npc,
 					BillboardTarget.forRenderable(
@@ -1223,6 +1265,7 @@ class NpcBillboardOverlay extends Overlay
 
 				considerTopActorCandidate(
 					topActorsByTile,
+					actorsByTile,
 					actorTargets,
 					player,
 					BillboardTarget.forRenderable(
@@ -1328,11 +1371,12 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
-		return candidates;
+		return new CollectedCandidates(candidates, topActorsByTile, actorsByTile);
 	}
 
 	private void considerTopActorCandidate(
 		Map<OccupiedTileKey, Actor> topActorsByTile,
+		Map<OccupiedTileKey, List<Actor>> actorsByTile,
 		Map<Actor, BillboardTarget> actorTargets,
 		Actor actor,
 		BillboardTarget candidate
@@ -1351,6 +1395,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
+		actorsByTile.computeIfAbsent(tileKey, ignored -> new ArrayList<>()).add(actor);
 		Actor currentActor = topActorsByTile.get(tileKey);
 		if (currentActor == null)
 		{
@@ -4611,6 +4656,24 @@ class NpcBillboardOverlay extends Overlay
 			result = (31 * result) + Integer.hashCode(tileX);
 			result = (31 * result) + Integer.hashCode(tileY);
 			return result;
+		}
+	}
+
+	private static final class CollectedCandidates
+	{
+		private final List<BillboardTarget> candidates;
+		private final Map<OccupiedTileKey, Actor> topActorsByTile;
+		private final Map<OccupiedTileKey, List<Actor>> actorsByTile;
+
+		private CollectedCandidates(
+			List<BillboardTarget> candidates,
+			Map<OccupiedTileKey, Actor> topActorsByTile,
+			Map<OccupiedTileKey, List<Actor>> actorsByTile
+		)
+		{
+			this.candidates = candidates;
+			this.topActorsByTile = topActorsByTile;
+			this.actorsByTile = actorsByTile;
 		}
 	}
 

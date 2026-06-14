@@ -37,7 +37,7 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.callback.RenderCallback;
+import net.runelite.client.callback.Hooks;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -53,7 +53,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 	description = "Janky RuneScape Classic inspired graphics"
 )
 public class NpcSnapPlugin extends Plugin
-	implements RenderCallback
+	implements Hooks.RenderableDrawListener
 {
 	private static final int LOGIN_XP_DROP_GRACE_TICKS = 10;
 
@@ -329,6 +329,17 @@ public class NpcSnapPlugin extends Plugin
 		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
+	@Override
+	public boolean draw(Renderable renderable, boolean drawingUi)
+	{
+		if (!config.enable2dBillboardSprites() || drawingUi)
+		{
+			return true;
+		}
+
+		return !billboardOverlay.shouldHideRenderable(renderable);
+	}
+
 	private static boolean isActorInteraction(MenuAction action)
 	{
 		if (action == null)
@@ -355,6 +366,7 @@ public class NpcSnapPlugin extends Plugin
 			case PLAYER_SIXTH_OPTION:
 			case PLAYER_SEVENTH_OPTION:
 			case PLAYER_EIGHTH_OPTION:
+			case WORLD_ENTITY_FIRST_OPTION:
 				return true;
 			default:
 				return false;
