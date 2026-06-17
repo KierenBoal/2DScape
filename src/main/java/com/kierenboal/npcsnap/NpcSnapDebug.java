@@ -18,6 +18,7 @@ import net.runelite.api.Client;
 class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
+	private static final Color READY_TO_REDRAW_MAGENTA = new Color(255, 0, 255, 255);
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 
@@ -77,11 +78,21 @@ class NpcSnapDebug
 		
 		if (config.debugDrawBillboardOutline())
 		{
-			int size = 2;
+			int size = 1;
 			Stroke stroke = graphics.getStroke();
 			graphics.setStroke(new BasicStroke(size));
 			graphics.setColor(BILLBOARD_RED);
 			graphics.drawRect(bounds.x - (size / 2), bounds.y - (size / 2), bounds.width + size, bounds.height + size);
+			graphics.setStroke(stroke);
+		}
+		
+		if (config.debugShowReadyToRedrawFrames() && renderDebug.readyToRedraw)
+		{
+			int size = 2;
+			Stroke stroke = graphics.getStroke();
+			graphics.setStroke(new BasicStroke(size));
+			graphics.setColor(READY_TO_REDRAW_MAGENTA);
+			graphics.drawRect(bounds.x - size, bounds.y - size, bounds.width + (size * 2), bounds.height + (size * 2));
 			graphics.setStroke(stroke);
 		}
 
@@ -102,24 +113,32 @@ class NpcSnapDebug
 
 		if (config.debugDrawFrameNumber())
 		{
-			String frameText = frameText(renderDebug);
-			if (frameText != null)
+			String[] stateLines = stateLines(renderDebug);
+			if (stateLines != null && stateLines.length > 0)
 			{
-				drawCenteredText(graphics, frameText, bounds.x + (bounds.width / 2), bounds.y + Math.max(12, bounds.height / 4));
+				drawCenteredTextBlock(graphics, stateLines, bounds.x + (bounds.width / 2), bounds.y + Math.max(12, bounds.height / 4));
 			}
 		}
 		
 	}
 
-	private String frameText(RenderDebug renderDebug)
+	private String[] stateLines(RenderDebug renderDebug)
 	{
-		FrameDebugInfo frameDebugInfo = renderDebug.frameDebugInfo;
-		if (frameDebugInfo != null)
+		StateDebugInfo stateDebugInfo = renderDebug.stateDebugInfo;
+		if (stateDebugInfo == null)
 		{
-			return "Anim: " + frameDebugInfo.animationId + ", Frame " + frameDebugInfo.forcedAnimationFrame + " (" + frameDebugInfo.animationFrame + ")";
+			return null;
 		}
 
-		return null;
+		String displayedFrame = Integer.toString(stateDebugInfo.displayedFrame);
+		String currentFrame = Integer.toString(stateDebugInfo.currentFrame);
+		String queuePosition = stateDebugInfo.queuePosition >= 0 ? Integer.toString(stateDebugInfo.queuePosition) : "-";
+		return new String[] {
+			"#" + Integer.toHexString(stateDebugInfo.stateHash).toUpperCase(),
+			"P: " + stateDebugInfo.pitchDegrees + " / Y: " + stateDebugInfo.yawDegrees,
+			"A: " + stateDebugInfo.animationId + " / DF: " + displayedFrame + " / CF: " + currentFrame,
+			"Q: " + queuePosition
+		};
 	}
 
 	private Color frameRedrawColor(RenderDebug renderDebug)
@@ -205,39 +224,85 @@ class NpcSnapDebug
 		graphics.setFont(oldFont);
 	}
 
+	private void drawCenteredTextBlock(Graphics2D graphics, String[] lines, int centerX, int topY)
+	{
+		if (lines == null || lines.length == 0)
+		{
+			return;
+		}
+
+		Font font = graphics.getFont().deriveFont(Font.BOLD, 12.0f);
+		Font oldFont = graphics.getFont();
+		graphics.setFont(font);
+		FontMetrics metrics = graphics.getFontMetrics();
+		int padding = 3;
+		int lineHeight = metrics.getHeight();
+		int maxWidth = 0;
+		for (String line : lines)
+		{
+			if (line != null)
+			{
+				maxWidth = Math.max(maxWidth, metrics.stringWidth(line));
+			}
+		}
+
+		int totalHeight = lineHeight * lines.length;
+		int x = centerX - (maxWidth / 2);
+		int y = topY;
+		graphics.setColor(TEXT_BACKGROUND);
+		graphics.fillRect(x - padding, y - padding, maxWidth + (padding * 2), totalHeight + (padding * 2));
+		graphics.setColor(TEXT_FOREGROUND);
+		for (int i = 0; i < lines.length; i++)
+		{
+			String line = lines[i];
+			if (line == null)
+			{
+				continue;
+			}
+
+			int lineX = centerX - (metrics.stringWidth(line) / 2);
+			int lineY = y + (i * lineHeight) + metrics.getAscent();
+			graphics.drawString(line, lineX, lineY);
+		}
+		graphics.setFont(oldFont);
+	}
+
 	static final class RenderDebug
 	{
 		private final Rectangle bounds;
 		private final int paintOrder;
 		private final boolean frameRedrawn;
-		private final FrameDebugInfo frameDebugInfo;
+		private final boolean readyToRedraw;
+		private final StateDebugInfo stateDebugInfo;
 
 		private RenderDebug(
 			Rectangle bounds,
 			int paintOrder,
 			boolean frameRedrawn,
-			FrameDebugInfo frameDebugInfo
+			boolean readyToRedraw,
+			StateDebugInfo stateDebugInfo
 		)
 		{
 			this.bounds = bounds;
 			this.paintOrder = paintOrder;
 			this.frameRedrawn = frameRedrawn;
-			this.frameDebugInfo = frameDebugInfo;
+			this.readyToRedraw = readyToRedraw;
+			this.stateDebugInfo = stateDebugInfo;
 		}
 
-		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean cacheInvalidated, boolean spriteRedrawn, FrameDebugInfo frameDebugInfo)
+		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean spriteRedrawn, boolean readyToRedraw, StateDebugInfo stateDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, cacheInvalidated || spriteRedrawn, frameDebugInfo);
+			return new RenderDebug(bounds, paintOrder, spriteRedrawn, readyToRedraw, stateDebugInfo);
 		}
 	}
 
 	static final class FrameDebugInfo
 	{
-		private final int animationId;
-		private final int animationFrame;
-		private final int forcedAnimationFrame;
-		private final int poseFrame;
-		private final int forcedPoseFrame;
+		final int animationId;
+		final int animationFrame;
+		final int forcedAnimationFrame;
+		final int poseFrame;
+		final int forcedPoseFrame;
 
 		private FrameDebugInfo(int animationId, int animationFrame, int forcedAnimationFrame, int poseFrame, int forcedPoseFrame)
 		{
@@ -251,6 +316,33 @@ class NpcSnapDebug
 		static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
 		{
 			return new FrameDebugInfo(animationId, animationFrame, forcedAnimationFrame, -1, -1);
+		}
+	}
+
+	static final class StateDebugInfo
+	{
+		private final int stateHash;
+		private final int pitchDegrees;
+		private final int yawDegrees;
+		private final int animationId;
+		private final int displayedFrame;
+		private final int currentFrame;
+		private final int queuePosition;
+
+		private StateDebugInfo(int stateHash, int pitchDegrees, int yawDegrees, int animationId, int displayedFrame, int currentFrame, int queuePosition)
+		{
+			this.stateHash = stateHash;
+			this.pitchDegrees = pitchDegrees;
+			this.yawDegrees = yawDegrees;
+			this.animationId = animationId;
+			this.displayedFrame = displayedFrame;
+			this.currentFrame = currentFrame;
+			this.queuePosition = queuePosition;
+		}
+
+		static StateDebugInfo of(int stateHash, int pitchDegrees, int yawDegrees, int animationId, int displayedFrame, int currentFrame, int queuePosition)
+		{
+			return new StateDebugInfo(stateHash, pitchDegrees, yawDegrees, animationId, displayedFrame, currentFrame, queuePosition);
 		}
 	}
 

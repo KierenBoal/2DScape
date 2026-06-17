@@ -542,11 +542,22 @@ public interface NpcSnapConfig extends Config
 
 	@ConfigItem(
 		keyName = "debugDrawFrameNumber",
-		name = "Draw frame number",
-		description = "Draw the in-game animation frame and the frame currently forced by snapping",
+		name = "Show state info",
+		description = "Draw condensed billboard state information such as state hash, snapped rotation, animation frames, and queue position",
 		section = debugSection
 	)
 	default boolean debugDrawFrameNumber()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugShowReadyToRedrawFrames",
+		name = "Show ready-to-redraw frames",
+		description = "Draw a magenta outline when a billboard is ready to redraw but was skipped this frame",
+		section = debugSection
+	)
+	default boolean debugShowReadyToRedrawFrames()
 	{
 		return false;
 	}

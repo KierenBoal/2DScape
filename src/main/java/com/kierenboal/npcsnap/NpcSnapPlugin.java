@@ -321,7 +321,7 @@ public class NpcSnapPlugin extends Plugin
 		// that NPC/player clickboxes and targeting still work correctly.
 		billboardOverlay.noteSceneRenderable(renderable);
 
-		if (renderable instanceof NPC || renderable instanceof Player)
+		if (ObjectClassifier.keepsActorInteraction(renderable))
 		{
 			return true;
 		}
@@ -337,6 +337,7 @@ public class NpcSnapPlugin extends Plugin
 			return true;
 		}
 
+		billboardOverlay.noteSceneRenderable(renderable);
 		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
