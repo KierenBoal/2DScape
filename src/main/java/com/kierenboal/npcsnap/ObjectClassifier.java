@@ -250,8 +250,7 @@ final class ObjectClassifier
 	private static boolean isEffectRenderable(Renderable renderable)
 	{
 		return renderable instanceof GraphicsObject
-			|| renderable instanceof ActorSpotAnim
-			|| renderable instanceof DynamicObject;
+			|| renderable instanceof ActorSpotAnim;
 	}
 
 	static final class ClassificationDecision

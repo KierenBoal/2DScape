@@ -177,6 +177,8 @@ public class NpcSnapPlugin extends Plugin
 				applyAnimationFrameSnap(player);
 			}
 		}
+
+		billboardOverlay.prepareFrame(worldView);
 	}
 
 	@Provides

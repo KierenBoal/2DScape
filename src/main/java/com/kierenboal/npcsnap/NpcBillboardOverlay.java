@@ -402,6 +402,11 @@ class NpcBillboardOverlay extends Overlay
 		activeBillboardsGameCycle = Integer.MIN_VALUE;
 	}
 
+	void prepareFrame(WorldView worldView)
+	{
+		ensureActiveBillboardsCurrent(worldView);
+	}
+
 	void noteActorInteraction(Actor actor, int tickCount)
 	{
 		interactedActor = actor;
@@ -521,7 +526,6 @@ class NpcBillboardOverlay extends Overlay
 
 		if (client.isClientThread())
 		{
-			ensureActiveBillboardsCurrent();
 			return activeBillboards.contains(renderable) || suppressedRenderables.contains(renderable);
 		}
 
@@ -537,7 +541,6 @@ class NpcBillboardOverlay extends Overlay
 
 		if (client.isClientThread())
 		{
-			ensureActiveBillboardsCurrent();
 			return activeTileObjects.contains(tileObject) && tileObjectHasCachedBillboard(tileObject);
 		}
 
@@ -956,16 +959,6 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return expandedBounds(sourceBounds, outlinePadding());
-	}
-
-	private void ensureActiveBillboardsCurrent()
-	{
-		if (!client.isClientThread())
-		{
-			return;
-		}
-
-		ensureActiveBillboardsCurrent(client.getTopLevelWorldView());
 	}
 
 	private void ensureActiveBillboardsCurrent(WorldView worldView)
