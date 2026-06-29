@@ -59,12 +59,16 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class NpcBillboardOverlay extends Overlay
 {
-	private static final int FULL_CIRCLE = 2048;
-	private static final int MAX_PITCH = 512;
-	private static final int GROUND_ITEM_MIN_PITCH = 128;
+	private static final int LEGACY_FULL_CIRCLE = 2048;
+	private static final int BILLBOARD_FULL_CIRCLE = 16384;
+	private static final int CAMERA_FULL_CIRCLE = BILLBOARD_FULL_CIRCLE;
+	private static final int ACTOR_FULL_CIRCLE = LEGACY_FULL_CIRCLE;
+	private static final int PROJECTILE_FULL_CIRCLE = LEGACY_FULL_CIRCLE;
+	private static final int MAX_PITCH = angleToBillboardUnits(512, LEGACY_FULL_CIRCLE);
+	private static final int GROUND_ITEM_MIN_PITCH = angleToBillboardUnits(128, LEGACY_FULL_CIRCLE);
 	private static final int LOCAL_TILE_SIZE = 128;
-	private static final int COMBAT_YAW = 512;
-	private static final int OPPOSITE_COMBAT_YAW = 1536;
+	private static final int COMBAT_YAW = angleToBillboardUnits(512, LEGACY_FULL_CIRCLE);
+	private static final int OPPOSITE_COMBAT_YAW = angleToBillboardUnits(1536, LEGACY_FULL_CIRCLE);
 	private static final boolean USE_UNLIT_COLORS = true;
 	private static final double MIN_RENDER_QUALITY = 0.01d;
 	private static final int MAX_SOURCE_BILLBOARD_SIZE = 4096;
@@ -706,7 +710,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private static int jauToDegrees(int jau)
 	{
-		return Math.floorMod((int) Math.round((jau * 360.0d) / FULL_CIRCLE), 360);
+		return Math.floorMod((int) Math.round((jau * 360.0d) / BILLBOARD_FULL_CIRCLE), 360);
 	}
 
 	private void compositePreparedDraws(Graphics2D graphics, List<PreparedBillboardDraw> preparedDraws)
@@ -920,11 +924,11 @@ class NpcBillboardOverlay extends Overlay
 		float[] verticesX = model.getVerticesX();
 		float[] verticesY = model.getVerticesY();
 		float[] verticesZ = model.getVerticesZ();
-		double yawSin = Perspective.SINE[request.relativeYaw] / 65536.0;
-		double yawCos = Perspective.COSINE[request.relativeYaw] / 65536.0;
-		int inversePitch = Math.floorMod(-request.relativePitch, FULL_CIRCLE);
-		double pitchSin = Perspective.SINE[inversePitch] / 65536.0;
-		double pitchCos = Perspective.COSINE[inversePitch] / 65536.0;
+		double yawSin = Perspective.SINE14[request.relativeYaw] / 65536.0;
+		double yawCos = Perspective.COSINE14[request.relativeYaw] / 65536.0;
+		int inversePitch = Math.floorMod(-request.relativePitch, BILLBOARD_FULL_CIRCLE);
+		double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
+		double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
 		int minX = Integer.MAX_VALUE;
 		int minY = Integer.MAX_VALUE;
 		int maxX = Integer.MIN_VALUE;
@@ -1877,6 +1881,11 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
+		if (!isPlaneEligible(actor.getWorldView().getPlane()))
+		{
+			return false;
+		}
+
 		if (!isWithinRadius(localPlayerLocation, actorLocation, config.billboardRadiusTiles()))
 		{
 			return false;
@@ -1897,6 +1906,11 @@ class NpcBillboardOverlay extends Overlay
 	{
 		LocalPoint projectileLocation = projectileLocalPoint(projectile);
 		if (localPlayerLocation == null || projectileLocation == null)
+		{
+			return false;
+		}
+
+		if (!isPlaneEligible(projectile.getFloor()))
 		{
 			return false;
 		}
@@ -1964,6 +1978,11 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
+		if (!isPlaneEligible(graphicsObject.getLevel()))
+		{
+			return false;
+		}
+
 		if (!isWithinRadius(localPlayerLocation, localPoint, config.billboardRadiusTiles()))
 		{
 			return false;
@@ -1988,6 +2007,11 @@ class NpcBillboardOverlay extends Overlay
 		LocalPoint localPlayerLocation = client.getLocalPlayer() != null ? client.getLocalPlayer().getLocalLocation() : null;
 		LocalPoint actorLocation = actor.getLocalLocation();
 		if (localPlayerLocation == null || actorLocation == null)
+		{
+			return false;
+		}
+
+		if (!isPlaneEligible(actor.getWorldView().getPlane()))
 		{
 			return false;
 		}
@@ -2026,6 +2050,11 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
+		if (!isPlaneEligible(groundItem.plane))
+		{
+			return false;
+		}
+
 		if (!isWithinRadius(localPlayerLocation, groundItem.localPoint, config.billboardRadiusTiles()))
 		{
 			return false;
@@ -2045,6 +2074,11 @@ class NpcBillboardOverlay extends Overlay
 		for (ObjectRenderablePart part : observed.parts)
 		{
 			if (part.localPoint == null || part.renderable == null)
+			{
+				continue;
+			}
+
+			if (!isPlaneEligible(part.plane))
 			{
 				continue;
 			}
@@ -2674,7 +2708,8 @@ class NpcBillboardOverlay extends Overlay
 		float[] spriteY,
 		float[] spriteDepth,
 		long nowMillis,
-		int animatedTextureId
+		int animatedTextureId,
+		boolean cullBackFaces
 	)
 	{
 		List<FaceDraw> faces = new ArrayList<>(model.getFaceCount());
@@ -2694,7 +2729,7 @@ class NpcBillboardOverlay extends Overlay
 			int a = faceIndices1[face];
 			int b = faceIndices2[face];
 			int c = faceIndices3[face];
-			if (isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
+			if (cullBackFaces && isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
 			{
 				continue;
 			}
@@ -2826,11 +2861,11 @@ class NpcBillboardOverlay extends Overlay
 			float[] spriteX = spriteXScratch;
 			float[] spriteY = spriteYScratch;
 			float[] spriteDepth = spriteDepthScratch;
-			double yawSin = Perspective.SINE[request.relativeYaw] / 65536.0;
-			double yawCos = Perspective.COSINE[request.relativeYaw] / 65536.0;
-			int inversePitch = Math.floorMod(-request.relativePitch, FULL_CIRCLE);
-			double pitchSin = Perspective.SINE[inversePitch] / 65536.0;
-			double pitchCos = Perspective.COSINE[inversePitch] / 65536.0;
+			double yawSin = Perspective.SINE14[request.relativeYaw] / 65536.0;
+			double yawCos = Perspective.COSINE14[request.relativeYaw] / 65536.0;
+			int inversePitch = Math.floorMod(-request.relativePitch, BILLBOARD_FULL_CIRCLE);
+			double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
+			double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
 			for (int i = 0; i < vertexCount; i++)
 			{
 				double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
@@ -2840,7 +2875,11 @@ class NpcBillboardOverlay extends Overlay
 				spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
 			}
 
-			BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId);
+			BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, true);
+			if (builtFaces.faces.isEmpty())
+			{
+				builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, false);
+			}
 			if (!builtFaces.faces.isEmpty())
 			{
 				List<FaceDraw> faces = builtFaces.faces;
@@ -2852,7 +2891,7 @@ class NpcBillboardOverlay extends Overlay
 					Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
 					if (buildDrawRect(request, renderable, imageBounds) == null)
 					{
-						return null;
+						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis, queuePosition);
 					}
 
 					BillboardCacheKey cacheKey = buildCacheKey(
@@ -2900,21 +2939,24 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		if (!spriteRedrawn)
+		return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis, queuePosition);
+	}
+
+	private BillboardRenderResult drawCachedBillboard(
+		BillboardRenderRequest request,
+		Renderable renderable,
+		CachedBillboard cached,
+		long touchMillis,
+		int queuePosition)
+	{
+		if (touchMillis >= 0L)
 		{
-			cached.touch(nowMillis);
+			cached.touch(touchMillis);
 		}
 
 		cached.stateDebugInfo(buildStateDebugInfo(request, queuePosition));
-
 		Rectangle drawRect = buildDrawRect(request, renderable, cached.bounds);
-		if (drawRect == null)
-		{
-			return null;
-		}
-
-		boolean spriteDirty = cached.consumeDirty();
-		return new BillboardRenderResult(drawRect, cached.image);
+		return drawRect != null ? new BillboardRenderResult(drawRect, cached.image) : null;
 	}
 
 	private BillboardCacheKey buildCacheKey(
@@ -3574,10 +3616,10 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativeYaw()
 	{
-		int rawRelativeYaw = client.getCameraYaw();
+		int rawRelativeYaw = cameraYaw();
 		if (!config.enableRotationSnapping())
 		{
-			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
 		}
 
 		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
@@ -3697,6 +3739,22 @@ class NpcBillboardOverlay extends Overlay
 		return false;
 	}
 
+	private boolean isPlaneEligible(int targetPlane)
+	{
+		if (config.renderBillboardsOnAllPlanes())
+		{
+			return true;
+		}
+
+		Player localPlayer = client.getLocalPlayer();
+		return localPlayer != null && shouldRenderTargetPlane(localPlayer.getWorldView().getPlane(), targetPlane);
+	}
+
+	static boolean shouldRenderTargetPlane(int currentPlane, int targetPlane)
+	{
+		return currentPlane == targetPlane;
+	}
+
 	private void logClassificationDecision(Object source, ObjectClassifier.ClassificationDecision decision)
 	{
 		logClassificationDecision(source, decision, null);
@@ -3704,7 +3762,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private void logClassificationDecision(Object source, ObjectClassifier.ClassificationDecision decision, String extraTypes)
 	{
-		if (!log.isDebugEnabled() || source == null || decision == null)
+		if (!log.isDebugEnabled() || !config.debugLogClassifications() || source == null || decision == null)
 		{
 			return;
 		}
@@ -4000,9 +4058,36 @@ class NpcBillboardOverlay extends Overlay
 		return base == null ? null : new LocalPoint(base.getX() + xOffset, base.getY() + yOffset);
 	}
 
+	private int cameraYaw()
+	{
+		return angleToBillboardUnits(client.getCameraYaw(), CAMERA_FULL_CIRCLE);
+	}
+
+	private int cameraPitch()
+	{
+		return Math.max(0, Math.min(MAX_PITCH, angleToBillboardUnits(client.getCameraPitch(), CAMERA_FULL_CIRCLE)));
+	}
+
+	private static int actorYaw(Actor actor)
+	{
+		return actor == null ? 0 : angleToBillboardUnits(actor.getCurrentOrientation(), ACTOR_FULL_CIRCLE);
+	}
+
+	private static int projectileYaw(Projectile projectile)
+	{
+		return projectile == null ? 0 : angleToBillboardUnits(projectile.getOrientation(), PROJECTILE_FULL_CIRCLE);
+	}
+
+	static int angleToBillboardUnits(int angle, int sourceFullCircle)
+	{
+		int sourceUnits = Math.max(1, sourceFullCircle);
+		int normalized = Math.floorMod(angle, sourceUnits);
+		return Math.floorMod((int) Math.round((normalized * (double) BILLBOARD_FULL_CIRCLE) / sourceUnits), BILLBOARD_FULL_CIRCLE);
+	}
+
 	private int relativeYaw(Actor actor)
 	{
-		int rawRelativeYaw = client.getCameraYaw() + actor.getCurrentOrientation();
+		int rawRelativeYaw = cameraYaw() + actorYaw(actor);
 		if (shouldCombatSnap(actor))
 		{
 			return combatYaw(rawRelativeYaw);
@@ -4010,7 +4095,7 @@ class NpcBillboardOverlay extends Overlay
 
 		if (!config.enableRotationSnapping())
 		{
-			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
 		}
 
 		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
@@ -4018,10 +4103,10 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativeYaw(Projectile projectile)
 	{
-		int rawRelativeYaw = client.getCameraYaw() + projectile.getOrientation();
+		int rawRelativeYaw = cameraYaw() + projectileYaw(projectile);
 		if (!config.enableRotationSnapping())
 		{
-			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
 		}
 
 		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
@@ -4029,10 +4114,10 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativeYaw(TileItem item)
 	{
-		int rawRelativeYaw = client.getCameraYaw();
+		int rawRelativeYaw = cameraYaw();
 		if (!config.enableRotationSnapping())
 		{
-			return Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
 		}
 
 		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
@@ -4056,7 +4141,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private static int combatYaw(int rawRelativeYaw)
 	{
-		int normalized = Math.floorMod(rawRelativeYaw, FULL_CIRCLE);
+		int normalized = Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
 		int combatDistance = jauDistance(normalized, COMBAT_YAW);
 		int oppositeDistance = jauDistance(normalized, OPPOSITE_COMBAT_YAW);
 		return combatDistance <= oppositeDistance ? COMBAT_YAW : OPPOSITE_COMBAT_YAW;
@@ -4064,13 +4149,13 @@ class NpcBillboardOverlay extends Overlay
 
 	private static int jauDistance(int a, int b)
 	{
-		int distance = Math.abs(Math.floorMod(a, FULL_CIRCLE) - Math.floorMod(b, FULL_CIRCLE));
-		return Math.min(distance, FULL_CIRCLE - distance);
+		int distance = Math.abs(Math.floorMod(a, BILLBOARD_FULL_CIRCLE) - Math.floorMod(b, BILLBOARD_FULL_CIRCLE));
+		return Math.min(distance, BILLBOARD_FULL_CIRCLE - distance);
 	}
 
 	private int relativePitch()
 	{
-		int rawPitch = Math.max(0, Math.min(MAX_PITCH, client.getCameraPitch()));
+		int rawPitch = cameraPitch();
 		if (!config.enableRotationSnapping())
 		{
 			return rawPitch;
@@ -4103,7 +4188,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private int relativePitch(TileItem item)
 	{
-		int rawPitch = Math.max(0, Math.min(MAX_PITCH, client.getCameraPitch()));
+		int rawPitch = cameraPitch();
 		if (!config.enableRotationSnapping())
 		{
 			return rawPitch;
@@ -4115,9 +4200,9 @@ class NpcBillboardOverlay extends Overlay
 	private static int snapJauByAngles(int jau, int angleCount)
 	{
 		int clampedAngleCount = Math.max(1, angleCount);
-		int step = Math.max(1, FULL_CIRCLE / clampedAngleCount);
-		int normalized = Math.floorMod(jau, FULL_CIRCLE);
-		return Math.floorMod(((normalized + (step / 2)) / step) * step, FULL_CIRCLE);
+		int step = Math.max(1, BILLBOARD_FULL_CIRCLE / clampedAngleCount);
+		int normalized = Math.floorMod(jau, BILLBOARD_FULL_CIRCLE);
+		return Math.floorMod(((normalized + (step / 2)) / step) * step, BILLBOARD_FULL_CIRCLE);
 	}
 
 	private static int snapPitchByAngles(int pitch, int minPitch, int angleCount)

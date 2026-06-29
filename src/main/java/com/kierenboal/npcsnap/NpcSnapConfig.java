@@ -252,6 +252,17 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "renderBillboardsOnAllPlanes",
+		name = "Render billboards on all planes",
+		description = "Draw billboards regardless of the local player's current plane",
+		section = billboardSection
+	)
+	default boolean renderBillboardsOnAllPlanes()
+	{
+		return false;
+	}
+
 	@Range(
 		min = 1,
 		max = 100
@@ -569,6 +580,17 @@ public interface NpcSnapConfig extends Config
 		section = debugSection
 	)
 	default boolean debugShowFrameRedraws()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugLogClassifications",
+		name = "Debug Log Classifications",
+		description = "Log NPC/Player/Object/Projectile classification decisions for debugging",
+		section = debugSection
+	)
+	default boolean debugLogClassifications()
 	{
 		return false;
 	}
