@@ -530,6 +530,47 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "enableUiTextureBanding",
+		name = "Reduce UI texture quality",
+		description = "Apply billboard-style color bands to UI sprites, icons, and interface art",
+		section = texturesSection
+	)
+	default boolean enableUiTextureBanding()
+	{
+		return false;
+	}
+
+	@Range(
+		min = 1,
+		max = 256
+	)
+	@ConfigItem(
+		keyName = "uiTextureColorBands",
+		name = "UI texture color bands",
+		description = "Number of brightness bands used by UI sprites, icons, and interface art",
+		section = texturesSection
+	)
+	default int uiTextureColorBands()
+	{
+		return 8;
+	}
+
+	@Range(
+		min = 1,
+		max = 100
+	)
+	@ConfigItem(
+		keyName = "uiSpriteQuality",
+		name = "UI sprite quality",
+		description = "Internal UI sprite render scale as a percent of original resolution. Lower values shrink and resample the sprite while keeping the original widget footprint.",
+		section = texturesSection
+	)
+	default double uiSpriteQuality()
+	{
+		return 50.0d;
+	}
+
+	@ConfigItem(
 		keyName = "debugDrawBillboardOutline",
 		name = "Draw billboard outline",
 		description = "Draw a red outline around the four corners of each billboard",

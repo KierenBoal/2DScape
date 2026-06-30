@@ -132,7 +132,7 @@ public class BillboardOutlineRendererTest
 		BillboardOutlineRenderer.applyOutline(image, false, false, false, true, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFFFFFFF, image.getRGB(10, 19));
-		assertEquals(0x3C000000, image.getRGB(9, 19));
+		assertEquals(0x28000000, image.getRGB(9, 19));
 		assertEquals(0x00000000, image.getRGB(10, 18));
 	}
 

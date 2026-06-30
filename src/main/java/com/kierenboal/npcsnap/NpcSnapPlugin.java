@@ -20,6 +20,7 @@ import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
+import net.runelite.api.SpritePixels;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
 import net.runelite.api.Texture;
@@ -37,6 +38,7 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.client.callback.Hooks;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
@@ -67,6 +69,7 @@ public class NpcSnapPlugin extends Plugin
 	private int loginXpDropGraceUntilTick = Integer.MIN_VALUE;
 	private int ignoredLoginXpDropTick = Integer.MIN_VALUE;
 	private int appliedTextureBands = -1;
+	private NpcSnapUiTextureManager uiTextureManager;
 
 	@Inject
 	private Client client;
@@ -102,6 +105,7 @@ public class NpcSnapPlugin extends Plugin
 	protected void startUp()
 	{
 		textureBandingPending = true;
+		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
 		overlayManager.add(billboardOverlay);
@@ -127,6 +131,7 @@ public class NpcSnapPlugin extends Plugin
 		animationFrameSnapper.clear();
 		debug.clearFrameStates();
 		restoreGlobalTextureQuality();
+		ensureUiTextureManager().restore();
 		log.debug("2DScape stopped");
 	}
 
@@ -136,6 +141,7 @@ public class NpcSnapPlugin extends Plugin
 		restoreNpcState();
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
+		syncUiTextureQuality();
 
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
@@ -241,6 +247,7 @@ public class NpcSnapPlugin extends Plugin
 			pendingSkillXpSeed = true;
 			loginXpDropGraceUntilTick = gameTickCounter + LOGIN_XP_DROP_GRACE_TICKS;
 			ignoredLoginXpDropTick = Integer.MIN_VALUE;
+			ensureUiTextureManager().markDirty();
 		}
 		else
 		{
@@ -249,7 +256,15 @@ public class NpcSnapPlugin extends Plugin
 			loginXpDropGraceUntilTick = Integer.MIN_VALUE;
 			ignoredLoginXpDropTick = Integer.MIN_VALUE;
 			billboardOverlay.clearInteractionState();
+			ensureUiTextureManager().restore();
+			ensureUiTextureManager().markDirty();
 		}
+	}
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
+	{
+		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
 	}
 
 	@Subscribe
@@ -300,6 +315,13 @@ public class NpcSnapPlugin extends Plugin
 		{
 			textureBandingPending = true;
 			billboardOverlay.clearTextureCache();
+		}
+
+		if ("enableUiTextureBanding".equals(configChanged.getKey())
+			|| "uiTextureColorBands".equals(configChanged.getKey())
+			|| "uiSpriteQuality".equals(configChanged.getKey()))
+		{
+			ensureUiTextureManager().markDirty();
 		}
 	}
 
@@ -531,9 +553,8 @@ public class NpcSnapPlugin extends Plugin
 
 	private void applyGlobalTextureQuality()
 	{
-		
 		log.debug("applyGlobalTextureQuality");
-		
+
 		TextureProvider textureProvider = client.getTextureProvider();
 		if (textureProvider == null)
 		{
@@ -567,10 +588,7 @@ public class NpcSnapPlugin extends Plugin
 			}
 
 			originalTexturePixels.put(textureId, pixels.clone());
-			for (int i = 0; i < pixels.length; i++)
-			{
-				pixels[i] = NpcSnapColorBanding.snapTexturePixel(pixels[i], bands);
-			}
+			NpcSnapColorBanding.applyBandsInPlace(pixels, bands);
 
 			changed++;
 		}
@@ -626,6 +644,32 @@ public class NpcSnapPlugin extends Plugin
 	private static void resetTextureProviderCache(TextureProvider textureProvider)
 	{
 		textureProvider.setBrightness(textureProvider.getBrightness());
+	}
+
+	private void syncUiTextureQuality()
+	{
+		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
+	}
+
+	private NpcSnapUiTextureManager ensureUiTextureManager()
+	{
+		if (uiTextureManager == null)
+		{
+			uiTextureManager = new NpcSnapUiTextureManager(client, this::loadSpriteSnapshot);
+		}
+
+		return uiTextureManager;
+	}
+
+	private NpcSnapUiTextureManager.SpriteSnapshot loadSpriteSnapshot(int spriteId)
+	{
+		SpritePixels[] sprites = client.getSprites(client.getIndexSprites(), spriteId, 0);
+		if (sprites == null || sprites.length == 0 || sprites[0] == null)
+		{
+			return null;
+		}
+
+		return NpcSnapUiTextureManager.SpriteSnapshot.of(sprites[0]);
 	}
 
 	private void restoreNpcState()

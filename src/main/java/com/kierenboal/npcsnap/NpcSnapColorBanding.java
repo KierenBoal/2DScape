@@ -62,6 +62,57 @@ final class NpcSnapColorBanding
 		return (alpha << 24) | snapped;
 	}
 
+	static int[] bandPixels(int[] pixels, int colorBands)
+	{
+		if (pixels == null || pixels.length == 0)
+		{
+			return new int[0];
+		}
+
+		int[] banded = pixels.clone();
+		applyBandsInPlace(banded, colorBands);
+		return banded;
+	}
+
+	static int[] bandSpritePixels(int[] pixels, int colorBands)
+	{
+		if (pixels == null || pixels.length == 0)
+		{
+			return new int[0];
+		}
+
+		int[] banded = pixels.clone();
+		for (int i = 0; i < banded.length; i++)
+		{
+			int pixel = banded[i];
+			if (pixel == 0)
+			{
+				banded[i] = 0;
+				continue;
+			}
+
+			// Raw SpritePixels use 0 for transparency and commonly store visible pixels as packed RGB.
+			// Preserve that representation so client sprite rendering keeps treating non-zero pixels as visible.
+			int snapped = snapRgb((pixel >>> 16) & 0xFF, (pixel >>> 8) & 0xFF, pixel & 0xFF, colorBands);
+			banded[i] = snapped != 0 ? snapped : 0x00010101;
+		}
+
+		return banded;
+	}
+
+	static void applyBandsInPlace(int[] pixels, int colorBands)
+	{
+		if (pixels == null || pixels.length == 0)
+		{
+			return;
+		}
+
+		for (int i = 0; i < pixels.length; i++)
+		{
+			pixels[i] = snapTexturePixel(pixels[i], colorBands);
+		}
+	}
+
 	private static float snapBrightness(float brightness, int colorBands)
 	{
 		int bands = Math.max(1, colorBands);
