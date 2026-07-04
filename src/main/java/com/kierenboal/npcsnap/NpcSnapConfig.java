@@ -635,4 +635,15 @@ public interface NpcSnapConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigItem(
+		keyName = "debugLogBillboardColors",
+		name = "Debug Log Billboard Colors",
+		description = "Log sampled billboard face color candidates for debugging dark or desaturated model colors",
+		section = debugSection
+	)
+	default boolean debugLogBillboardColors()
+	{
+		return false;
+	}
 }

@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -64,5 +65,25 @@ public class NpcSnapColorBandingTest
 		int[] banded = NpcSnapColorBanding.bandSpritePixels(new int[] {0x00010101}, 1);
 
 		assertEquals(false, banded[0] == 0);
+	}
+
+	@Test
+	public void snapRgbKeepsDarkSaturatedRedVisible()
+	{
+		int snapped = NpcSnapColorBanding.snapRgb(74, 7, 0, 16);
+
+		assertTrue(((snapped >> 16) & 0xFF) > 0);
+		assertTrue(((snapped >> 16) & 0xFF) > ((snapped >> 8) & 0xFF));
+		assertEquals(0, snapped & 0xFF);
+	}
+
+	@Test
+	public void snapRgbKeepsDarkSaturatedBlueVisible()
+	{
+		int snapped = NpcSnapColorBanding.snapRgb(0, 22, 74, 16);
+
+		assertEquals(0, (snapped >> 16) & 0xFF);
+		assertTrue((snapped & 0xFF) > 0);
+		assertTrue((snapped & 0xFF) > ((snapped >> 8) & 0xFF));
 	}
 }

@@ -69,7 +69,6 @@ class NpcBillboardOverlay extends Overlay
 	private static final int LOCAL_TILE_SIZE = 128;
 	private static final int COMBAT_YAW = angleToBillboardUnits(512, LEGACY_FULL_CIRCLE);
 	private static final int OPPOSITE_COMBAT_YAW = angleToBillboardUnits(1536, LEGACY_FULL_CIRCLE);
-	private static final boolean USE_UNLIT_COLORS = true;
 	private static final double MIN_RENDER_QUALITY = 0.01d;
 	private static final int MAX_SOURCE_BILLBOARD_SIZE = 4096;
 	private static final int MAX_SOURCE_BILLBOARD_COORDINATE = 32768;
@@ -77,6 +76,10 @@ class NpcBillboardOverlay extends Overlay
 	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
 	private static final int OUTLINE_PADDING = 1;
 	private static final long CACHE_TTL_MILLIS = 60_000L;
+	private static final int CAPE_ARTIFACT_FACE_RED = 147;
+	private static final int CAPE_ARTIFACT_FACE_GREEN = 143;
+	private static final int CAPE_ARTIFACT_FACE_BLUE = 143;
+	private static final int CAPE_ARTIFACT_FACE_ALPHA = 255;
 	
 	private static final int[] ANIMATED_TEXTURE_IDS = {
 		
@@ -2723,6 +2726,7 @@ class NpcBillboardOverlay extends Overlay
 		byte[] transparencies = model.getFaceTransparencies();
 		short[] textures = model.getFaceTextures();
 		int textureStateHash = 1;
+		int debugColorLogs = 0;
 
 		for (int face = 0; face < model.getFaceCount(); face++)
 		{
@@ -2735,7 +2739,12 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			int alpha = transparencies == null || face >= transparencies.length ? 255 : 255 - (transparencies[face] & 0xFF);
-			Color color = applyLightBoost(resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha));
+			Color rawColor = resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha);
+			if (isSkippedCapeArtifactFaceColor(rawColor))
+			{
+				continue;
+			}
+			Color color = applyLightBoost(rawColor);
 
 			double depth = (
 				spriteDepth[a] +
@@ -2744,6 +2753,11 @@ class NpcBillboardOverlay extends Overlay
 			) / 3.0;
 
 			int textureId = textures != null && face < textures.length ? Short.toUnsignedInt(textures[face]) : 0xFFFF;
+			if (debugColorLogs < 96 && shouldLogBillboardFaceColor(face, model.getFaceCount(), rawColor, textureId))
+			{
+				debugColorLogs++;
+				logBillboardFaceColor(face, model.getFaceCount(), a, b, c, textureId, faceColors1, faceColors2, faceColors3, unlitFaceColors, rawColor, color);
+			}
 			if (textureId != 0xFFFF)
 			{
 				TextureSample textureSample = resolveTextureSample(textureId, nowMillis, animatedTextureId);
@@ -2784,7 +2798,62 @@ class NpcBillboardOverlay extends Overlay
 		return new BuiltFaces(faces, textureStateHash);
 	}
 
-	private static Color resolveFaceColor(
+	private boolean shouldLogBillboardFaceColor(int face, int faceCount, Color rawColor, int textureId)
+	{
+		if (!config.debugLogBillboardColors() || rawColor == null)
+		{
+			return false;
+		}
+
+		float[] hsb = Color.RGBtoHSB(rawColor.getRed(), rawColor.getGreen(), rawColor.getBlue(), null);
+		return hsb[2] <= 0.25f || hsb[1] <= 0.08f || textureId != 0xFFFF || face >= Math.max(0, faceCount - 180);
+	}
+
+	private void logBillboardFaceColor(
+		int face,
+		int faceCount,
+		int vertexA,
+		int vertexB,
+		int vertexC,
+		int textureId,
+		int[] faceColors1,
+		int[] faceColors2,
+		int[] faceColors3,
+		short[] unlitFaceColors,
+		Color rawColor,
+		Color boostedColor
+	)
+	{
+		int alpha = rawColor.getAlpha();
+		Integer packed1 = faceColorValue(faceColors1, face);
+		Integer packed2 = faceColorValue(faceColors2, face);
+		Integer packed3 = faceColorValue(faceColors3, face);
+		Integer unlit = unlitFaceColorValue(unlitFaceColors, face);
+		Color litColor = decodedLitFaceColor(face, faceColors1, faceColors2, faceColors3, alpha);
+		Color unlitColor = unlit != null ? packedHslToColor(unlit, alpha) : null;
+		Color snappedColor = NpcSnapColorBanding.snapToRamp(boostedColor, config.billboardColorBands());
+
+		log.debug(
+			"Billboard face color face={}/{} verts=({},{},{}) texture={} f1={} f2={} f3={} unlit={} lit={} unlitRgb={} selected={} boosted={} snapped={}",
+			face,
+			faceCount,
+			vertexA,
+			vertexB,
+			vertexC,
+			textureId == 0xFFFF ? "none" : textureId,
+			packed1,
+			packed2,
+			packed3,
+			unlit,
+			formatColor(litColor),
+			formatColor(unlitColor),
+			formatColor(rawColor),
+			formatColor(boostedColor),
+			formatColor(snappedColor)
+		);
+	}
+
+	static Color resolveFaceColor(
 		int face,
 		int[] faceColors1,
 		int[] faceColors2,
@@ -2793,20 +2862,127 @@ class NpcBillboardOverlay extends Overlay
 		int alpha
 	)
 	{
-		if (USE_UNLIT_COLORS && unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1)
+		Color unlitColor = null;
+		if (unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1)
 		{
-			// The software billboard path has no lighting stage, so unlit face colors
-			// should be unpacked directly and used as the full-bright polygon color.
-			return packedHslToColor(Short.toUnsignedInt(unlitFaceColors[face]), alpha);
+			unlitColor = packedHslToColor(Short.toUnsignedInt(unlitFaceColors[face]), alpha);
 		}
 
-		Color vertexA = packedHslToColor(faceColors1[face], alpha);
-		Color vertexB = packedHslToColor(faceColors2[face], alpha);
-		Color vertexC = packedHslToColor(faceColors3[face], alpha);
+		Color litColor = decodedLitFaceColor(face, faceColors1, faceColors2, faceColors3, alpha);
+
+		Color color = chooseFaceColor(unlitColor, litColor);
+		if (color != null)
+		{
+			return color;
+		}
+
+		return new Color(0, 0, 0, Math.max(0, Math.min(255, alpha)));
+	}
+
+	private static boolean hasLitFaceColors(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3)
+	{
+		return hasLitFaceColor(faceColors1, face)
+			&& hasLitFaceColor(faceColors2, face)
+			&& hasLitFaceColor(faceColors3, face);
+	}
+
+	private static boolean hasLitFaceColor(int[] faceColors, int face)
+	{
+		return faceColors != null && face < faceColors.length && faceColors[face] >= 0;
+	}
+
+	private static Color decodedLitFaceColor(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3, int alpha)
+	{
+		if (hasFlatFaceColor(face, faceColors1, faceColors3))
+		{
+			return packedHslToColor(faceColors1[face], alpha);
+		}
+
+		if (hasLitFaceColors(face, faceColors1, faceColors2, faceColors3))
+		{
+			return averagePackedFaceColor(faceColors1[face], faceColors2[face], faceColors3[face], alpha);
+		}
+
+		return null;
+	}
+
+	private static boolean hasFlatFaceColor(int face, int[] faceColors1, int[] faceColors3)
+	{
+		return hasLitFaceColor(faceColors1, face)
+			&& faceColors3 != null
+			&& face < faceColors3.length
+			&& faceColors3[face] == -1;
+	}
+
+	private static Color averagePackedFaceColor(int packed1, int packed2, int packed3, int alpha)
+	{
+		Color vertexA = packedHslToColor(packed1, alpha);
+		Color vertexB = packedHslToColor(packed2, alpha);
+		Color vertexC = packedHslToColor(packed3, alpha);
 		int red = (vertexA.getRed() + vertexB.getRed() + vertexC.getRed()) / 3;
 		int green = (vertexA.getGreen() + vertexB.getGreen() + vertexC.getGreen()) / 3;
 		int blue = (vertexA.getBlue() + vertexB.getBlue() + vertexC.getBlue()) / 3;
 		return new Color(red, green, blue, alpha);
+	}
+
+	private static Integer faceColorValue(int[] faceColors, int face)
+	{
+		return faceColors != null && face < faceColors.length ? faceColors[face] : null;
+	}
+
+	private static Integer unlitFaceColorValue(short[] unlitFaceColors, int face)
+	{
+		return unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1
+			? Short.toUnsignedInt(unlitFaceColors[face])
+			: null;
+	}
+
+	private static String formatColor(Color color)
+	{
+		return color == null
+			? "null"
+			: color.getRed() + "," + color.getGreen() + "," + color.getBlue() + "," + color.getAlpha();
+	}
+
+	private static Color chooseFaceColor(Color unlitColor, Color litColor)
+	{
+		Color selected = unlitColor != null ? unlitColor : litColor;
+		selected = chooseMoreColorful(selected, litColor);
+		return selected;
+	}
+
+	private static Color chooseMoreColorful(Color current, Color candidate)
+	{
+		if (candidate != null
+			&& maxRgb(candidate) > 2
+			&& (current == null || colorfulness(candidate) > colorfulness(current) + 0.03f))
+		{
+			return candidate;
+		}
+
+		return current;
+	}
+
+	private static float colorfulness(Color color)
+	{
+		float[] hsb = Color.RGBtoHSB(color.getRed(), color.getGreen(), color.getBlue(), null);
+		return hsb[1] * hsb[2];
+	}
+
+	private static int maxRgb(Color color)
+	{
+		return Math.max(color.getRed(), Math.max(color.getGreen(), color.getBlue()));
+	}
+
+	static boolean isSkippedCapeArtifactFaceColor(Color color)
+	{
+		// Fire Cape and Infernal Cape player models include unwanted rear geometry
+		// with this exact raw face color; skip it before light boost and rasterizing.
+		return color != null
+			&& color.getRed() == CAPE_ARTIFACT_FACE_RED
+			&& color.getGreen() == CAPE_ARTIFACT_FACE_GREEN
+			&& color.getBlue() == CAPE_ARTIFACT_FACE_BLUE
+			&& color.getAlpha() == CAPE_ARTIFACT_FACE_ALPHA;
 	}
 
 	private static Rectangle computeBounds(List<FaceDraw> faces)
@@ -4245,7 +4421,7 @@ class NpcBillboardOverlay extends Overlay
 		int saturation = (packedHsl >> 7) & 0x07;
 		int lightness = packedHsl & 0x7F;
 		float h = hue / 64.0f;
-		float s = saturation / 8.0f;
+		float s = saturation / 7.0f;
 		float l = lightness / 128.0f;
 
 		float r;

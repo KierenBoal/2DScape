@@ -28,22 +28,11 @@ final class NpcSnapColorBanding
 	static int snapRgb(int red, int green, int blue, int colorBands)
 	{
 		float[] hsb = Color.RGBtoHSB(red, green, blue, null);
-		float h = hsb[0];
-		float s = clamp01(hsb[1] * 1.15f);
-		float b = snapBrightness(hsb[2], colorBands);
+		float hue = hsb[0];
+		float saturation = clamp01(hsb[1] * 1.15f);
+		float brightness = snapBrightness(hsb[2], colorBands);
 
-		int bands = Math.max(1, colorBands);
-		if (bands == 1)
-		{
-			b = 0.5f;
-		}
-		else
-		{
-			int band = Math.min(bands - 1, (int) (b * bands));
-			b = band / (float) (bands - 1);
-		}
-
-		return Color.HSBtoRGB(h, s, b) & 0xFFFFFF;
+		return Color.HSBtoRGB(hue, saturation, brightness) & 0xFFFFFF;
 	}
 
 	static int snapTexturePixel(int pixel, int colorBands)
@@ -118,7 +107,7 @@ final class NpcSnapColorBanding
 		int bands = Math.max(1, colorBands);
 		float minBrightness = 0.1f;
 		float maxBrightness = 0.9f;
-		float compressed = minBrightness + brightness * (maxBrightness - minBrightness);
+		float compressed = minBrightness + clamp01(brightness) * (maxBrightness - minBrightness);
 
 		if (bands == 1)
 		{
