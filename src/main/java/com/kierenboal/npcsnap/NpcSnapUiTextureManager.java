@@ -17,7 +17,7 @@ final class NpcSnapUiTextureManager
 	private final IntFunction<SpriteSnapshot> spriteLoader;
 	private final Map<Integer, SpriteSnapshot> originalSprites = new HashMap<>();
 	private final Map<Integer, SpritePixels> bandedSpriteOverrides = new HashMap<>();
-	private final Set<Integer> appliedWidgetOverrideIds = new HashSet<>();
+	private final Set<Integer> appliedSpriteOverrideIds = new HashSet<>();
 	private boolean uiBandingApplied;
 	private boolean uiBandingPending = true;
 	private int appliedUiBands = -1;
@@ -36,20 +36,27 @@ final class NpcSnapUiTextureManager
 
 	void sync(boolean enabled, int bands, double quality)
 	{
-		if (!uiBandingPending
-			&& uiBandingApplied == enabled
-			&& (!enabled || (appliedUiBands == bands && Double.compare(appliedUiQuality, quality) == 0)))
+		boolean settingsMatch = uiBandingApplied == enabled
+			&& (!enabled || (appliedUiBands == bands && Double.compare(appliedUiQuality, quality) == 0));
+		if (!enabled)
 		{
+			if (!uiBandingPending && settingsMatch)
+			{
+				return;
+			}
+
+			restore();
+			uiBandingPending = false;
 			return;
 		}
 
-		restore();
-		uiBandingPending = false;
-
-		if (enabled)
+		if (uiBandingPending || !settingsMatch)
 		{
-			applyLoadedWidgets(bands, quality);
+			restore();
+			uiBandingPending = false;
 		}
+
+		applyLoadedWidgets(bands, quality);
 	}
 
 	void onWidgetLoaded(boolean enabled, int bands, double quality)
@@ -65,7 +72,7 @@ final class NpcSnapUiTextureManager
 
 	void restore()
 	{
-		boolean hadOverrides = !appliedWidgetOverrideIds.isEmpty()
+		boolean hadOverrides = !appliedSpriteOverrideIds.isEmpty()
 			|| !bandedSpriteOverrides.isEmpty()
 			|| !originalSprites.isEmpty()
 			|| uiBandingApplied;
@@ -76,16 +83,16 @@ final class NpcSnapUiTextureManager
 			return;
 		}
 
-		Map<Integer, SpritePixels> widgetSpriteOverrides = client.getWidgetSpriteOverrides();
-		if (widgetSpriteOverrides != null)
+		Map<Integer, SpritePixels> spriteOverrides = client.getSpriteOverrides();
+		if (spriteOverrides != null)
 		{
-			for (Integer widgetId : appliedWidgetOverrideIds)
+			for (Integer spriteId : appliedSpriteOverrideIds)
 			{
-				widgetSpriteOverrides.remove(widgetId);
+				spriteOverrides.remove(spriteId);
 			}
 		}
 
-		appliedWidgetOverrideIds.clear();
+		appliedSpriteOverrideIds.clear();
 		bandedSpriteOverrides.clear();
 		originalSprites.clear();
 		uiBandingApplied = false;
@@ -96,12 +103,12 @@ final class NpcSnapUiTextureManager
 
 	int getAppliedSpriteOverrideCount()
 	{
-		return 0;
+		return appliedSpriteOverrideIds.size();
 	}
 
 	int getAppliedWidgetOverrideCount()
 	{
-		return appliedWidgetOverrideIds.size();
+		return 0;
 	}
 
 	private void applyLoadedWidgets(int bands, double quality)
@@ -114,58 +121,69 @@ final class NpcSnapUiTextureManager
 		}
 
 		Set<Integer> visitedWidgets = new HashSet<>();
+		boolean changed = false;
 		for (Widget root : widgetRoots)
 		{
-			applyWidgetRecursive(root, bands, quality, visitedWidgets);
+			changed |= applyWidgetRecursive(root, bands, quality, visitedWidgets);
 		}
 
 		uiBandingApplied = true;
 		appliedUiBands = bands;
 		appliedUiQuality = quality;
-		resetWidgetSpriteCache();
+		if (changed)
+		{
+			resetWidgetSpriteCache();
+		}
 	}
 
-	private void applyWidgetRecursive(Widget widget, int bands, double quality, Set<Integer> visitedWidgets)
+	private boolean applyWidgetRecursive(Widget widget, int bands, double quality, Set<Integer> visitedWidgets)
 	{
 		if (widget == null || !visitedWidgets.add(widget.getId()))
 		{
-			return;
+			return false;
 		}
 
+		boolean changed = false;
 		int spriteId = widget.getSpriteId();
 		if (spriteId >= 0)
 		{
 			SpritePixels replacement = getOrCreateBandedSprite(spriteId, bands, quality);
 			if (replacement != null)
 			{
-				Map<Integer, SpritePixels> widgetSpriteOverrides = client.getWidgetSpriteOverrides();
-				if (widgetSpriteOverrides == null)
+				Map<Integer, SpritePixels> spriteOverrides = client.getSpriteOverrides();
+				if (spriteOverrides == null)
 				{
-					return;
+					return false;
 				}
 
-				widgetSpriteOverrides.put(widget.getId(), replacement);
-				appliedWidgetOverrideIds.add(widget.getId());
+				if (appliedSpriteOverrideIds.add(spriteId))
+				{
+					spriteOverrides.put(spriteId, replacement);
+					changed = true;
+				}
 			}
 		}
 
-		visitChildren(widget.getChildren(), bands, quality, visitedWidgets);
-		visitChildren(widget.getDynamicChildren(), bands, quality, visitedWidgets);
-		visitChildren(widget.getStaticChildren(), bands, quality, visitedWidgets);
-		visitChildren(widget.getNestedChildren(), bands, quality, visitedWidgets);
+		changed |= visitChildren(widget.getChildren(), bands, quality, visitedWidgets);
+		changed |= visitChildren(widget.getDynamicChildren(), bands, quality, visitedWidgets);
+		changed |= visitChildren(widget.getStaticChildren(), bands, quality, visitedWidgets);
+		changed |= visitChildren(widget.getNestedChildren(), bands, quality, visitedWidgets);
+		return changed;
 	}
 
-	private void visitChildren(Widget[] children, int bands, double quality, Set<Integer> visitedWidgets)
+	private boolean visitChildren(Widget[] children, int bands, double quality, Set<Integer> visitedWidgets)
 	{
 		if (children == null)
 		{
-			return;
+			return false;
 		}
 
+		boolean changed = false;
 		for (Widget child : children)
 		{
-			applyWidgetRecursive(child, bands, quality, visitedWidgets);
+			changed |= applyWidgetRecursive(child, bands, quality, visitedWidgets);
 		}
+		return changed;
 	}
 
 	private SpritePixels getOrCreateBandedSprite(int spriteId, int bands, double quality)

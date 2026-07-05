@@ -26,10 +26,10 @@ public class NpcSnapUiTextureManagerTest
 
 		manager.sync(true, 4, 100.0d);
 
-		assertEquals(0, harness.spriteOverrides.size());
-		assertEquals(1, harness.widgetOverrides.size());
-		assertEquals(0, manager.getAppliedSpriteOverrideCount());
-		assertEquals(1, manager.getAppliedWidgetOverrideCount());
+		assertEquals(1, harness.spriteOverrides.size());
+		assertEquals(0, harness.widgetOverrides.size());
+		assertEquals(1, manager.getAppliedSpriteOverrideCount());
+		assertEquals(0, manager.getAppliedWidgetOverrideCount());
 		assertEquals(1, harness.widgetCacheResets.get());
 
 		manager.sync(false, 4, 100.0d);
@@ -58,8 +58,30 @@ public class NpcSnapUiTextureManagerTest
 		manager.markDirty();
 		manager.sync(true, 2, 100.0d);
 
-		SpritePixels spritePixels = harness.widgetOverrides.get(200);
+		SpritePixels spritePixels = harness.spriteOverrides.get(8);
 		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(originalPixels, 2), spritePixels.getPixels());
+	}
+
+	@Test
+	public void syncDiscoversNewStateSpriteIdsWithoutDirtyMark()
+	{
+		AtomicInteger spriteId = new AtomicInteger(5);
+		TestClientHarness harness = new TestClientHarness(widget(250, spriteId));
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, id ->
+			new NpcSnapUiTextureManager.SpriteSnapshot(new int[] {id}, 1, 1, 1, 1, 0, 0));
+
+		manager.sync(true, 4, 100.0d);
+		spriteId.set(6);
+		manager.sync(true, 4, 100.0d);
+		manager.sync(true, 4, 100.0d);
+
+		assertEquals(2, harness.spriteOverrides.size());
+		assertNotNull(harness.spriteOverrides.get(5));
+		assertNotNull(harness.spriteOverrides.get(6));
+		assertEquals(0, harness.widgetOverrides.size());
+		assertEquals(2, manager.getAppliedSpriteOverrideCount());
+		assertEquals(0, manager.getAppliedWidgetOverrideCount());
+		assertEquals(2, harness.widgetCacheResets.get());
 	}
 
 	@Test
@@ -71,9 +93,29 @@ public class NpcSnapUiTextureManagerTest
 
 		manager.onWidgetLoaded(true, 4, 100.0d);
 
-		assertEquals(1, harness.widgetOverrides.size());
-		assertEquals(1, manager.getAppliedWidgetOverrideCount());
+		assertEquals(1, harness.spriteOverrides.size());
+		assertEquals(0, harness.widgetOverrides.size());
+		assertEquals(1, manager.getAppliedSpriteOverrideCount());
+		assertEquals(0, manager.getAppliedWidgetOverrideCount());
 		assertEquals(1, harness.widgetCacheResets.get());
+	}
+
+	@Test
+	public void restoreOnlyRemovesAppliedSpriteOverrides()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(350, 5));
+		harness.spriteOverrides.put(99, spritePixels(new int[] {0x00000099}, 1, 1));
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, spriteId ->
+			new NpcSnapUiTextureManager.SpriteSnapshot(new int[] {0x00123456}, 1, 1, 1, 1, 0, 0));
+
+		manager.sync(true, 4, 100.0d);
+		manager.restore();
+
+		assertEquals(1, harness.spriteOverrides.size());
+		assertNotNull(harness.spriteOverrides.get(99));
+		assertEquals(0, harness.widgetOverrides.size());
+		assertEquals(0, manager.getAppliedSpriteOverrideCount());
+		assertEquals(0, manager.getAppliedWidgetOverrideCount());
 	}
 
 	@Test
@@ -147,6 +189,11 @@ public class NpcSnapUiTextureManagerTest
 
 	private static Widget widget(int id, int spriteId, Widget... children)
 	{
+		return widget(id, new AtomicInteger(spriteId), children);
+	}
+
+	private static Widget widget(int id, AtomicInteger spriteId, Widget... children)
+	{
 		return (Widget) Proxy.newProxyInstance(
 			Widget.class.getClassLoader(),
 			new Class<?>[] {Widget.class},
@@ -157,7 +204,7 @@ public class NpcSnapUiTextureManagerTest
 					case "getId":
 						return id;
 					case "getSpriteId":
-						return spriteId;
+						return spriteId.get();
 					case "getChildren":
 						return children;
 					case "getDynamicChildren":

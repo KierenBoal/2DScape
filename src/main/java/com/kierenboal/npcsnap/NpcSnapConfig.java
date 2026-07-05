@@ -567,7 +567,7 @@ public interface NpcSnapConfig extends Config
 	)
 	default double uiSpriteQuality()
 	{
-		return 50.0d;
+		return 100.0d;
 	}
 
 	@ConfigItem(
