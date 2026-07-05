@@ -71,6 +71,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Deque<BillboardTargetKey> renderQueue = new ArrayDeque<>();
 	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
 	private final Map<BillboardTargetKey, Integer> debugQueuePositions = new HashMap<>();
+	private final Map<BillboardTargetKey, Double> debugQueuePriorityScores = new HashMap<>();
 	private final BillboardClassificationDebug classificationDebug;
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
@@ -211,6 +212,7 @@ class NpcBillboardOverlay extends Overlay
 		renderQueue.clear();
 		renderQueueEntries.clear();
 		debugQueuePositions.clear();
+		debugQueuePriorityScores.clear();
 		classificationDebug.clear();
 		billboardUpdateStates.clear();
 		frameUpdatePlans.clear();
@@ -468,7 +470,7 @@ class NpcBillboardOverlay extends Overlay
 		boolean readyToRedraw = needsBillboardRedraw(target, updateState.qualityScale);
 		if (readyToRedraw)
 		{
-			markDebugFrameInvalidated(target);
+			markDebugFrameInvalidated(target, readyToRedrawColor(target));
 		}
 
 		return readyToRedraw;
@@ -482,12 +484,13 @@ class NpcBillboardOverlay extends Overlay
 			paintOrder,
 			cached != null && cached.consumeDebugFrameRedrawn(),
 			cached != null && cached.consumeDebugFrameInvalidated(),
+			cached != null ? cached.consumeDebugFrameInvalidatedColor() : null,
 			cached != null ? cached.stateDebugInfo() : null
 		);
 		debug.drawBillboardDebugForeground(graphics, renderDebug);
 	}
 
-	private void markDebugFrameInvalidated(BillboardTarget target)
+	private void markDebugFrameInvalidated(BillboardTarget target, Color color)
 	{
 		if (target == null)
 		{
@@ -501,7 +504,7 @@ class NpcBillboardOverlay extends Overlay
 				CachedBillboard cached = part != null && part.renderable != null ? billboardCache.get(part.renderable) : null;
 				if (cached != null)
 				{
-					cached.markDebugFrameInvalidated();
+					cached.markDebugFrameInvalidated(color);
 				}
 			}
 			return;
@@ -510,8 +513,32 @@ class NpcBillboardOverlay extends Overlay
 		CachedBillboard cached = target.renderable != null ? billboardCache.get(target.renderable) : null;
 		if (cached != null)
 		{
-			cached.markDebugFrameInvalidated();
+			cached.markDebugFrameInvalidated(color);
 		}
+	}
+
+	private Color readyToRedrawColor(BillboardTarget target)
+	{
+		if (target == null)
+		{
+			return null;
+		}
+
+		Double score = debugQueuePriorityScores.get(target.targetKey);
+		if (score == null || debugQueuePriorityScores.isEmpty())
+		{
+			return null;
+		}
+
+		double minScore = Double.POSITIVE_INFINITY;
+		double maxScore = Double.NEGATIVE_INFINITY;
+		for (double candidateScore : debugQueuePriorityScores.values())
+		{
+			minScore = Math.min(minScore, candidateScore);
+			maxScore = Math.max(maxScore, candidateScore);
+		}
+
+		return NpcSnapDebug.readyToRedrawColor(score, minScore, maxScore);
 	}
 
 	private NpcSnapDebug.StateDebugInfo buildStateDebugInfo(BillboardRenderRequest request, int queuePosition)
@@ -988,7 +1015,15 @@ class NpcBillboardOverlay extends Overlay
 		{
 			if (shouldForceHoverInteractionRedraw(target))
 			{
-				frameUpdatePlans.put(target.targetKey, new FrameUpdatePlan(renderQualityScale(), true));
+				frameUpdatePlans.put(target.targetKey, new FrameUpdatePlan(
+					renderQualityScale(),
+					true,
+					null,
+					null,
+					client.getGameCycle(),
+					1,
+					renderQualityScale(),
+					minimumAnimatedRedrawInterval()));
 			}
 		}
 	}
@@ -1044,7 +1079,10 @@ class NpcBillboardOverlay extends Overlay
 			boolean bypassCadence = forceHoverInteractionRedraw
 				|| !targetHasCachedBillboard(target)
 				|| updateState.hasPositionChangedSinceRedraw(snapshot)
-				|| updateState.hasViewChangedSinceRedraw(snapshot);
+				|| updateState.hasViewChangedSinceRedraw(snapshot)
+				|| updateState.hasModelChangedSinceRedraw(snapshot)
+				|| updateState.hasAnimationChangedSinceRedraw(snapshot)
+				|| updateState.hasTextureChangedSinceRedraw(snapshot);
 			if (!bypassCadence && !updateState.isReady(gameCycle, targetHasCachedBillboard(target)))
 			{
 				requeueTarget(key);
@@ -1059,8 +1097,15 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			frameUpdatePlans.put(key, new FrameUpdatePlan(qualityScale, forceHoverInteractionRedraw));
-			updateState.advance(gameCycle, baseRefreshInterval, renderQualityScale(), snapshot, minimumAnimatedRedrawInterval());
+			frameUpdatePlans.put(key, new FrameUpdatePlan(
+				qualityScale,
+				forceHoverInteractionRedraw,
+				updateState,
+				snapshot,
+				gameCycle,
+				baseRefreshInterval,
+				renderQualityScale(),
+				minimumAnimatedRedrawInterval()));
 			requeueTarget(key);
 			scheduled++;
 		}
@@ -1087,6 +1132,7 @@ class NpcBillboardOverlay extends Overlay
 			BillboardUpdateState state = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
 			UpdateHeuristicSnapshot snapshot = buildUpdateHeuristicSnapshot(target);
 			double score = computeUpdatePriorityScore(target, state, snapshot, gameCycle, queueIndex);
+			debugQueuePriorityScores.put(key, score);
 			prioritizedTargets.add(new QueuedBillboardTarget(key, score, queueIndex));
 			state.observe(snapshot);
 			queueIndex++;
@@ -1150,19 +1196,7 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
-		if (state.hasMoved(snapshot))
-		{
-			score += 1_200.0d;
-		}
-
-		if (state.hasAnimationChanged(snapshot))
-		{
-			score += 1_000.0d;
-		}
-		else if (snapshot.animated)
-		{
-			score += 450.0d;
-		}
+		score += BillboardUpdatePriority.stateChangeScore(state, snapshot);
 
 		double depthPenalty = Math.max(0.0d, snapshot.depth);
 		score += 8_000.0d / Math.max(128.0d, depthPenalty + 128.0d);
@@ -1199,6 +1233,7 @@ class NpcBillboardOverlay extends Overlay
 				iterator.remove();
 				renderQueueEntries.remove(key);
 				debugQueuePositions.remove(key);
+				debugQueuePriorityScores.remove(key);
 				billboardUpdateStates.remove(key);
 				frameUpdatePlans.remove(key);
 			}
@@ -1232,8 +1267,12 @@ class NpcBillboardOverlay extends Overlay
 		{
 			BillboardTarget target = newTargets.get(i);
 			int nearPriorityIndex = (newTargetCount - 1) - i;
-			double seededQualityScale = seededQualityScale(nearPriorityIndex, maxDraws);
-			billboardUpdateStates.put(target.targetKey, new BillboardUpdateState(seededQualityScale));
+			double initialQualityScale = BillboardUpdateScheduler.initialQualityScale(
+				targetHasCachedBillboard(target),
+				renderQualityScale(),
+				nearPriorityIndex,
+				maxDraws);
+			billboardUpdateStates.put(target.targetKey, new BillboardUpdateState(initialQualityScale));
 			requeueTargetFront(target.targetKey);
 		}
 	}
@@ -1978,15 +2017,9 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
-		for (ObjectRenderablePart part : target.observedTileObject.parts)
-		{
-			if (part.renderable != null && billboardCache.containsKey(part.renderable))
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return BillboardUpdateScheduler.allTileObjectPartsCached(
+			target.observedTileObject.parts,
+			billboardCache::containsKey);
 	}
 
 	private boolean tileObjectHasCachedBillboard(TileObject tileObject)
@@ -2095,6 +2128,8 @@ class NpcBillboardOverlay extends Overlay
 
 		long positionKey = 0L;
 		int animationHash = 1;
+		int modelStateHash = 1;
+		int textureStateHash = 1;
 		int viewHash = 1;
 		boolean animated = false;
 		boolean sawPosition = false;
@@ -2111,6 +2146,7 @@ class NpcBillboardOverlay extends Overlay
 			{
 				viewHash = (31 * viewHash) + request.relativeYaw;
 				viewHash = (31 * viewHash) + request.relativePitch;
+				modelStateHash = (31 * modelStateHash) + BillboardModelStateHash.hash(request.model);
 			}
 
 			if (part.renderable instanceof DynamicObject)
@@ -2123,7 +2159,7 @@ class NpcBillboardOverlay extends Overlay
 			}
 			else
 			{
-				animationHash = (31 * animationHash) + System.identityHashCode(part.renderable);
+				modelStateHash = (31 * modelStateHash) + System.identityHashCode(part.renderable);
 			}
 		}
 
@@ -2131,6 +2167,8 @@ class NpcBillboardOverlay extends Overlay
 			target.getDepth(),
 			sawPosition ? positionKey : Long.MIN_VALUE,
 			animationHash,
+			modelStateHash,
+			textureStateHash,
 			viewHash,
 			animated
 		);
@@ -2489,6 +2527,7 @@ class NpcBillboardOverlay extends Overlay
 		CachedBillboard cached = billboardCache.get(renderable);
 		boolean cacheInvalidated = false;
 		boolean spriteRedrawn = false;
+		boolean updatePlanSucceeded = false;
 		if (updatePlan != null)
 		{
 			float[] verticesX = model.getVerticesX();
@@ -2556,11 +2595,13 @@ class NpcBillboardOverlay extends Overlay
 							cached.markDebugFrameRedrawn();
 							putCachedBillboard(renderable, cached);
 							spriteRedrawn = true;
+							updatePlanSucceeded = true;
 						}
 					}
 					else if (cached != null)
 					{
 						cached.touch(nowMillis);
+						updatePlanSucceeded = true;
 					}
 
 					if (cacheInvalidated)
@@ -2574,6 +2615,11 @@ class NpcBillboardOverlay extends Overlay
 		if (cached == null)
 		{
 			return null;
+		}
+
+		if (updatePlan != null && updatePlanSucceeded)
+		{
+			updatePlan.markRedrawSucceeded();
 		}
 
 		return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis, queuePosition);

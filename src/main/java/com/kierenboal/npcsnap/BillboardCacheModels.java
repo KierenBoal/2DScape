@@ -253,6 +253,7 @@ final class CachedBillboard implements TimedCacheEntry
 	private boolean dirty;
 	private boolean debugFrameRedrawn;
 	private boolean debugFrameInvalidated;
+	private java.awt.Color debugFrameInvalidatedColor;
 	private NpcSnapDebug.StateDebugInfo stateDebugInfo;
 
 	CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image, long lastUsedMillis)
@@ -265,6 +266,7 @@ final class CachedBillboard implements TimedCacheEntry
 		this.dirty = true;
 		this.debugFrameRedrawn = true;
 		this.debugFrameInvalidated = false;
+		this.debugFrameInvalidatedColor = null;
 		this.stateDebugInfo = null;
 	}
 
@@ -324,6 +326,7 @@ final class CachedBillboard implements TimedCacheEntry
 	{
 		debugFrameRedrawn = true;
 		debugFrameInvalidated = false;
+		debugFrameInvalidatedColor = null;
 	}
 
 	boolean consumeDebugFrameRedrawn()
@@ -335,7 +338,13 @@ final class CachedBillboard implements TimedCacheEntry
 
 	void markDebugFrameInvalidated()
 	{
+		markDebugFrameInvalidated(null);
+	}
+
+	void markDebugFrameInvalidated(java.awt.Color color)
+	{
 		debugFrameInvalidated = true;
+		debugFrameInvalidatedColor = color;
 	}
 
 	boolean consumeDebugFrameInvalidated()
@@ -343,6 +352,13 @@ final class CachedBillboard implements TimedCacheEntry
 		boolean wasInvalidated = debugFrameInvalidated;
 		debugFrameInvalidated = false;
 		return wasInvalidated;
+	}
+
+	java.awt.Color consumeDebugFrameInvalidatedColor()
+	{
+		java.awt.Color color = debugFrameInvalidatedColor;
+		debugFrameInvalidatedColor = null;
+		return color;
 	}
 
 	NpcSnapDebug.StateDebugInfo stateDebugInfo()

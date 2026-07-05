@@ -19,6 +19,7 @@ class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
 	private static final Color READY_TO_REDRAW_MAGENTA = new Color(255, 0, 255, 255);
+	private static final Color READY_TO_REDRAW_LOW_PRIORITY = new Color(128, 0, 128, 255);
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 
@@ -91,7 +92,7 @@ class NpcSnapDebug
 			int size = 2;
 			Stroke stroke = graphics.getStroke();
 			graphics.setStroke(new BasicStroke(size));
-			graphics.setColor(READY_TO_REDRAW_MAGENTA);
+			graphics.setColor(renderDebug.readyToRedrawColor != null ? renderDebug.readyToRedrawColor : READY_TO_REDRAW_MAGENTA);
 			graphics.drawRect(bounds.x - size, bounds.y - size, bounds.width + (size * 2), bounds.height + (size * 2));
 			graphics.setStroke(stroke);
 		}
@@ -205,6 +206,25 @@ class NpcSnapDebug
 		return 192 + Math.floorMod(seed >> shift, 64);
 	}
 
+	static Color readyToRedrawColor(double score, double minScore, double maxScore)
+	{
+		if (!Double.isFinite(score) || !Double.isFinite(minScore) || !Double.isFinite(maxScore))
+		{
+			return READY_TO_REDRAW_MAGENTA;
+		}
+
+		double ratio = maxScore <= minScore ? 1.0d : (score - minScore) / (maxScore - minScore);
+		ratio = Math.max(0.0d, Math.min(1.0d, ratio));
+		int red = interpolate(READY_TO_REDRAW_LOW_PRIORITY.getRed(), READY_TO_REDRAW_MAGENTA.getRed(), ratio);
+		int blue = interpolate(READY_TO_REDRAW_LOW_PRIORITY.getBlue(), READY_TO_REDRAW_MAGENTA.getBlue(), ratio);
+		return new Color(red, 0, blue, 255);
+	}
+
+	private static int interpolate(int low, int high, double ratio)
+	{
+		return low + (int) Math.round((high - low) * ratio);
+	}
+
 	private void drawCenteredText(Graphics2D graphics, String text, int centerX, int centerY)
 	{
 		Font font = graphics.getFont().deriveFont(Font.BOLD, 12.0f);
@@ -273,6 +293,7 @@ class NpcSnapDebug
 		private final int paintOrder;
 		private final boolean frameRedrawn;
 		private final boolean readyToRedraw;
+		private final Color readyToRedrawColor;
 		private final StateDebugInfo stateDebugInfo;
 
 		private RenderDebug(
@@ -280,6 +301,7 @@ class NpcSnapDebug
 			int paintOrder,
 			boolean frameRedrawn,
 			boolean readyToRedraw,
+			Color readyToRedrawColor,
 			StateDebugInfo stateDebugInfo
 		)
 		{
@@ -287,12 +309,19 @@ class NpcSnapDebug
 			this.paintOrder = paintOrder;
 			this.frameRedrawn = frameRedrawn;
 			this.readyToRedraw = readyToRedraw;
+			this.readyToRedrawColor = readyToRedrawColor;
 			this.stateDebugInfo = stateDebugInfo;
 		}
 
-		static RenderDebug forBounds(Rectangle bounds, int paintOrder, boolean spriteRedrawn, boolean readyToRedraw, StateDebugInfo stateDebugInfo)
+		static RenderDebug forBounds(
+			Rectangle bounds,
+			int paintOrder,
+			boolean spriteRedrawn,
+			boolean readyToRedraw,
+			Color readyToRedrawColor,
+			StateDebugInfo stateDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, spriteRedrawn, readyToRedraw, stateDebugInfo);
+			return new RenderDebug(bounds, paintOrder, spriteRedrawn, readyToRedraw, readyToRedrawColor, stateDebugInfo);
 		}
 	}
 
