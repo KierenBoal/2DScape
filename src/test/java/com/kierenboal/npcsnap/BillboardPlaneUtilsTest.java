@@ -3,17 +3,17 @@ package com.kierenboal.npcsnap;
 import org.junit.Assert;
 import org.junit.Test;
 
-public class NpcBillboardOverlayPlaneTest
+public class BillboardPlaneUtilsTest
 {
 	@Test
 	public void samePlaneTargetsRender()
 	{
-		Assert.assertTrue(NpcBillboardOverlay.shouldRenderTargetPlane(1, 1));
+		Assert.assertTrue(BillboardPlaneUtils.shouldRenderTargetPlane(1, 1));
 	}
 
 	@Test
 	public void differentPlaneTargetsDoNotRender()
 	{
-		Assert.assertFalse(NpcBillboardOverlay.shouldRenderTargetPlane(1, 0));
+		Assert.assertFalse(BillboardPlaneUtils.shouldRenderTargetPlane(1, 0));
 	}
 }

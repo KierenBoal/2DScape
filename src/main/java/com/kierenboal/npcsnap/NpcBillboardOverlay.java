@@ -25,32 +25,21 @@ import javax.inject.Inject;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
-import net.runelite.api.DecorativeObject;
 import net.runelite.api.DynamicObject;
 import net.runelite.api.GameState;
-import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
-import net.runelite.api.GroundObject;
 import net.runelite.api.Model;
-import net.runelite.api.MenuAction;
-import net.runelite.api.MenuEntry;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.Player;
-import net.runelite.api.PlayerComposition;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
-import net.runelite.api.Texture;
-import net.runelite.api.TextureProvider;
-import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
-import net.runelite.api.gameval.ItemID;
-import net.runelite.api.kit.KitType;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -59,51 +48,17 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class NpcBillboardOverlay extends Overlay
 {
-	private static final int LEGACY_FULL_CIRCLE = 2048;
-	private static final int BILLBOARD_FULL_CIRCLE = 16384;
-	private static final int CAMERA_FULL_CIRCLE = BILLBOARD_FULL_CIRCLE;
-	private static final int ACTOR_FULL_CIRCLE = LEGACY_FULL_CIRCLE;
-	private static final int PROJECTILE_FULL_CIRCLE = LEGACY_FULL_CIRCLE;
-	private static final int MAX_PITCH = angleToBillboardUnits(512, LEGACY_FULL_CIRCLE);
-	private static final int GROUND_ITEM_MIN_PITCH = angleToBillboardUnits(128, LEGACY_FULL_CIRCLE);
-	private static final int LOCAL_TILE_SIZE = 128;
-	private static final int COMBAT_YAW = angleToBillboardUnits(512, LEGACY_FULL_CIRCLE);
-	private static final int OPPOSITE_COMBAT_YAW = angleToBillboardUnits(1536, LEGACY_FULL_CIRCLE);
-	private static final double MIN_RENDER_QUALITY = 0.01d;
-	private static final int MAX_SOURCE_BILLBOARD_SIZE = 4096;
-	private static final int MAX_SOURCE_BILLBOARD_COORDINATE = 32768;
-	private static final int MAX_DRAW_BILLBOARD_SIZE = 8192;
-	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
+	private static final int BILLBOARD_FULL_CIRCLE = BillboardAngleUtils.BILLBOARD_FULL_CIRCLE;
 	private static final int OUTLINE_PADDING = 1;
-	private static final long CACHE_TTL_MILLIS = 60_000L;
-	private static final int CAPE_ARTIFACT_FACE_RED = 147;
-	private static final int CAPE_ARTIFACT_FACE_GREEN = 143;
-	private static final int CAPE_ARTIFACT_FACE_BLUE = 143;
-	private static final int CAPE_ARTIFACT_FACE_ALPHA = 255;
-	
-	private static final int[] ANIMATED_TEXTURE_IDS = {
-		
-		ItemID.TZHAAR_CAPE_FIRE,
-		ItemID.TZHAAR_CAPE_FIRE_DUMMY,
-		ItemID.TZHAAR_CAPE_FIRE_TROUVER, 
-		ItemID.TZHAAR_CAPE_FIRE_BROKEN, 
-		
-		ItemID.INFERNAL_CAPE,
-		ItemID.INFERNAL_CAPE_DUMMY ,
-		ItemID.INFERNAL_CAPE_TROUVER,
-		ItemID.INFERNAL_CAPE_BROKEN,
-		ItemID.BR_INFERNAL_CAPE
-		
-	};
-	private static final float ANIMATED_TEXTURE_V_SCROLL_PER_SECOND = -0.25f;
-	private static final int RENDER_PRIORITY_NONE = -1;
 	private final Client client;
 	private final NpcSnapConfig config;
 	private final NpcSnapDebug debug;
 	private final AnimationFrameSnapper animationFrameSnapper;
+	private final BillboardDepthCalculator depthCalculator;
+	private final BillboardOrientationCalculator orientationCalculator;
 	private final Map<Renderable, CachedBillboard> billboardCache = new IdentityHashMap<>();
-	private final Map<Integer, TextureCacheEntry> textureCache = new HashMap<>();
-	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
+	private final BillboardTextureResolver textureResolver;
+	private final GroundItemBillboardTracker groundItemTracker = new GroundItemBillboardTracker();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
 	private final Object observedTileObjectsLock = new Object();
@@ -116,7 +71,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Deque<BillboardTargetKey> renderQueue = new ArrayDeque<>();
 	private final Set<BillboardTargetKey> renderQueueEntries = new HashSet<>();
 	private final Map<BillboardTargetKey, Integer> debugQueuePositions = new HashMap<>();
-	private final Map<Object, String> classificationDebugMessages = new IdentityHashMap<>();
+	private final BillboardClassificationDebug classificationDebug;
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -147,6 +102,10 @@ class NpcBillboardOverlay extends Overlay
 		this.config = config;
 		this.debug = debug;
 		this.animationFrameSnapper = animationFrameSnapper;
+		this.depthCalculator = new BillboardDepthCalculator(client);
+		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
+		this.textureResolver = new BillboardTextureResolver(client, config);
+		this.classificationDebug = new BillboardClassificationDebug(client, config, log);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(PRIORITY_HIGHEST);
@@ -193,18 +152,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void trackGroundItem(TileItem item, Tile tile)
 	{
-		if (item == null || tile == null)
-		{
-			return;
-		}
-
-		LocalPoint localPoint = tile.getLocalLocation();
-		if (localPoint == null)
-		{
-			return;
-		}
-
-		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint));
+		groundItemTracker.track(item, tile);
 	}
 
 	void untrackGroundItem(TileItem item)
@@ -214,22 +162,25 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		groundItems.remove(item);
-		removeCachedBillboard(item);
-		activeRenderableTargets.remove(item);
-		activeBillboards.remove(item);
+		groundItemTracker.untrack(item);
+		clearGroundItemRenderState(item);
 	}
 
 	void clearGroundItems()
 	{
-		for (TileItem item : groundItems.keySet())
+		for (TileItem item : groundItemTracker.items())
 		{
-			removeCachedBillboard(item);
-			activeRenderableTargets.remove(item);
-			activeBillboards.remove(item);
+			clearGroundItemRenderState(item);
 		}
 
-		groundItems.clear();
+		groundItemTracker.clear();
+	}
+
+	private void clearGroundItemRenderState(TileItem item)
+	{
+		removeCachedBillboard(item);
+		activeRenderableTargets.remove(item);
+		activeBillboards.remove(item);
 	}
 
 	private void clearActiveState()
@@ -260,7 +211,7 @@ class NpcBillboardOverlay extends Overlay
 		renderQueue.clear();
 		renderQueueEntries.clear();
 		debugQueuePositions.clear();
-		classificationDebugMessages.clear();
+		classificationDebug.clear();
 		billboardUpdateStates.clear();
 		frameUpdatePlans.clear();
 		forceHoverInteractionRedraws.clear();
@@ -268,74 +219,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void syncGroundItems(WorldView worldView)
 	{
-		if (worldView == null || worldView.getScene() == null)
-		{
-			clearGroundItems();
-			return;
-		}
-
-		Tile[][][] tiles = worldView.getScene().getTiles();
-		if (tiles == null)
-		{
-			clearGroundItems();
-			return;
-		}
-
-		Set<TileItem> seenItems = Collections.newSetFromMap(new IdentityHashMap<>());
-		for (Tile[][] planeTiles : tiles)
-		{
-			if (planeTiles == null)
-			{
-				continue;
-			}
-
-			for (Tile[] row : planeTiles)
-			{
-				if (row == null)
-				{
-					continue;
-				}
-
-				for (Tile tile : row)
-				{
-					if (tile == null)
-					{
-						continue;
-					}
-
-					Collection<TileItem> tileItems = tile.getGroundItems();
-					if (tileItems == null)
-					{
-						continue;
-					}
-
-					for (TileItem item : tileItems)
-					{
-						if (item == null)
-						{
-							continue;
-						}
-
-						seenItems.add(item);
-						trackGroundItem(item, tile);
-					}
-				}
-			}
-		}
-
-		List<TileItem> staleItems = new ArrayList<>();
-		for (TileItem item : groundItems.keySet())
-		{
-			if (!seenItems.contains(item))
-			{
-				staleItems.add(item);
-			}
-		}
-
-		for (TileItem item : staleItems)
-		{
-			untrackGroundItem(item);
-		}
+		groundItemTracker.sync(worldView, this::clearGroundItemRenderState);
 	}
 
 	void clearTileObjects()
@@ -353,7 +237,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void clearTextureCache()
 	{
-		textureCache.clear();
+		textureResolver.clear();
 	}
 
 	void clearBillboardCache()
@@ -477,51 +361,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void seedGroundItems(WorldView worldView)
 	{
-		if (worldView == null || worldView.getScene() == null)
-		{
-			return;
-		}
-
-		Tile[][][] tiles = worldView.getScene().getTiles();
-		if (tiles == null)
-		{
-			return;
-		}
-
-		for (Tile[][] planeTiles : tiles)
-		{
-			if (planeTiles == null)
-			{
-				continue;
-			}
-
-			for (Tile[] row : planeTiles)
-			{
-				if (row == null)
-				{
-					continue;
-				}
-
-				for (Tile tile : row)
-				{
-					if (tile == null)
-					{
-						continue;
-					}
-
-					Collection<TileItem> tileItems = tile.getGroundItems();
-					if (tileItems == null)
-					{
-						continue;
-					}
-
-					for (TileItem item : tileItems)
-					{
-						trackGroundItem(item, tile);
-					}
-				}
-			}
-		}
+		groundItemTracker.seed(worldView);
 	}
 
 	boolean shouldHideRenderable(Renderable renderable)
@@ -707,7 +547,7 @@ class NpcBillboardOverlay extends Overlay
 		hash = (31 * hash) + request.relativeYaw;
 		hash = (31 * hash) + request.relativePitch;
 		hash = (31 * hash) + request.animatedTextureId;
-		hash = (31 * hash) + modelStateHash(request.model);
+		hash = (31 * hash) + BillboardModelStateHash.hash(request.model);
 		return hash;
 	}
 
@@ -960,12 +800,12 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Rectangle sourceBounds = new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
-		if (!isUsableSourceBounds(sourceBounds))
+		if (!BillboardGeometryUtils.isUsableSourceBounds(sourceBounds))
 		{
 			return null;
 		}
 
-		return expandedBounds(sourceBounds, outlinePadding());
+		return BillboardGeometryUtils.expandedBounds(sourceBounds, outlinePadding());
 	}
 
 	private void ensureActiveBillboardsCurrent(WorldView worldView)
@@ -1119,8 +959,8 @@ class NpcBillboardOverlay extends Overlay
 
 	private void updateHoverInteractionState()
 	{
-		Actor hoveredActor = hoveredActor();
-		Actor interactionActor = interactedActor();
+		Actor hoveredActor = BillboardHoverInteractionResolver.hoveredActor(client);
+		Actor interactionActor = BillboardHoverInteractionResolver.interactedActor(client, interactedActor);
 		frameHoveredActor = hoveredActor;
 		frameInteractionActor = interactionActor;
 		if (hoveredActor == lastHoveredActor && interactionActor == lastInteractionActor)
@@ -1460,12 +1300,12 @@ class NpcBillboardOverlay extends Overlay
 						BillboardTargetType.NPC,
 						ClassifiedObjectType.NPC,
 						npc,
-						billboardDepth(npc),
+						depthCalculator.depth(npc),
 						npc.getLocalLocation(),
 						npc.getWorldView().getPlane()
 					)
 				);
-				logClassificationDecision(npc, ObjectClassifier.classifyDecision(npc, client));
+				classificationDebug.logDecision(npc, ObjectClassifier.classifyDecision(npc, client));
 				eligibleActorsForEffects.add(npc);
 			}
 		}
@@ -1490,12 +1330,12 @@ class NpcBillboardOverlay extends Overlay
 						BillboardTargetType.PLAYER,
 						ClassifiedObjectType.PLAYER,
 						player,
-						billboardDepth(player),
+						depthCalculator.depth(player),
 						player.getLocalLocation(),
 						player.getWorldView().getPlane()
 					)
 				);
-				logClassificationDecision(player, ObjectClassifier.classifyDecision(player, client));
+				classificationDebug.logDecision(player, ObjectClassifier.classifyDecision(player, client));
 				eligibleActorsForEffects.add(player);
 			}
 		}
@@ -1532,11 +1372,11 @@ class NpcBillboardOverlay extends Overlay
 					BillboardTargetType.PROJECTILE,
 					ClassifiedObjectType.PROJECTILE,
 					projectile,
-					billboardDepth(projectile),
-					projectileLocalPoint(projectile),
+					depthCalculator.depth(projectile),
+					BillboardProjectileGeometry.localPoint(projectile),
 					projectile.getFloor()
 				));
-				logClassificationDecision(projectile, ObjectClassifier.classifyDecision(projectile, client));
+				classificationDebug.logDecision(projectile, ObjectClassifier.classifyDecision(projectile, client));
 			}
 		}
 
@@ -1566,17 +1406,17 @@ class NpcBillboardOverlay extends Overlay
 					BillboardTargetType.GRAPHICS_OBJECT,
 					ClassifiedObjectType.EFFECT,
 					graphicsObject,
-					billboardDepth(graphicsObject),
+					depthCalculator.depth(graphicsObject),
 					graphicsObject.getLocation(),
 					graphicsObject.getLevel()
 				));
-				logClassificationDecision(graphicsObject, ObjectClassifier.classifyDecision(graphicsObject, client));
+				classificationDebug.logDecision(graphicsObject, ObjectClassifier.classifyDecision(graphicsObject, client));
 			}
 		}
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.GROUND_ITEM, config))
 		{
-			for (Map.Entry<TileItem, GroundItemBillboard> entry : groundItems.entrySet())
+			for (Map.Entry<TileItem, GroundItemBillboard> entry : groundItemTracker.entries())
 			{
 				TileItem item = entry.getKey();
 				GroundItemBillboard groundItem = entry.getValue();
@@ -1588,8 +1428,8 @@ class NpcBillboardOverlay extends Overlay
 					continue;
 				}
 
-				candidates.add(BillboardTarget.forGroundItem(item, groundItem, billboardDepth(item)));
-				logClassificationDecision(item, ObjectClassifier.classifyDecision(item, client));
+				candidates.add(BillboardTarget.forGroundItem(item, groundItem, depthCalculator.depth(item, groundItem)));
+				classificationDebug.logDecision(item, ObjectClassifier.classifyDecision(item, client));
 			}
 		}
 
@@ -1602,17 +1442,17 @@ class NpcBillboardOverlay extends Overlay
 					continue;
 				}
 
-				ClassifiedObjectType classifiedType = resolveObservedTileObjectType(observed);
+				ClassifiedObjectType classifiedType = classificationDebug.resolveObservedTileObjectType(observed);
 				if (classifiedType == ClassifiedObjectType.EFFECT)
 				{
 					if (ObjectClassifier.isEnabled(ClassifiedObjectType.EFFECT, config))
 					{
-						candidates.add(BillboardTarget.forTileObject(observed, billboardDepth(observed)));
+						candidates.add(BillboardTarget.forTileObject(observed, depthCalculator.depth(observed)));
 					}
 				}
 				else if (classifiedType == ClassifiedObjectType.OBJECT && ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 				{
-					candidates.add(BillboardTarget.forTileObject(observed, billboardDepth(observed)));
+					candidates.add(BillboardTarget.forTileObject(observed, depthCalculator.depth(observed)));
 				}
 			}
 		}
@@ -1686,8 +1526,8 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		resolveObservedTileObjectType(observed);
-		return BillboardTarget.forTileObject(observed, billboardDepth(observed));
+		classificationDebug.resolveObservedTileObjectType(observed);
+		return BillboardTarget.forTileObject(observed, depthCalculator.depth(observed));
 	}
 
 	private BillboardRenderRequest buildRenderRequest(BillboardTarget target)
@@ -1732,8 +1572,8 @@ class NpcBillboardOverlay extends Overlay
 			part.localPoint,
 			part.plane,
 			0,
-			relativeYaw(),
-			relativePitch(),
+			orientationCalculator.relativeYaw(),
+			orientationCalculator.relativePitch(),
 			animationId,
 			snappedFrame,
 			-1,
@@ -1757,13 +1597,13 @@ class NpcBillboardOverlay extends Overlay
 			localPoint,
 			actor.getWorldView().getPlane(),
 			Math.max(0, actor.getAnimationHeightOffset()),
-			relativeYaw(actor),
-			relativePitch(actor),
+			orientationCalculator.relativeYaw(actor),
+			orientationCalculator.relativePitch(actor),
 			actor.getAnimation(),
 			actor.getAnimationFrame(),
 			actor.getPoseAnimation(),
 			actor.getPoseAnimationFrame(),
-			animatedTextureId(actor),
+			BillboardAnimatedTextures.findAnimatedTextureId(actor),
 			shouldHoverOutline,
 			shouldInteractOutline,
 			VerticalAnchor.BOTTOM,
@@ -1790,8 +1630,8 @@ class NpcBillboardOverlay extends Overlay
 			localPoint,
 			actor.getWorldView().getPlane(),
 			Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight()),
-			relativeYaw(actor),
-			relativePitch(actorSpotAnim),
+			orientationCalculator.relativeYaw(actor),
+			orientationCalculator.relativePitch(),
 			actorSpotAnim.getId(),
 			actorSpotAnim.getFrame(),
 			-1,
@@ -1810,11 +1650,11 @@ class NpcBillboardOverlay extends Overlay
 		return new BillboardRenderRequest(
 			projectile,
 			projectile.getModel(),
-			projectileLocalPoint(projectile),
+			BillboardProjectileGeometry.localPoint(projectile),
 			projectile.getFloor(),
-			projectileVerticalOffset(projectile),
-			relativeYaw(projectile),
-			relativePitch(),
+			BillboardProjectileGeometry.verticalOffset(client, projectile),
+			orientationCalculator.relativeYaw(projectile),
+			orientationCalculator.relativePitch(),
 			projectile.getId(),
 			snappedFrame,
 			-1,
@@ -1836,8 +1676,8 @@ class NpcBillboardOverlay extends Overlay
 			graphicsObject.getLocation(),
 			graphicsObject.getLevel(),
 			Math.max(0, graphicsObject.getZ()),
-			relativeYaw(),
-			relativePitch(graphicsObject),
+			orientationCalculator.relativeYaw(),
+			orientationCalculator.relativePitch(),
 			graphicsObject.getId(),
 			snappedFrame,
 			-1,
@@ -1863,8 +1703,8 @@ class NpcBillboardOverlay extends Overlay
 			groundItem.localPoint,
 			groundItem.plane,
 			0,
-			relativeYaw(item),
-			relativePitch(item),
+			orientationCalculator.relativeGroundItemYaw(),
+			orientationCalculator.relativeGroundItemPitch(),
 			item.getId(),
 			item.getQuantity(),
 			-1,
@@ -1907,7 +1747,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private boolean isEligibleProjectile(LocalPoint localPlayerLocation, Projectile projectile, Rectangle viewport)
 	{
-		LocalPoint projectileLocation = projectileLocalPoint(projectile);
+		LocalPoint projectileLocation = BillboardProjectileGeometry.localPoint(projectile);
 		if (localPlayerLocation == null || projectileLocation == null)
 		{
 			return false;
@@ -1928,7 +1768,7 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
-		Point canvasPoint = Perspective.localToCanvas(client, projectileLocation, projectile.getFloor(), projectileVerticalOffset(projectile));
+		Point canvasPoint = Perspective.localToCanvas(client, projectileLocation, projectile.getFloor(), BillboardProjectileGeometry.verticalOffset(client, projectile));
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
 	}
 
@@ -1959,11 +1799,11 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			candidates.add(BillboardTarget.forActorSpotAnim(actorSpotAnim, actor, billboardDepth(actorSpotAnim, actor)));
-			logClassificationDecision(
+			candidates.add(BillboardTarget.forActorSpotAnim(actorSpotAnim, actor, depthCalculator.depth(actorSpotAnim, actor)));
+			classificationDebug.logDecision(
 				actorSpotAnim,
 				ObjectClassifier.classifyDecision(actorSpotAnim, client),
-				classificationDebugApiType(actor) + ":" + classificationDebugId(actor) + ":" + classificationDebugName(actor)
+				classificationDebug.actorDebugKey(actor)
 			);
 			claimedActorEffects.add(EffectDedupKey.of(actorSpotAnim, actor));
 			if (claimTileForGraphicsDedup)
@@ -2032,18 +1872,6 @@ class NpcBillboardOverlay extends Overlay
 		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
 		Point canvasPoint = Perspective.localToCanvas(client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2));
 		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
-	}
-
-	private static LocalPoint projectileLocalPoint(Projectile projectile)
-	{
-		return new LocalPoint((int) projectile.getX(), (int) projectile.getY());
-	}
-
-	private int projectileVerticalOffset(Projectile projectile)
-	{
-		LocalPoint localPoint = projectileLocalPoint(projectile);
-		int tileHeight = Perspective.getTileHeight(client, localPoint, projectile.getFloor());
-		return tileHeight - (int) Math.round(projectile.getZ());
 	}
 
 	private boolean isEligibleGroundItem(LocalPoint localPlayerLocation, TileItem item, GroundItemBillboard groundItem, Rectangle viewport)
@@ -2115,7 +1943,7 @@ class NpcBillboardOverlay extends Overlay
 			return true;
 		}
 
-		if (nowMillis - cached.lastRedrawMillis() > CACHE_TTL_MILLIS)
+		if (nowMillis - cached.lastRedrawMillis() > BillboardConstants.CACHE_TTL_MILLIS)
 		{
 			return true;
 		}
@@ -2225,7 +2053,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		long nowMillis = System.currentTimeMillis();
-		if (nowMillis - cached.lastRedrawMillis() > CACHE_TTL_MILLIS)
+		if (nowMillis - cached.lastRedrawMillis() > BillboardConstants.CACHE_TTL_MILLIS)
 		{
 			return true;
 		}
@@ -2251,7 +2079,11 @@ class NpcBillboardOverlay extends Overlay
 			return UpdateHeuristicSnapshot.forDepth(target.getDepth());
 		}
 
-		return UpdateHeuristicSnapshot.fromRequest(request, target.getDepth(), animatedTextureOffsetStateHash(request.animatedTextureId, System.currentTimeMillis()));
+		return UpdateHeuristicSnapshot.fromRequest(
+			request,
+			target.getDepth(),
+			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, System.currentTimeMillis())
+		);
 	}
 
 	private UpdateHeuristicSnapshot buildTileObjectHeuristicSnapshot(BillboardTarget target)
@@ -2306,11 +2138,11 @@ class NpcBillboardOverlay extends Overlay
 
 	private RenderedBillboardImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride, boolean shouldHoverOutline, boolean shouldInteractOutline)
 	{
-		Rectangle imageBounds = expandedBounds(bounds, outlinePadding);
+		Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(bounds, outlinePadding);
 		double qualityScale = renderQualityScale(qualityScaleOverride);
 		int imageWidth = Math.max(1, (int) Math.round(imageBounds.width * qualityScale));
 		int imageHeight = Math.max(1, (int) Math.round(imageBounds.height * qualityScale));
-		if (!isUsableDrawSize(imageWidth, imageHeight))
+		if (!BillboardGeometryUtils.isUsableDrawSize(imageWidth, imageHeight))
 		{
 			return null;
 		}
@@ -2321,12 +2153,28 @@ class NpcBillboardOverlay extends Overlay
 		{
 			if (face.isTextured())
 			{
-				rasterizeTexturedFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face);
+				BillboardFaceRasterizer.rasterizeTexturedFace(
+					imagePixels,
+					imageWidth,
+					imageHeight,
+					imageBounds,
+					qualityScale,
+					face,
+					config.billboardColorBands()
+				);
 				continue;
 			}
 
 			Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
-			rasterizeSolidFace(imagePixels, imageWidth, imageHeight, imageBounds, qualityScale, face, snappedColor.getRGB());
+			BillboardFaceRasterizer.rasterizeSolidFace(
+				imagePixels,
+				imageWidth,
+				imageHeight,
+				imageBounds,
+				qualityScale,
+				face,
+				snappedColor.getRGB()
+			);
 		}
 
 		int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
@@ -2355,116 +2203,10 @@ class NpcBillboardOverlay extends Overlay
 		return new RenderedBillboardImage(image);
 	}
 
-	private static Rectangle expandedBounds(Rectangle bounds, int padding)
-	{
-		if (padding <= 0)
-		{
-			return bounds;
-		}
-
-		return new Rectangle(bounds.x - padding, bounds.y - padding, bounds.width + (padding * 2), bounds.height + (padding * 2));
-	}
-
-	private static boolean isUsableSourceBounds(Rectangle bounds)
-	{
-		return bounds.width > 0
-			&& bounds.height > 0
-			&& bounds.width <= MAX_SOURCE_BILLBOARD_SIZE
-			&& bounds.height <= MAX_SOURCE_BILLBOARD_SIZE
-			&& Math.abs(bounds.x) <= MAX_SOURCE_BILLBOARD_COORDINATE
-			&& Math.abs(bounds.y) <= MAX_SOURCE_BILLBOARD_COORDINATE;
-	}
-
-	private static boolean isUsableDistance(double distance)
-	{
-		return Double.isFinite(distance) && distance >= 1.0d;
-	}
-
-	private static int scaledSize(int sourceSize, double scale)
-	{
-		if (!Double.isFinite(scale) || scale <= 0.0d)
-		{
-			return -1;
-		}
-
-		double scaled = sourceSize * scale;
-		if (!Double.isFinite(scaled) || scaled <= 0.0d || scaled > MAX_DRAW_BILLBOARD_SIZE)
-		{
-			return -1;
-		}
-
-		return Math.max(1, (int) Math.round(scaled));
-	}
-
-	private static int projectedHeight(Point basePoint, Point topPoint)
-	{
-		if (basePoint == null || topPoint == null)
-		{
-			return 0;
-		}
-
-		long height = Math.abs((long) basePoint.getY() - topPoint.getY());
-		if (height > MAX_DRAW_BILLBOARD_SIZE)
-		{
-			return -1;
-		}
-
-		return (int) height;
-	}
-
-	private static int aspectWidth(Rectangle bounds, int targetHeight)
-	{
-		if (targetHeight <= 0 || bounds.height <= 0)
-		{
-			return -1;
-		}
-
-		double width = bounds.width * (targetHeight / (double) bounds.height);
-		if (!Double.isFinite(width) || width <= 0.0d || width > MAX_DRAW_BILLBOARD_SIZE)
-		{
-			return -1;
-		}
-
-		return Math.max(1, (int) Math.round(width));
-	}
-
-	private static boolean isUsableDrawSize(int width, int height)
-	{
-		return isUsableDrawDimension(width) && isUsableDrawDimension(height);
-	}
-
-	private static boolean isUsableDrawDimension(int dimension)
-	{
-		return dimension > 0 && dimension <= MAX_DRAW_BILLBOARD_SIZE;
-	}
-
-	private static boolean isUsableCanvasCoordinate(int coordinate)
-	{
-		return Math.abs(coordinate) <= MAX_CANVAS_COORDINATE;
-	}
-
-	private static boolean isBackFace(float[] spriteX, float[] spriteY, float[] spriteDepth, int a, int b, int c)
-	{
-		float abx = spriteX[b] - spriteX[a];
-		float aby = spriteY[b] - spriteY[a];
-		float acx = spriteX[c] - spriteX[a];
-		float acy = spriteY[c] - spriteY[a];
-		float normalZ = (abx * acy) - (aby * acx);
-		if (Math.abs(normalZ) <= 1.0e-4f)
-		{
-			return true;
-		}
-
-		float abz = spriteDepth[b] - spriteDepth[a];
-		float acz = spriteDepth[c] - spriteDepth[a];
-		float normalDepth = (aby * acz) - (abz * acy);
-		return normalZ >= 0.0f || !Float.isFinite(normalDepth);
-	}
-
 	private void expireCaches(long nowMillis)
 	{
 		expireBillboardCache(nowMillis);
-		expireIdleEntries(textureCache.entrySet().iterator(), nowMillis);
+		textureResolver.expire(nowMillis);
 	}
 
 	private void expireBillboardCache(long nowMillis)
@@ -2474,7 +2216,7 @@ class NpcBillboardOverlay extends Overlay
 		{
 			Map.Entry<Renderable, CachedBillboard> entry = iterator.next();
 			CachedBillboard cached = entry.getValue();
-			if (nowMillis - cached.lastUsedMillis() > CACHE_TTL_MILLIS)
+			if (nowMillis - cached.lastUsedMillis() > BillboardConstants.CACHE_TTL_MILLIS)
 			{
 				cached.flush();
 				iterator.remove();
@@ -2505,7 +2247,7 @@ class NpcBillboardOverlay extends Overlay
 		while (iterator.hasNext())
 		{
 			Map.Entry<K, V> entry = iterator.next();
-			if (nowMillis - entry.getValue().lastUsedMillis() > CACHE_TTL_MILLIS)
+			if (nowMillis - entry.getValue().lastUsedMillis() > BillboardConstants.CACHE_TTL_MILLIS)
 			{
 				iterator.remove();
 			}
@@ -2514,22 +2256,22 @@ class NpcBillboardOverlay extends Overlay
 	
 	private double renderQualityScale()
 	{
-		return renderQualityScale(config.renderBillboardQuality() / 100.0d);
+		return BillboardRenderQuality.fromPercent(config.renderBillboardQuality());
 	}
 
 	private int qualityKey()
 	{
-		return qualityKey(renderQualityScale());
+		return BillboardRenderQuality.key(renderQualityScale());
 	}
 
 	private double renderQualityScale(double qualityScale)
 	{
-		return Math.max(MIN_RENDER_QUALITY, Math.min(1.0d, qualityScale));
+		return BillboardRenderQuality.clamp(qualityScale);
 	}
 
 	private int qualityKey(double qualityScale)
 	{
-		return (int) Math.round(renderQualityScale(qualityScale) * 10_000.0d);
+		return BillboardRenderQuality.key(qualityScale);
 	}
 
 	private void ensureSpriteScratchCapacity(int vertexCount)
@@ -2546,141 +2288,15 @@ class NpcBillboardOverlay extends Overlay
 
 	private double seededQualityScale(int nearPriorityIndex, int maxUpdatesPerFrame)
 	{
-		int updatesPerFrame = Math.max(1, maxUpdatesPerFrame);
-		int maxBootstrapEntries = updatesPerFrame * 3;
-		int clampedPriorityIndex = Math.min(Math.max(0, nearPriorityIndex), Math.max(0, maxBootstrapEntries - 1));
-		int qualityTier = clampedPriorityIndex / updatesPerFrame;
-		double qualityScale = renderQualityScale();
-		for (int i = 0; i < qualityTier; i++)
-		{
-			qualityScale *= 0.5d;
-		}
-
-		return renderQualityScale(qualityScale);
-	}
-
-	private double cameraDistance(Actor actor, LocalPoint localPoint, double verticalOffset)
-	{
-		double dx = localPoint.getX() - client.getCameraFpX();
-		double dy = localPoint.getY() - client.getCameraFpY();
-		double groundHeight = Perspective.getTileHeight(client, localPoint, actor.getWorldView().getPlane());
-		double dz = (groundHeight + verticalOffset) - client.getCameraFpZ();
-		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
-	}
-
-	private double cameraDistance(int x, int y, double z)
-	{
-		double dx = x - client.getCameraFpX();
-		double dy = y - client.getCameraFpY();
-		double dz = z - client.getCameraFpZ();
-		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
-	}
-
-	private double cameraDistance(LocalPoint localPoint, int plane, double verticalOffset)
-	{
-		double dx = localPoint.getX() - client.getCameraFpX();
-		double dy = localPoint.getY() - client.getCameraFpY();
-		double groundHeight = Perspective.getTileHeight(client, localPoint, plane);
-		double dz = (groundHeight + verticalOffset) - client.getCameraFpZ();
-		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
-	}
-
-	private double billboardDepth(NPC npc)
-	{
-		LocalPoint localPoint = npc.getLocalLocation();
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		return cameraDistance(npc, localPoint, Math.max(0, npc.getAnimationHeightOffset()) + (npc.getModelHeight() / 2.0));
-	}
-
-	private double billboardDepth(Player player)
-	{
-		LocalPoint localPoint = player.getLocalLocation();
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		return cameraDistance(player, localPoint, Math.max(0, player.getAnimationHeightOffset()) + (player.getModelHeight() / 2.0));
-	}
-
-	private double billboardDepth(Projectile projectile)
-	{
-		return cameraDistance(projectileLocalPoint(projectile), projectile.getFloor(), projectileVerticalOffset(projectile) + (projectile.getModelHeight() / 2.0));
-	}
-
-	private double billboardDepth(GraphicsObject graphicsObject)
-	{
-		LocalPoint localPoint = graphicsObject.getLocation();
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		return cameraDistance(localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()) + (graphicsObject.getModelHeight() / 2.0));
-	}
-
-	private double billboardDepth(ActorSpotAnim actorSpotAnim, Actor actor)
-	{
-		LocalPoint localPoint = actor != null ? actor.getLocalLocation() : null;
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
-		return cameraDistance(localPoint, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2.0));
-	}
-
-	private double billboardDepth(TileItem item)
-	{
-		GroundItemBillboard groundItem = groundItems.get(item);
-		if (groundItem == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		return cameraDistance(groundItem.localPoint, groundItem.plane, item.getModelHeight() / 2.0);
-	}
-
-	private double billboardDepth(ObservedTileObject observed)
-	{
-		double nearest = Double.POSITIVE_INFINITY;
-		for (ObjectRenderablePart part : observed.parts)
-		{
-			if (part.localPoint == null || part.renderable == null)
-			{
-				continue;
-			}
-
-			double distance = cameraDistance(part.localPoint, part.plane, part.renderable.getModelHeight() / 2.0);
-			if (distance < nearest)
-			{
-				nearest = distance;
-			}
-		}
-
-		return Double.isFinite(nearest) ? nearest : Double.NEGATIVE_INFINITY;
+		return BillboardRenderQuality.seededScale(renderQualityScale(), nearPriorityIndex, maxUpdatesPerFrame);
 	}
 
 	private boolean isWithinRadius(LocalPoint source, LocalPoint target, int radiusTiles)
 	{
 		int dx = source.getX() - target.getX();
 		int dy = source.getY() - target.getY();
-		int radius = radiusTiles * LOCAL_TILE_SIZE;
+		int radius = radiusTiles * BillboardConstants.LOCAL_TILE_SIZE;
 		return (dx * dx) + (dy * dy) <= (radius * radius);
-	}
-
-	private boolean isInsideViewport(int x, int y)
-	{
-		int viewportX = client.getViewportXOffset();
-		int viewportY = client.getViewportYOffset();
-		int viewportWidth = client.getViewportWidth();
-		int viewportHeight = client.getViewportHeight();
-		return x >= viewportX && x < viewportX + viewportWidth && y >= viewportY && y < viewportY + viewportHeight;
 	}
 
 	private boolean isOutsideViewport(int x, int y, int width, int height)
@@ -2733,18 +2349,18 @@ class NpcBillboardOverlay extends Overlay
 			int a = faceIndices1[face];
 			int b = faceIndices2[face];
 			int c = faceIndices3[face];
-			if (cullBackFaces && isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
+			if (cullBackFaces && BillboardGeometryUtils.isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
 			{
 				continue;
 			}
 
 			int alpha = transparencies == null || face >= transparencies.length ? 255 : 255 - (transparencies[face] & 0xFF);
-			Color rawColor = resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha);
-			if (isSkippedCapeArtifactFaceColor(rawColor))
+			Color rawColor = BillboardColorUtils.resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha);
+			if (BillboardColorUtils.isSkippedCapeArtifactFaceColor(rawColor))
 			{
 				continue;
 			}
-			Color color = applyLightBoost(rawColor);
+			Color color = BillboardColorUtils.applyLightBoost(rawColor, config.billboardLightBoostPercent());
 
 			double depth = (
 				spriteDepth[a] +
@@ -2760,8 +2376,8 @@ class NpcBillboardOverlay extends Overlay
 			}
 			if (textureId != 0xFFFF)
 			{
-				TextureSample textureSample = resolveTextureSample(textureId, nowMillis, animatedTextureId);
-				TextureUvs textureUvs = computeTextureUvs(model, face);
+				TextureSample textureSample = textureResolver.resolveTextureSample(textureId, nowMillis, animatedTextureId);
+				TextureUvs textureUvs = textureResolver.computeTextureUvs(model, face);
 				if (textureSample != null && textureUvs != null)
 				{
 					textureStateHash = (31 * textureStateHash) + textureSample.stateHash;
@@ -2825,12 +2441,12 @@ class NpcBillboardOverlay extends Overlay
 	)
 	{
 		int alpha = rawColor.getAlpha();
-		Integer packed1 = faceColorValue(faceColors1, face);
-		Integer packed2 = faceColorValue(faceColors2, face);
-		Integer packed3 = faceColorValue(faceColors3, face);
-		Integer unlit = unlitFaceColorValue(unlitFaceColors, face);
-		Color litColor = decodedLitFaceColor(face, faceColors1, faceColors2, faceColors3, alpha);
-		Color unlitColor = unlit != null ? packedHslToColor(unlit, alpha) : null;
+		Integer packed1 = BillboardColorUtils.faceColorValue(faceColors1, face);
+		Integer packed2 = BillboardColorUtils.faceColorValue(faceColors2, face);
+		Integer packed3 = BillboardColorUtils.faceColorValue(faceColors3, face);
+		Integer unlit = BillboardColorUtils.unlitFaceColorValue(unlitFaceColors, face);
+		Color litColor = BillboardColorUtils.decodedLitFaceColor(face, faceColors1, faceColors2, faceColors3, alpha);
+		Color unlitColor = unlit != null ? BillboardColorUtils.resolveFaceColor(face, null, null, null, unlitFaceColors, alpha) : null;
 		Color snappedColor = NpcSnapColorBanding.snapToRamp(boostedColor, config.billboardColorBands());
 
 		log.debug(
@@ -2845,167 +2461,12 @@ class NpcBillboardOverlay extends Overlay
 			packed2,
 			packed3,
 			unlit,
-			formatColor(litColor),
-			formatColor(unlitColor),
-			formatColor(rawColor),
-			formatColor(boostedColor),
-			formatColor(snappedColor)
+			BillboardColorUtils.formatColor(litColor),
+			BillboardColorUtils.formatColor(unlitColor),
+			BillboardColorUtils.formatColor(rawColor),
+			BillboardColorUtils.formatColor(boostedColor),
+			BillboardColorUtils.formatColor(snappedColor)
 		);
-	}
-
-	static Color resolveFaceColor(
-		int face,
-		int[] faceColors1,
-		int[] faceColors2,
-		int[] faceColors3,
-		short[] unlitFaceColors,
-		int alpha
-	)
-	{
-		Color unlitColor = null;
-		if (unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1)
-		{
-			unlitColor = packedHslToColor(Short.toUnsignedInt(unlitFaceColors[face]), alpha);
-		}
-
-		Color litColor = decodedLitFaceColor(face, faceColors1, faceColors2, faceColors3, alpha);
-
-		Color color = chooseFaceColor(unlitColor, litColor);
-		if (color != null)
-		{
-			return color;
-		}
-
-		return new Color(0, 0, 0, Math.max(0, Math.min(255, alpha)));
-	}
-
-	private static boolean hasLitFaceColors(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3)
-	{
-		return hasLitFaceColor(faceColors1, face)
-			&& hasLitFaceColor(faceColors2, face)
-			&& hasLitFaceColor(faceColors3, face);
-	}
-
-	private static boolean hasLitFaceColor(int[] faceColors, int face)
-	{
-		return faceColors != null && face < faceColors.length && faceColors[face] >= 0;
-	}
-
-	private static Color decodedLitFaceColor(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3, int alpha)
-	{
-		if (hasFlatFaceColor(face, faceColors1, faceColors3))
-		{
-			return packedHslToColor(faceColors1[face], alpha);
-		}
-
-		if (hasLitFaceColors(face, faceColors1, faceColors2, faceColors3))
-		{
-			return averagePackedFaceColor(faceColors1[face], faceColors2[face], faceColors3[face], alpha);
-		}
-
-		return null;
-	}
-
-	private static boolean hasFlatFaceColor(int face, int[] faceColors1, int[] faceColors3)
-	{
-		return hasLitFaceColor(faceColors1, face)
-			&& faceColors3 != null
-			&& face < faceColors3.length
-			&& faceColors3[face] == -1;
-	}
-
-	private static Color averagePackedFaceColor(int packed1, int packed2, int packed3, int alpha)
-	{
-		Color vertexA = packedHslToColor(packed1, alpha);
-		Color vertexB = packedHslToColor(packed2, alpha);
-		Color vertexC = packedHslToColor(packed3, alpha);
-		int red = (vertexA.getRed() + vertexB.getRed() + vertexC.getRed()) / 3;
-		int green = (vertexA.getGreen() + vertexB.getGreen() + vertexC.getGreen()) / 3;
-		int blue = (vertexA.getBlue() + vertexB.getBlue() + vertexC.getBlue()) / 3;
-		return new Color(red, green, blue, alpha);
-	}
-
-	private static Integer faceColorValue(int[] faceColors, int face)
-	{
-		return faceColors != null && face < faceColors.length ? faceColors[face] : null;
-	}
-
-	private static Integer unlitFaceColorValue(short[] unlitFaceColors, int face)
-	{
-		return unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1
-			? Short.toUnsignedInt(unlitFaceColors[face])
-			: null;
-	}
-
-	private static String formatColor(Color color)
-	{
-		return color == null
-			? "null"
-			: color.getRed() + "," + color.getGreen() + "," + color.getBlue() + "," + color.getAlpha();
-	}
-
-	private static Color chooseFaceColor(Color unlitColor, Color litColor)
-	{
-		Color selected = unlitColor != null ? unlitColor : litColor;
-		selected = chooseMoreColorful(selected, litColor);
-		return selected;
-	}
-
-	private static Color chooseMoreColorful(Color current, Color candidate)
-	{
-		if (candidate != null
-			&& maxRgb(candidate) > 2
-			&& (current == null || colorfulness(candidate) > colorfulness(current) + 0.03f))
-		{
-			return candidate;
-		}
-
-		return current;
-	}
-
-	private static float colorfulness(Color color)
-	{
-		float[] hsb = Color.RGBtoHSB(color.getRed(), color.getGreen(), color.getBlue(), null);
-		return hsb[1] * hsb[2];
-	}
-
-	private static int maxRgb(Color color)
-	{
-		return Math.max(color.getRed(), Math.max(color.getGreen(), color.getBlue()));
-	}
-
-	static boolean isSkippedCapeArtifactFaceColor(Color color)
-	{
-		// Fire Cape and Infernal Cape player models include unwanted rear geometry
-		// with this exact raw face color; skip it before light boost and rasterizing.
-		return color != null
-			&& color.getRed() == CAPE_ARTIFACT_FACE_RED
-			&& color.getGreen() == CAPE_ARTIFACT_FACE_GREEN
-			&& color.getBlue() == CAPE_ARTIFACT_FACE_BLUE
-			&& color.getAlpha() == CAPE_ARTIFACT_FACE_ALPHA;
-	}
-
-	private static Rectangle computeBounds(List<FaceDraw> faces)
-	{
-		int minX = Integer.MAX_VALUE;
-		int minY = Integer.MAX_VALUE;
-		int maxX = Integer.MIN_VALUE;
-		int maxY = Integer.MIN_VALUE;
-
-		for (FaceDraw face : faces)
-		{
-			minX = Math.min(minX, Math.min(face.x0, Math.min(face.x1, face.x2)));
-			minY = Math.min(minY, Math.min(face.y0, Math.min(face.y1, face.y2)));
-			maxX = Math.max(maxX, Math.max(face.x0, Math.max(face.x1, face.x2)));
-			maxY = Math.max(maxY, Math.max(face.y0, Math.max(face.y1, face.y2)));
-		}
-
-		if (minX == Integer.MAX_VALUE)
-		{
-			return new Rectangle();
-		}
-
-		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
 	}
 
 	private BillboardRenderResult renderRenderableBillboard(BillboardRenderRequest request, FrameUpdatePlan updatePlan, int queuePosition)
@@ -3060,11 +2521,11 @@ class NpcBillboardOverlay extends Overlay
 			{
 				List<FaceDraw> faces = builtFaces.faces;
 				faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
-				Rectangle sourceBounds = computeBounds(faces);
-				if (isUsableSourceBounds(sourceBounds))
+				Rectangle sourceBounds = BillboardGeometryUtils.computeBounds(faces);
+				if (BillboardGeometryUtils.isUsableSourceBounds(sourceBounds))
 				{
 					int outlinePadding = outlinePadding();
-					Rectangle imageBounds = expandedBounds(sourceBounds, outlinePadding);
+					Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(sourceBounds, outlinePadding);
 					if (buildDrawRect(request, renderable, imageBounds) == null)
 					{
 						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis, queuePosition);
@@ -3075,7 +2536,7 @@ class NpcBillboardOverlay extends Overlay
 						outlinePadding,
 						builtFaces.textureStateHash,
 						qualityKey(updatePlan.qualityScale),
-						animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
+						textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
 					);
 					cacheInvalidated = updatePlan.forceHoverInteractionRedraw
 						|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
@@ -3142,7 +2603,7 @@ class NpcBillboardOverlay extends Overlay
 		int renderQualityKey,
 		int animatedTextureOffsetStateHash)
 	{
-		int modelStateHash = modelStateHash(request.model);
+		int modelStateHash = BillboardModelStateHash.hash(request.model);
 		return new BillboardCacheKey(
 			request.animationId,
 			request.animationFrame,
@@ -3174,7 +2635,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private BillboardCachePreviewKey buildPreviewCacheKey(BillboardRenderRequest request, double qualityScale, long nowMillis)
 	{
-		int modelStateHash = modelStateHash(request.model);
+		int modelStateHash = BillboardModelStateHash.hash(request.model);
 		return new BillboardCachePreviewKey(
 			request.animationId,
 			request.animationFrame,
@@ -3199,411 +2660,8 @@ class NpcBillboardOverlay extends Overlay
 			config.billboardInteractionOutlineColor().getRGB(),
 			qualityKey(qualityScale),
 			modelStateHash,
-			animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
+			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
 		);
-	}
-
-	private static int modelStateHash(Model model)
-	{
-		if (model == null)
-		{
-			return 0;
-		}
-
-		int hash = 1;
-		hash = (31 * hash) + model.getVerticesCount();
-		hash = (31 * hash) + model.getModelHeight();
-		hash = sampleFloatArrayHash(hash, model.getVerticesX());
-		hash = sampleFloatArrayHash(hash, model.getVerticesY());
-		hash = sampleFloatArrayHash(hash, model.getVerticesZ());
-		hash = sampleByteArrayHash(hash, model.getFaceTransparencies());
-		return hash;
-	}
-
-	private static int sampleFloatArrayHash(int seed, float[] values)
-	{
-		if (values == null)
-		{
-			return (31 * seed) - 1;
-		}
-
-		int hash = (31 * seed) + values.length;
-		if (values.length > 0)
-		{
-			hash = (31 * hash) + Float.floatToIntBits(values[0]);
-			hash = (31 * hash) + Float.floatToIntBits(values[values.length / 2]);
-			hash = (31 * hash) + Float.floatToIntBits(values[values.length - 1]);
-		}
-		return hash;
-	}
-
-	private static int sampleByteArrayHash(int seed, byte[] values)
-	{
-		if (values == null)
-		{
-			return (31 * seed) - 1;
-		}
-
-		int hash = (31 * seed) + values.length;
-		if (values.length > 0)
-		{
-			hash = (31 * hash) + values[0];
-			hash = (31 * hash) + values[values.length / 2];
-			hash = (31 * hash) + values[values.length - 1];
-		}
-		return hash;
-	}
-
-	private int animatedTextureId(Actor actor)
-	{
-		if (!(actor instanceof Player))
-		{
-			return -1;
-		}
-
-		PlayerComposition composition = ((Player) actor).getPlayerComposition();
-		if (composition == null)
-		{
-			return -1;
-		}
-
-		int capeId = composition.getEquipmentId(KitType.CAPE);
-		capeId = normalizeEquipmentItemId(capeId);
-		if (isAnimatedTextureId(capeId))
-		{
-			return capeId;
-		}
-
-		int[] equipmentIds = composition.getEquipmentIds();
-		if (equipmentIds == null)
-		{
-			return -1;
-		}
-
-		for (int equipmentId : equipmentIds)
-		{
-			int normalizedId = normalizeEquipmentItemId(equipmentId);
-			if (isAnimatedTextureId(normalizedId))
-			{
-				return normalizedId;
-			}
-		}
-
-		return -1;
-	}
-
-	private TextureSample resolveTextureSample(int textureId, long nowMillis, int animatedTextureId)
-	{
-		TextureProvider textureProvider = client.getTextureProvider();
-		if (textureProvider == null)
-		{
-			return null;
-		}
-
-		Texture[] textures = textureProvider.getTextures();
-		if (textures == null || textureId < 0 || textureId >= textures.length)
-		{
-			return null;
-		}
-
-		Texture texture = textures[textureId];
-		int[] pixels = texture != null && texture.getPixels() != null ? texture.getPixels() : textureProvider.load(textureId);
-		if (pixels == null || pixels.length == 0)
-		{
-			return null;
-		}
-
-		int dimension = (int) Math.round(Math.sqrt(pixels.length));
-		if (dimension <= 0 || dimension * dimension != pixels.length)
-		{
-			return null;
-		}
-
-		TextureCacheEntry entry = textureCache.get(textureId);
-		if (entry == null || entry.pixels != pixels || entry.width != dimension || entry.height != dimension)
-		{
-			entry = new TextureCacheEntry(pixels, dimension, dimension, nowMillis);
-			textureCache.put(textureId, entry);
-		}
-		else
-		{
-			entry.touch(nowMillis);
-		}
-
-		float uOffset = texture != null ? normalizeTextureOffset(texture.getU(), entry.width) : 0f;
-		float vOffset = texture != null ? normalizeTextureOffset(texture.getV(), entry.height) : 0f;
-		if (isAnimatedTextureId(animatedTextureId))
-		{
-			uOffset = 0f;
-			vOffset = animatedTextureVOffset(nowMillis, texture);
-		}
-		int stateHash = 31 * textureId + Float.floatToIntBits(uOffset);
-		stateHash = 31 * stateHash + Float.floatToIntBits(vOffset);
-		return new TextureSample(entry, uOffset, vOffset, stateHash);
-	}
-
-	private TextureUvs computeTextureUvs(Model model, int face)
-	{
-		float[] vertexX = model.getVerticesX();
-		float[] vertexY = model.getVerticesY();
-		float[] vertexZ = model.getVerticesZ();
-		int[] indices1 = model.getFaceIndices1();
-		int[] indices2 = model.getFaceIndices2();
-		int[] indices3 = model.getFaceIndices3();
-		byte[] textureFaces = model.getTextureFaces();
-		int[] texIndices1 = model.getTexIndices1();
-		int[] texIndices2 = model.getTexIndices2();
-		int[] texIndices3 = model.getTexIndices3();
-
-		if (textureFaces != null && face < textureFaces.length && textureFaces[face] != -1
-			&& texIndices1 != null && texIndices2 != null && texIndices3 != null)
-		{
-			int triangleA = indices1[face];
-			int triangleB = indices2[face];
-			int triangleC = indices3[face];
-			int textureFace = textureFaces[face] & 0xFF;
-			if (textureFace >= texIndices1.length || textureFace >= texIndices2.length || textureFace >= texIndices3.length)
-			{
-				return null;
-			}
-
-			int texA = texIndices1[textureFace];
-			int texB = texIndices2[textureFace];
-			int texC = texIndices3[textureFace];
-
-			float v1x = vertexX[texA];
-			float v1y = vertexY[texA];
-			float v1z = vertexZ[texA];
-			float v2x = vertexX[texB] - v1x;
-			float v2y = vertexY[texB] - v1y;
-			float v2z = vertexZ[texB] - v1z;
-			float v3x = vertexX[texC] - v1x;
-			float v3y = vertexY[texC] - v1y;
-			float v3z = vertexZ[texC] - v1z;
-
-			float v4x = vertexX[triangleA] - v1x;
-			float v4y = vertexY[triangleA] - v1y;
-			float v4z = vertexZ[triangleA] - v1z;
-			float v5x = vertexX[triangleB] - v1x;
-			float v5y = vertexY[triangleB] - v1y;
-			float v5z = vertexZ[triangleB] - v1z;
-			float v6x = vertexX[triangleC] - v1x;
-			float v6y = vertexY[triangleC] - v1y;
-			float v6z = vertexZ[triangleC] - v1z;
-
-			float v7x = v2y * v3z - v2z * v3y;
-			float v7y = v2z * v3x - v2x * v3z;
-			float v7z = v2x * v3y - v2y * v3x;
-
-			float v8x = v3y * v7z - v3z * v7y;
-			float v8y = v3z * v7x - v3x * v7z;
-			float v8z = v3x * v7y - v3y * v7x;
-			float denominator = v8x * v2x + v8y * v2y + v8z * v2z;
-			if (Math.abs(denominator) < 1.0e-6f)
-			{
-				return null;
-			}
-
-			float factor = 1.0f / denominator;
-			float u0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
-			float u1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
-			float u2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
-
-			v8x = v2y * v7z - v2z * v7y;
-			v8y = v2z * v7x - v2x * v7z;
-			v8z = v2x * v7y - v2y * v7x;
-			denominator = v8x * v3x + v8y * v3y + v8z * v3z;
-			if (Math.abs(denominator) < 1.0e-6f)
-			{
-				return null;
-			}
-
-			factor = 1.0f / denominator;
-			float v0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
-			float v1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
-			float v2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
-			return new TextureUvs(u0, v0, u1, v1, u2, v2);
-		}
-
-		return new TextureUvs(0f, 0f, 1f, 0f, 0f, 1f);
-	}
-
-	private void rasterizeTexturedFace(int[] imagePixels, int imageWidth, int imageHeight, Rectangle imageBounds, double qualityScale, FaceDraw face)
-	{
-		TextureSample textureSample = face.getTextureSample();
-		if (textureSample == null)
-		{
-			return;
-		}
-
-		float x0 = scaleCoordinate(face.x0, imageBounds.x, qualityScale);
-		float y0 = scaleCoordinate(face.y0, imageBounds.y, qualityScale);
-		float x1 = scaleCoordinate(face.x1, imageBounds.x, qualityScale);
-		float y1 = scaleCoordinate(face.y1, imageBounds.y, qualityScale);
-		float x2 = scaleCoordinate(face.x2, imageBounds.x, qualityScale);
-		float y2 = scaleCoordinate(face.y2, imageBounds.y, qualityScale);
-
-		float area = BillboardTriangleRasterizer.edge(x0, y0, x1, y1, x2, y2);
-		if (Math.abs(area) < 1.0e-6f)
-		{
-			return;
-		}
-
-		int minX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(x0, Math.min(x1, x2))), imageWidth);
-		int maxX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(x0, Math.max(x1, x2))), imageWidth);
-		int minY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(y0, Math.min(y1, y2))), imageHeight);
-		int maxY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(y0, Math.max(y1, y2))), imageHeight);
-		if (minX > maxX || minY > maxY)
-		{
-			return;
-		}
-
-		Color shade = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
-		TextureUvs textureUvs = face.getTextureUvs();
-		for (int y = minY; y <= maxY; y++)
-		{
-			float py = y + 0.5f;
-			int row = y * imageWidth;
-			for (int x = minX; x <= maxX; x++)
-			{
-				float px = x + 0.5f;
-				float w0 = BillboardTriangleRasterizer.edge(x1, y1, x2, y2, px, py) / area;
-				float w1 = BillboardTriangleRasterizer.edge(x2, y2, x0, y0, px, py) / area;
-				float w2 = 1.0f - w0 - w1;
-				if (w0 < 0f || w1 < 0f || w2 < 0f)
-				{
-					continue;
-				}
-
-				float u = (float) wrapUnit((w0 * textureUvs.u0) + (w1 * textureUvs.u1) + (w2 * textureUvs.u2) + textureSample.uOffset);
-				float v = (float) wrapUnit((w0 * textureUvs.v0) + (w1 * textureUvs.v1) + (w2 * textureUvs.v2) + textureSample.vOffset);
-				int textureX = Math.min(textureSample.entry.width - 1, (int) (u * textureSample.entry.width));
-				int textureY = Math.min(textureSample.entry.height - 1, (int) (v * textureSample.entry.height));
-				int samplePixel = textureSample.entry.pixels[(textureY * textureSample.entry.width) + textureX];
-				if ((samplePixel >>> 24) == 0 && (samplePixel & 0xFFFFFF) == 0)
-				{
-					continue;
-				}
-
-				int shadedPixel = modulateTexturePixel(samplePixel, shade);
-				int pixelIndex = row + x;
-				imagePixels[pixelIndex] = BillboardTriangleRasterizer.blendPixel(imagePixels[pixelIndex], shadedPixel);
-			}
-		}
-	}
-
-	private static void rasterizeSolidFace(
-		int[] imagePixels,
-		int imageWidth,
-		int imageHeight,
-		Rectangle imageBounds,
-		double qualityScale,
-		FaceDraw face,
-		int argb)
-	{
-		BillboardTriangleRasterizer.rasterizeSolidTriangle(
-			imagePixels,
-			imageWidth,
-			imageHeight,
-			scaleCoordinate(face.x0, imageBounds.x, qualityScale),
-			scaleCoordinate(face.y0, imageBounds.y, qualityScale),
-			scaleCoordinate(face.x1, imageBounds.x, qualityScale),
-			scaleCoordinate(face.y1, imageBounds.y, qualityScale),
-			scaleCoordinate(face.x2, imageBounds.x, qualityScale),
-			scaleCoordinate(face.y2, imageBounds.y, qualityScale),
-			argb
-		);
-	}
-
-	private static float scaleCoordinate(int coordinate, int origin, double qualityScale)
-	{
-		return (float) ((coordinate - origin) * qualityScale);
-	}
-
-	private static float normalizeTextureOffset(float offset, int dimension)
-	{
-		if (!Float.isFinite(offset))
-		{
-			return 0f;
-		}
-
-		return Math.abs(offset) > 1.0f && dimension > 0 ? offset / dimension : offset;
-	}
-
-	private static int normalizeEquipmentItemId(int equipmentId)
-	{
-		if (equipmentId >= PlayerComposition.ITEM_OFFSET)
-		{
-			return equipmentId - PlayerComposition.ITEM_OFFSET;
-		}
-
-		return equipmentId;
-	}
-
-	private static boolean isAnimatedTextureId(int textureId)
-	{
-		for (int animatedTextureId : ANIMATED_TEXTURE_IDS)
-		{
-			if (animatedTextureId == textureId)
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private float animatedTextureVOffset(long nowMillis, Texture texture)
-	{
-		double speedMultiplier = texture != null && texture.getAnimationSpeed() > 0
-			? texture.getAnimationSpeed()
-			: 1.0d;
-		double offset = (nowMillis / 1000.0d) * ANIMATED_TEXTURE_V_SCROLL_PER_SECOND * speedMultiplier;
-		return snappedAnimatedTextureOffset(offset);
-	}
-
-	private int animatedTextureOffsetStateHash(int animatedTextureId, long nowMillis)
-	{
-		if (!isAnimatedTextureId(animatedTextureId))
-		{
-			return 0;
-		}
-
-		return Float.floatToIntBits(animatedTextureVOffset(nowMillis, null));
-	}
-
-	private float snappedAnimatedTextureOffset(double offset)
-	{
-		offset = wrapUnit(offset);
-		if (!config.enableAnimationFrameSnapping())
-		{
-			return (float) offset;
-		}
-
-		int visibleFrameCount = Math.max(1, config.animationFrameCount());
-		double snapped = Math.round(offset * visibleFrameCount) / (double) visibleFrameCount;
-		return (float) wrapUnit(snapped);
-	}
-
-	private static double wrapUnit(double coordinate)
-	{
-		double wrapped = coordinate - Math.floor(coordinate);
-		return wrapped < 0.0d ? wrapped + 1.0d : wrapped;
-	}
-
-	private int modulateTexturePixel(int samplePixel, Color shade)
-	{
-		int sampleAlpha = (samplePixel >>> 24) & 0xFF;
-		if (sampleAlpha == 0 && (samplePixel & 0xFFFFFF) != 0)
-		{
-			sampleAlpha = 0xFF;
-		}
-
-		int alpha = (sampleAlpha * shade.getAlpha()) / 255;
-		int red = (((samplePixel >> 16) & 0xFF) * shade.getRed()) / 255;
-		int green = (((samplePixel >> 8) & 0xFF) * shade.getGreen()) / 255;
-		int blue = ((samplePixel & 0xFF) * shade.getBlue()) / 255;
-		return NpcSnapColorBanding.snapTexturePixel((alpha << 24) | (red << 16) | (green << 8) | blue, config.billboardColorBands());
 	}
 
 	private Rectangle buildDrawRect(Rectangle cachedBounds, int anchorX, int anchorY, int targetWidth, int targetHeight)
@@ -3612,7 +2670,7 @@ class NpcBillboardOverlay extends Overlay
 		double originY = (-cachedBounds.y) * (targetHeight / (double) cachedBounds.height);
 		int drawX = (int) Math.round(anchorX - originX);
 		int drawY = (int) Math.round(anchorY - originY);
-		if (!isUsableDrawSize(targetWidth, targetHeight) || isOutsideViewport(drawX, drawY, targetWidth, targetHeight))
+		if (!BillboardGeometryUtils.isUsableDrawSize(targetWidth, targetHeight) || isOutsideViewport(drawX, drawY, targetWidth, targetHeight))
 		{
 			return null;
 		}
@@ -3630,20 +2688,20 @@ class NpcBillboardOverlay extends Overlay
 
 		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
 		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
-		double distance = cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
-		if (!isUsableDistance(distance))
+		double distance = depthCalculator.cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
+		if (!BillboardGeometryUtils.isUsableDistance(distance))
 		{
 			return null;
 		}
 
 		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
-		int distanceHeight = scaledSize(billboardBounds.height, perspectiveScale);
-		int projectedHeight = projectedHeight(basePoint, topPoint);
+		int distanceHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
+		int projectedHeight = BillboardGeometryUtils.projectedHeight(basePoint, topPoint);
 		int targetHeight = distanceHeight > 0 ? distanceHeight : projectedHeight;
-		int targetWidth = aspectWidth(billboardBounds, targetHeight);
+		int targetWidth = BillboardGeometryUtils.aspectWidth(billboardBounds, targetHeight);
 		int anchorX = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getX() : basePoint.getX();
 		int anchorY = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getY() : basePoint.getY();
-		if (!isUsableCanvasCoordinate(anchorX) || !isUsableCanvasCoordinate(anchorY))
+		if (!BillboardGeometryUtils.isUsableCanvasCoordinate(anchorX) || !BillboardGeometryUtils.isUsableCanvasCoordinate(anchorY))
 		{
 			return null;
 		}
@@ -3702,217 +2760,14 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
-	private Actor hoveredActor()
-	{
-		MenuEntry[] menuEntries = client.getMenuEntries();
-		if (menuEntries == null || menuEntries.length == 0)
-		{
-			return null;
-		}
-
-		MenuEntry hoveredEntry = client.isMenuOpen()
-			? hoveredMenuEntry(menuEntries)
-			: menuEntries[menuEntries.length - 1];
-		if (hoveredEntry == null || !isActorHoverAction(hoveredEntry.getType()))
-		{
-			return null;
-		}
-
-		return hoveredEntry.getActor();
-	}
-
-	private Actor interactedActor()
-	{
-		if (interactedActor != null)
-		{
-			return interactedActor;
-		}
-
-		Player localPlayer = client.getLocalPlayer();
-		return localPlayer != null ? localPlayer.getInteracting() : null;
-	}
-
-	private MenuEntry hoveredMenuEntry(MenuEntry[] menuEntries)
-	{
-		int menuX = client.getMenuX();
-		int menuY = client.getMenuY();
-		int menuWidth = client.getMenuWidth();
-		Point mouse = client.getMouseCanvasPosition();
-		int row = mouse.getY() - menuY - 19;
-		if (row < 0)
-		{
-			return menuEntries[menuEntries.length - 1];
-		}
-
-		row = (menuEntries.length - 1) - (row / 15);
-		if (mouse.getX() > menuX && mouse.getX() < menuX + menuWidth && row >= 0 && row < menuEntries.length)
-		{
-			return menuEntries[row];
-		}
-
-		return menuEntries[menuEntries.length - 1];
-	}
-
-	private static boolean isActorHoverAction(MenuAction action)
-	{
-		if (action == null)
-		{
-			return false;
-		}
-
-		switch (action)
-		{
-			case ITEM_USE_ON_NPC:
-			case WIDGET_TARGET_ON_NPC:
-			case NPC_FIRST_OPTION:
-			case NPC_SECOND_OPTION:
-			case NPC_THIRD_OPTION:
-			case NPC_FOURTH_OPTION:
-			case NPC_FIFTH_OPTION:
-			case ITEM_USE_ON_PLAYER:
-			case WIDGET_TARGET_ON_PLAYER:
-			case PLAYER_FIRST_OPTION:
-			case PLAYER_SECOND_OPTION:
-			case PLAYER_THIRD_OPTION:
-			case PLAYER_FOURTH_OPTION:
-			case PLAYER_FIFTH_OPTION:
-			case PLAYER_SIXTH_OPTION:
-			case PLAYER_SEVENTH_OPTION:
-			case PLAYER_EIGHTH_OPTION:
-				return true;
-			default:
-				return false;
-		}
-	}
-
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)
 	{
 		return animationFrameSnapper.snapFrame(animation, frame, enabled, Math.max(1, config.animationFrameCount()));
 	}
 
-	private int relativeYaw()
-	{
-		int rawRelativeYaw = cameraYaw();
-		if (!config.enableRotationSnapping())
-		{
-			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
-		}
-
-		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
-	}
-
 	private ObservedTileObject buildObservedTileObject(TileObject tileObject)
 	{
-		if (tileObject == null || tileObject.getLocalLocation() == null)
-		{
-			return null;
-		}
-
-		List<ObjectRenderablePart> parts = new ArrayList<>(2);
-		if (tileObject instanceof GameObject)
-		{
-			addObjectRenderablePart(parts, ((GameObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
-		}
-		else if (tileObject instanceof GroundObject)
-		{
-			addObjectRenderablePart(parts, ((GroundObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
-		}
-		else if (tileObject instanceof WallObject)
-		{
-			WallObject wallObject = (WallObject) tileObject;
-			addObjectRenderablePart(parts, wallObject.getRenderable1(), tileObject.getLocalLocation(), tileObject.getPlane());
-			addObjectRenderablePart(parts, wallObject.getRenderable2(), tileObject.getLocalLocation(), tileObject.getPlane());
-		}
-		else if (tileObject instanceof DecorativeObject)
-		{
-			DecorativeObject decorativeObject = (DecorativeObject) tileObject;
-			addObjectRenderablePart(parts, decorativeObject.getRenderable(), offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset(), decorativeObject.getYOffset()), tileObject.getPlane());
-			addObjectRenderablePart(parts, decorativeObject.getRenderable2(), offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset2(), decorativeObject.getYOffset2()), tileObject.getPlane());
-		}
-
-		return parts.isEmpty() ? null : new ObservedTileObject(tileObject, parts, ClassifiedObjectType.UNKNOWN);
-	}
-
-	private ClassifiedObjectType resolveObservedTileObjectType(ObservedTileObject observed)
-	{
-		if (observed == null)
-		{
-			return ClassifiedObjectType.UNKNOWN;
-		}
-
-		ObjectClassifier.ClassificationDecision decision = classifyObservedTileObjectDecision(observed);
-		logObservedTileObjectClassification(observed, decision);
-		ClassifiedObjectType classifiedType = decision.classification;
-		if (classifiedType == ClassifiedObjectType.UNKNOWN)
-		{
-			return observed.classifiedType;
-		}
-
-		observed.classifiedType = classifiedType;
-		return classifiedType;
-	}
-
-	private ObjectClassifier.ClassificationDecision classifyObservedTileObjectDecision(ObservedTileObject observed)
-	{
-		if (observed == null || observed.tileObject == null)
-		{
-			return ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.UNKNOWN, "observed == null || observed.tileObject == null");
-		}
-
-		boolean hasEffectLikePart = observedHasEffectLikePart(observed);
-		TileObject tileObject = observed.tileObject;
-		if (tileObject instanceof GameObject)
-		{
-			return hasEffectLikePart
-				? ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.EFFECT, "observed GameObject has effect-like part")
-				: ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.OBJECT, "observed GameObject has no effect-like part");
-		}
-
-		if (tileObject instanceof DecorativeObject)
-		{
-			return hasEffectLikePart
-				? ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.EFFECT, "observed DecorativeObject has effect-like part")
-				: ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.UNKNOWN, "observed DecorativeObject has no effect-like part");
-		}
-
-		if (tileObject instanceof WallObject)
-		{
-			return hasEffectLikePart
-				? ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.EFFECT, "observed WallObject has effect-like part")
-				: ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.UNKNOWN, "observed WallObject has no effect-like part");
-		}
-
-		if (tileObject instanceof GroundObject)
-		{
-			return hasEffectLikePart
-				? ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.EFFECT, "observed GroundObject has effect-like part")
-				: ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.UNKNOWN, "observed GroundObject has no effect-like part");
-		}
-
-		return ObjectClassifier.ClassificationDecision.of(ClassifiedObjectType.UNKNOWN, "observed tileObject wrapper not handled");
-	}
-
-	private boolean observedHasEffectLikePart(ObservedTileObject observed)
-	{
-		if (observed == null || observed.parts == null)
-		{
-			return false;
-		}
-
-		for (ObjectRenderablePart part : observed.parts)
-		{
-			if (part == null || part.renderable == null)
-			{
-				continue;
-			}
-
-			if (ObjectClassifier.classifyRenderable(part.renderable) == ClassifiedObjectType.EFFECT)
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return ObservedTileObjectBuilder.build(tileObject);
 	}
 
 	private boolean isPlaneEligible(int targetPlane)
@@ -3923,1937 +2778,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Player localPlayer = client.getLocalPlayer();
-		return localPlayer != null && shouldRenderTargetPlane(localPlayer.getWorldView().getPlane(), targetPlane);
-	}
-
-	static boolean shouldRenderTargetPlane(int currentPlane, int targetPlane)
-	{
-		return currentPlane == targetPlane;
-	}
-
-	private void logClassificationDecision(Object source, ObjectClassifier.ClassificationDecision decision)
-	{
-		logClassificationDecision(source, decision, null);
-	}
-
-	private void logClassificationDecision(Object source, ObjectClassifier.ClassificationDecision decision, String extraTypes)
-	{
-		if (!log.isDebugEnabled() || !config.debugLogClassifications() || source == null || decision == null)
-		{
-			return;
-		}
-
-		String message = classificationDebugMessage(source, decision, extraTypes);
-		String previousMessage = classificationDebugMessages.put(source, message);
-		if (message.equals(previousMessage))
-		{
-			return;
-		}
-
-		log.debug(message);
-	}
-
-	private String classificationDebugMessage(Object source, ObjectClassifier.ClassificationDecision decision, String extraTypes)
-	{
-		String type = classificationDebugApiType(source);
-		String implType = source.getClass().getSimpleName();
-		String id = classificationDebugId(source);
-		String name = classificationDebugName(source);
-		String position = classificationDebugPosition(source);
-		String relatedTypes = extraTypes == null || extraTypes.isEmpty() ? "-" : extraTypes;
-		return "Classification: Type: " + type
-			+ ", Impl: " + implType
-			+ ", ID: " + id
-			+ ", Name: " + name
-			+ ", Position: " + position
-			+ ", Related: " + relatedTypes
-			+ ", Reason: '" + decision.reason + "'"
-			+ ", Classification: " + decision.classification;
-	}
-
-	private String classificationDebugApiType(Object source)
-	{
-		if (source instanceof NPC)
-		{
-			return "NPC";
-		}
-
-		if (source instanceof Player)
-		{
-			return "Player";
-		}
-
-		if (source instanceof Projectile)
-		{
-			return "Projectile";
-		}
-
-		if (source instanceof GraphicsObject)
-		{
-			return "GraphicsObject";
-		}
-
-		if (source instanceof ActorSpotAnim)
-		{
-			return "ActorSpotAnim";
-		}
-
-		if (source instanceof TileItem)
-		{
-			return "TileItem";
-		}
-
-		if (source instanceof GameObject)
-		{
-			return "GameObject";
-		}
-
-		if (source instanceof DecorativeObject)
-		{
-			return "DecorativeObject";
-		}
-
-		if (source instanceof WallObject)
-		{
-			return "WallObject";
-		}
-
-		if (source instanceof GroundObject)
-		{
-			return "GroundObject";
-		}
-
-		if (source instanceof TileObject)
-		{
-			return "TileObject";
-		}
-
-		if (source instanceof DynamicObject)
-		{
-			return "DynamicObject";
-		}
-
-		if (source instanceof Renderable)
-		{
-			return "Renderable";
-		}
-
-		return source.getClass().getSimpleName();
-	}
-
-	private String classificationDebugId(Object source)
-	{
-		if (source instanceof TileObject)
-		{
-			return Integer.toString(((TileObject) source).getId());
-		}
-
-		if (source instanceof NPC)
-		{
-			return Integer.toString(((NPC) source).getId());
-		}
-
-		if (source instanceof TileItem)
-		{
-			return Integer.toString(((TileItem) source).getId());
-		}
-
-		if (source instanceof GraphicsObject)
-		{
-			return Integer.toString(((GraphicsObject) source).getId());
-		}
-
-		if (source instanceof ActorSpotAnim)
-		{
-			return Integer.toString(((ActorSpotAnim) source).getId());
-		}
-
-		if (source instanceof Projectile)
-		{
-			return Integer.toString(((Projectile) source).getId());
-		}
-
-		if (source instanceof Player)
-		{
-			Player player = (Player) source;
-			return player.getName() != null ? player.getName() : "player";
-		}
-
-		return "-";
-	}
-
-	private String classificationDebugName(Object source)
-	{
-		if (source instanceof Player)
-		{
-			String name = ((Player) source).getName();
-			return name != null && !name.isEmpty() ? name : "-";
-		}
-
-		if (source instanceof NPC)
-		{
-			String name = ((NPC) source).getName();
-			return name != null && !name.isEmpty() ? name : "-";
-		}
-
-		if (source instanceof TileObject)
-		{
-			if (!client.isClientThread())
-			{
-				return "-";
-			}
-
-			net.runelite.api.ObjectComposition objectDefinition = client.getObjectDefinition(((TileObject) source).getId());
-			if (objectDefinition == null)
-			{
-				return "-";
-			}
-
-			String name = objectDefinition.getName();
-			return name != null && !name.trim().isEmpty() ? name : "-";
-		}
-
-		return "-";
-	}
-
-	private String classificationDebugPosition(Object source)
-	{
-		if (source instanceof TileObject)
-		{
-			TileObject tileObject = (TileObject) source;
-			LocalPoint localPoint = tileObject.getLocalLocation();
-			String local = formatLocalPoint(localPoint);
-			String world = tileObject.getWorldLocation() != null
-				? tileObject.getWorldLocation().getX() + "," + tileObject.getWorldLocation().getY() + "," + tileObject.getPlane()
-				: "-";
-			return "world=" + world + " local=" + local;
-		}
-
-		if (source instanceof Actor)
-		{
-			Actor actor = (Actor) source;
-			LocalPoint localPoint = actor.getLocalLocation();
-			String local = formatLocalPoint(localPoint);
-			String world = actor.getWorldLocation() != null
-				? actor.getWorldLocation().getX() + "," + actor.getWorldLocation().getY() + "," + actor.getWorldView().getPlane()
-				: "-";
-			return "world=" + world + " local=" + local;
-		}
-
-		if (source instanceof GraphicsObject)
-		{
-			GraphicsObject graphicsObject = (GraphicsObject) source;
-			return "level=" + graphicsObject.getLevel() + " local=" + formatLocalPoint(graphicsObject.getLocation());
-		}
-
-		if (source instanceof Projectile)
-		{
-			Projectile projectile = (Projectile) source;
-			return "floor=" + projectile.getFloor() + " local=" + formatLocalPoint(projectileLocalPoint(projectile));
-		}
-
-		return "-";
-	}
-
-	private String formatLocalPoint(LocalPoint localPoint)
-	{
-		if (localPoint == null)
-		{
-			return "-";
-		}
-
-		return localPoint.getX() + "," + localPoint.getY();
-	}
-
-	private void logObservedTileObjectClassification(ObservedTileObject observed, ObjectClassifier.ClassificationDecision decision)
-	{
-		if (!log.isDebugEnabled() || observed == null || observed.tileObject == null || decision == null)
-		{
-			return;
-		}
-
-		if (decision.classification == observed.lastLoggedClassification
-			&& java.util.Objects.equals(decision.reason, observed.lastLoggedClassificationReason))
-		{
-			return;
-		}
-
-		observed.lastLoggedClassification = decision.classification;
-		observed.lastLoggedClassificationReason = decision.reason;
-
-		TileObject tileObject = observed.tileObject;
-		String renderableTypes = observedRenderableTypes(observed);
-		logClassificationDecision(tileObject, decision, renderableTypes);
-	}
-
-	private String observedRenderableTypes(ObservedTileObject observed)
-	{
-		if (observed == null || observed.parts == null || observed.parts.isEmpty())
-		{
-			return "-";
-		}
-
-		StringBuilder builder = new StringBuilder();
-		for (ObjectRenderablePart part : observed.parts)
-		{
-			if (part == null || part.renderable == null)
-			{
-				continue;
-			}
-
-			if (builder.length() > 0)
-			{
-				builder.append(", ");
-			}
-
-			builder.append(classificationDebugApiType(part.renderable))
-				.append("(")
-				.append(part.renderable.getClass().getSimpleName())
-				.append(")");
-		}
-
-		return builder.length() > 0 ? builder.toString() : "-";
-	}
-
-	private void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable, LocalPoint localPoint, int plane)
-	{
-		if (renderable == null || localPoint == null
-			|| renderable instanceof Actor
-			|| renderable instanceof Projectile
-			|| renderable instanceof GraphicsObject
-			|| renderable instanceof TileItem)
-		{
-			return;
-		}
-
-		parts.add(new ObjectRenderablePart(renderable, localPoint, plane));
-	}
-
-	private static LocalPoint offsetLocalPoint(LocalPoint base, int xOffset, int yOffset)
-	{
-		return base == null ? null : new LocalPoint(base.getX() + xOffset, base.getY() + yOffset);
-	}
-
-	private int cameraYaw()
-	{
-		return angleToBillboardUnits(client.getCameraYaw(), CAMERA_FULL_CIRCLE);
-	}
-
-	private int cameraPitch()
-	{
-		return Math.max(0, Math.min(MAX_PITCH, angleToBillboardUnits(client.getCameraPitch(), CAMERA_FULL_CIRCLE)));
-	}
-
-	private static int actorYaw(Actor actor)
-	{
-		return actor == null ? 0 : angleToBillboardUnits(actor.getCurrentOrientation(), ACTOR_FULL_CIRCLE);
-	}
-
-	private static int projectileYaw(Projectile projectile)
-	{
-		return projectile == null ? 0 : angleToBillboardUnits(projectile.getOrientation(), PROJECTILE_FULL_CIRCLE);
-	}
-
-	static int angleToBillboardUnits(int angle, int sourceFullCircle)
-	{
-		int sourceUnits = Math.max(1, sourceFullCircle);
-		int normalized = Math.floorMod(angle, sourceUnits);
-		return Math.floorMod((int) Math.round((normalized * (double) BILLBOARD_FULL_CIRCLE) / sourceUnits), BILLBOARD_FULL_CIRCLE);
-	}
-
-	private int relativeYaw(Actor actor)
-	{
-		int rawRelativeYaw = cameraYaw() + actorYaw(actor);
-		if (shouldCombatSnap(actor))
-		{
-			return combatYaw(rawRelativeYaw);
-		}
-
-		if (!config.enableRotationSnapping())
-		{
-			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
-		}
-
-		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
-	}
-
-	private int relativeYaw(Projectile projectile)
-	{
-		int rawRelativeYaw = cameraYaw() + projectileYaw(projectile);
-		if (!config.enableRotationSnapping())
-		{
-			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
-		}
-
-		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
-	}
-
-	private int relativeYaw(TileItem item)
-	{
-		int rawRelativeYaw = cameraYaw();
-		if (!config.enableRotationSnapping())
-		{
-			return Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
-		}
-
-		return snapJauByAngles(rawRelativeYaw, config.numberOfYawRotationAngles());
-	}
-
-	private boolean shouldCombatSnap(Actor actor)
-	{
-		return config.enableBillboardCombatSnapping() && isMutuallyInteracting(actor);
-	}
-
-	private boolean isMutuallyInteracting(Actor actor)
-	{
-		if (actor == null)
-		{
-			return false;
-		}
-
-		Actor interacting = actor.getInteracting();
-		return interacting != null && interacting.getInteracting() == actor;
-	}
-
-	private static int combatYaw(int rawRelativeYaw)
-	{
-		int normalized = Math.floorMod(rawRelativeYaw, BILLBOARD_FULL_CIRCLE);
-		int combatDistance = jauDistance(normalized, COMBAT_YAW);
-		int oppositeDistance = jauDistance(normalized, OPPOSITE_COMBAT_YAW);
-		return combatDistance <= oppositeDistance ? COMBAT_YAW : OPPOSITE_COMBAT_YAW;
-	}
-
-	private static int jauDistance(int a, int b)
-	{
-		int distance = Math.abs(Math.floorMod(a, BILLBOARD_FULL_CIRCLE) - Math.floorMod(b, BILLBOARD_FULL_CIRCLE));
-		return Math.min(distance, BILLBOARD_FULL_CIRCLE - distance);
-	}
-
-	private int relativePitch()
-	{
-		int rawPitch = cameraPitch();
-		if (!config.enableRotationSnapping())
-		{
-			return rawPitch;
-		}
-
-		int res = snapPitchByAngles(rawPitch, 0, config.numberOfPitchRotationAngles());
-		// Invert because model pitch is applied opposite to camera pitch.
-		return -res;
-	}
-
-	private int relativePitch(Actor actor)
-	{
-		if (shouldCombatSnap(actor))
-		{
-			return 0;
-		}
-
-		return relativePitch();
-	}
-
-	private int relativePitch(ActorSpotAnim actorSpotAnim)
-	{
-		return relativePitch();
-	}
-
-	private int relativePitch(GraphicsObject graphicsObject)
-	{
-		return relativePitch();
-	}
-
-	private int relativePitch(TileItem item)
-	{
-		int rawPitch = cameraPitch();
-		if (!config.enableRotationSnapping())
-		{
-			return rawPitch;
-		}
-
-		return -snapPitchByAngles(rawPitch, GROUND_ITEM_MIN_PITCH, config.numberOfPitchRotationAngles());
-	}
-
-	private static int snapJauByAngles(int jau, int angleCount)
-	{
-		int clampedAngleCount = Math.max(1, angleCount);
-		int step = Math.max(1, BILLBOARD_FULL_CIRCLE / clampedAngleCount);
-		int normalized = Math.floorMod(jau, BILLBOARD_FULL_CIRCLE);
-		return Math.floorMod(((normalized + (step / 2)) / step) * step, BILLBOARD_FULL_CIRCLE);
-	}
-
-	private static int snapPitchByAngles(int pitch, int minPitch, int angleCount)
-	{
-		int clampedMinPitch = Math.max(0, Math.min(minPitch, MAX_PITCH));
-		int clampedPitch = Math.max(clampedMinPitch, Math.min(pitch, MAX_PITCH));
-		int clampedAngleCount = Math.max(1, angleCount);
-		int pitchRange = Math.max(1, MAX_PITCH - clampedMinPitch);
-		if (clampedAngleCount == 1)
-		{
-			return clampedMinPitch;
-		}
-
-		int snappedIndex = Math.max(0, Math.min(clampedAngleCount - 1, ((clampedPitch - clampedMinPitch) * clampedAngleCount) / pitchRange));
-		if (snappedIndex == 0)
-		{
-			return clampedMinPitch;
-		}
-		if (snappedIndex == clampedAngleCount - 1)
-		{
-			return MAX_PITCH;
-		}
-
-		int snappedPitch = clampedMinPitch + (int) Math.round(((snappedIndex + 0.5d) * pitchRange) / clampedAngleCount);
-		return Math.max(clampedMinPitch, Math.min(MAX_PITCH, snappedPitch));
-	}
-
-	private Color applyLightBoost(Color color)
-	{
-		float boost = config.billboardLightBoostPercent() / 100.0f;
-		int red = Math.min(255, Math.round(color.getRed() * boost));
-		int green = Math.min(255, Math.round(color.getGreen() * boost));
-		int blue = Math.min(255, Math.round(color.getBlue() * boost));
-		return new Color(red, green, blue, color.getAlpha());
-	}
-
-	private static Color packedHslToColor(int packedHsl, int alpha)
-	{
-		int hue = (packedHsl >> 10) & 0x3F;
-		int saturation = (packedHsl >> 7) & 0x07;
-		int lightness = packedHsl & 0x7F;
-		float h = hue / 64.0f;
-		float s = saturation / 7.0f;
-		float l = lightness / 128.0f;
-
-		float r;
-		float g;
-		float b;
-
-		if (s == 0.0f)
-		{
-			r = l;
-			g = l;
-			b = l;
-		}
-		else
-		{
-			float q = l < 0.5f ? l * (1.0f + s) : l + s - (l * s);
-			float p = 2.0f * l - q;
-			r = hueToRgb(p, q, h + (1.0f / 3.0f));
-			g = hueToRgb(p, q, h);
-			b = hueToRgb(p, q, h - (1.0f / 3.0f));
-		}
-
-		return new Color(clamp(r), clamp(g), clamp(b), Math.max(0, Math.min(255, alpha)));
-	}
-
-	private static float hueToRgb(float p, float q, float t)
-	{
-		if (t < 0)
-		{
-			t += 1.0f;
-		}
-		if (t > 1)
-		{
-			t -= 1.0f;
-		}
-		if (t < (1.0f / 6.0f))
-		{
-			return p + ((q - p) * 6.0f * t);
-		}
-		if (t < 0.5f)
-		{
-			return q;
-		}
-		if (t < (2.0f / 3.0f))
-		{
-			return p + ((q - p) * ((2.0f / 3.0f) - t) * 6.0f);
-		}
-		return p;
-	}
-
-	private static int clamp(float component)
-	{
-		return Math.max(0, Math.min(255, Math.round(component * 255.0f)));
-	}
-
-	private static final class FaceDraw
-	{
-		private final int x0;
-		private final int y0;
-		private final int x1;
-		private final int y1;
-		private final int x2;
-		private final int y2;
-		private final Color color;
-		private final double depth;
-		private final TextureSample textureSample;
-		private final TextureUvs textureUvs;
-
-		private FaceDraw(
-			int x0,
-			int y0,
-			int x1,
-			int y1,
-			int x2,
-			int y2,
-			Color color,
-			double depth,
-			TextureSample textureSample,
-			TextureUvs textureUvs)
-		{
-			this.x0 = x0;
-			this.y0 = y0;
-			this.x1 = x1;
-			this.y1 = y1;
-			this.x2 = x2;
-			this.y2 = y2;
-			this.color = color;
-			this.depth = depth;
-			this.textureSample = textureSample;
-			this.textureUvs = textureUvs;
-		}
-
-		private Color getColor()
-		{
-			return color;
-		}
-
-		private double getDepth()
-		{
-			return depth;
-		}
-
-		private boolean isTextured()
-		{
-			return textureSample != null && textureUvs != null;
-		}
-
-		private TextureSample getTextureSample()
-		{
-			return textureSample;
-		}
-
-		private TextureUvs getTextureUvs()
-		{
-			return textureUvs;
-		}
-	}
-
-	private interface TimedCacheEntry
-	{
-		long lastUsedMillis();
-	}
-
-	private static final class BuiltFaces
-	{
-		private final List<FaceDraw> faces;
-		private final int textureStateHash;
-
-		private BuiltFaces(List<FaceDraw> faces, int textureStateHash)
-		{
-			this.faces = faces;
-			this.textureStateHash = textureStateHash;
-		}
-	}
-
-	private static final class TextureSample
-	{
-		private final TextureCacheEntry entry;
-		private final float uOffset;
-		private final float vOffset;
-		private final int stateHash;
-
-		private TextureSample(TextureCacheEntry entry, float uOffset, float vOffset, int stateHash)
-		{
-			this.entry = entry;
-			this.uOffset = uOffset;
-			this.vOffset = vOffset;
-			this.stateHash = stateHash;
-		}
-	}
-
-	private static final class TextureUvs
-	{
-		private final float u0;
-		private final float v0;
-		private final float u1;
-		private final float v1;
-		private final float u2;
-		private final float v2;
-
-		private TextureUvs(float u0, float v0, float u1, float v1, float u2, float v2)
-		{
-			this.u0 = u0;
-			this.v0 = v0;
-			this.u1 = u1;
-			this.v1 = v1;
-			this.u2 = u2;
-			this.v2 = v2;
-		}
-	}
-
-	private static final class BillboardCacheKey
-	{
-		private final int animationId;
-		private final int animationFrame;
-		private final int poseAnimationId;
-		private final int poseAnimationFrame;
-		private final int relativeYaw;
-		private final int relativePitch;
-		private final int colorBands;
-		private final int lightBoost;
-		private final int outlinePadding;
-		private final boolean highlightOutline;
-		private final boolean shadowOutline;
-		private final boolean solidOutline;
-		private final boolean spriteShadow;
-		private final boolean highlightInline;
-		private final boolean shadowInline;
-		private final boolean solidInline;
-		private final int outlineColor;
-		private final boolean hoverOutline;
-		private final boolean interactOutline;
-		private final int hoverOutlineColor;
-		private final int interactOutlineColor;
-		private final int renderQuality;
-		private final int modelStateHash;
-		private final int textureStateHash;
-		private final int animatedTextureOffsetStateHash;
-
-		private BillboardCacheKey(
-			int animationId,
-			int animationFrame,
-			int poseAnimationId,
-			int poseAnimationFrame,
-			int relativeYaw,
-			int relativePitch,
-			int colorBands,
-			int lightBoost,
-			int outlinePadding,
-			boolean highlightOutline,
-			boolean shadowOutline,
-			boolean solidOutline,
-			boolean spriteShadow,
-			boolean highlightInline,
-			boolean shadowInline,
-			boolean solidInline,
-			int outlineColor,
-			boolean hoverOutline,
-			boolean interactOutline,
-			int hoverOutlineColor,
-			int interactOutlineColor,
-			int renderQuality,
-			int modelStateHash,
-			int textureStateHash,
-			int animatedTextureOffsetStateHash)
-		{
-			this.animationId = animationId;
-			this.animationFrame = animationFrame;
-			this.poseAnimationId = poseAnimationId;
-			this.poseAnimationFrame = poseAnimationFrame;
-			this.relativeYaw = relativeYaw;
-			this.relativePitch = relativePitch;
-			this.colorBands = colorBands;
-			this.lightBoost = lightBoost;
-			this.outlinePadding = outlinePadding;
-			this.highlightOutline = highlightOutline;
-			this.shadowOutline = shadowOutline;
-			this.solidOutline = solidOutline;
-			this.spriteShadow = spriteShadow;
-			this.highlightInline = highlightInline;
-			this.shadowInline = shadowInline;
-			this.solidInline = solidInline;
-			this.outlineColor = outlineColor;
-			this.hoverOutline = hoverOutline;
-			this.interactOutline = interactOutline;
-			this.hoverOutlineColor = hoverOutlineColor;
-			this.interactOutlineColor = interactOutlineColor;
-			this.renderQuality = renderQuality;
-			this.modelStateHash = modelStateHash;
-			this.textureStateHash = textureStateHash;
-			this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
-		}
-
-		@Override
-		public boolean equals(Object o)
-		{
-			if (this == o)
-			{
-				return true;
-			}
-			if (!(o instanceof BillboardCacheKey))
-			{
-				return false;
-			}
-			BillboardCacheKey that = (BillboardCacheKey) o;
-			return animationId == that.animationId
-				&& animationFrame == that.animationFrame
-				&& poseAnimationId == that.poseAnimationId
-				&& poseAnimationFrame == that.poseAnimationFrame
-				&& relativeYaw == that.relativeYaw
-				&& relativePitch == that.relativePitch
-				&& colorBands == that.colorBands
-				&& lightBoost == that.lightBoost
-				&& outlinePadding == that.outlinePadding
-				&& highlightOutline == that.highlightOutline
-				&& shadowOutline == that.shadowOutline
-				&& solidOutline == that.solidOutline
-				&& spriteShadow == that.spriteShadow
-				&& highlightInline == that.highlightInline
-				&& shadowInline == that.shadowInline
-				&& solidInline == that.solidInline
-				&& outlineColor == that.outlineColor
-				&& hoverOutline == that.hoverOutline
-				&& interactOutline == that.interactOutline
-				&& hoverOutlineColor == that.hoverOutlineColor
-				&& interactOutlineColor == that.interactOutlineColor
-				&& renderQuality == that.renderQuality
-				&& modelStateHash == that.modelStateHash
-				&& textureStateHash == that.textureStateHash
-				&& animatedTextureOffsetStateHash == that.animatedTextureOffsetStateHash;
-		}
-
-		@Override
-		public int hashCode()
-		{
-			int result = animationId;
-			result = 31 * result + animationFrame;
-			result = 31 * result + poseAnimationId;
-			result = 31 * result + poseAnimationFrame;
-			result = 31 * result + relativeYaw;
-			result = 31 * result + relativePitch;
-			result = 31 * result + colorBands;
-			result = 31 * result + lightBoost;
-			result = 31 * result + outlinePadding;
-			result = 31 * result + (highlightOutline ? 1 : 0);
-			result = 31 * result + (shadowOutline ? 1 : 0);
-			result = 31 * result + (solidOutline ? 1 : 0);
-			result = 31 * result + (spriteShadow ? 1 : 0);
-			result = 31 * result + (highlightInline ? 1 : 0);
-			result = 31 * result + (shadowInline ? 1 : 0);
-			result = 31 * result + (solidInline ? 1 : 0);
-			result = 31 * result + outlineColor;
-			result = 31 * result + (hoverOutline ? 1 : 0);
-			result = 31 * result + (interactOutline ? 1 : 0);
-			result = 31 * result + hoverOutlineColor;
-			result = 31 * result + interactOutlineColor;
-			result = 31 * result + renderQuality;
-			result = 31 * result + modelStateHash;
-			result = 31 * result + textureStateHash;
-			result = 31 * result + animatedTextureOffsetStateHash;
-			return result;
-		}
-	}
-
-	private static final class BillboardCachePreviewKey
-	{
-		private final int animationId;
-		private final int animationFrame;
-		private final int poseAnimationId;
-		private final int poseAnimationFrame;
-		private final int relativeYaw;
-		private final int relativePitch;
-		private final int colorBands;
-		private final int lightBoost;
-		private final int outlinePadding;
-		private final boolean highlightOutline;
-		private final boolean shadowOutline;
-		private final boolean solidOutline;
-		private final boolean spriteShadow;
-		private final boolean highlightInline;
-		private final boolean shadowInline;
-		private final boolean solidInline;
-		private final int outlineColor;
-		private final boolean hoverOutline;
-		private final boolean interactOutline;
-		private final int hoverOutlineColor;
-		private final int interactOutlineColor;
-		private final int renderQuality;
-		private final int modelStateHash;
-		private final int animatedTextureOffsetStateHash;
-
-		private BillboardCachePreviewKey(
-			int animationId,
-			int animationFrame,
-			int poseAnimationId,
-			int poseAnimationFrame,
-			int relativeYaw,
-			int relativePitch,
-			int colorBands,
-			int lightBoost,
-			int outlinePadding,
-			boolean highlightOutline,
-			boolean shadowOutline,
-			boolean solidOutline,
-			boolean spriteShadow,
-			boolean highlightInline,
-			boolean shadowInline,
-			boolean solidInline,
-			int outlineColor,
-			boolean hoverOutline,
-			boolean interactOutline,
-			int hoverOutlineColor,
-			int interactOutlineColor,
-			int renderQuality,
-			int modelStateHash,
-			int animatedTextureOffsetStateHash)
-		{
-			this.animationId = animationId;
-			this.animationFrame = animationFrame;
-			this.poseAnimationId = poseAnimationId;
-			this.poseAnimationFrame = poseAnimationFrame;
-			this.relativeYaw = relativeYaw;
-			this.relativePitch = relativePitch;
-			this.colorBands = colorBands;
-			this.lightBoost = lightBoost;
-			this.outlinePadding = outlinePadding;
-			this.highlightOutline = highlightOutline;
-			this.shadowOutline = shadowOutline;
-			this.solidOutline = solidOutline;
-			this.spriteShadow = spriteShadow;
-			this.highlightInline = highlightInline;
-			this.shadowInline = shadowInline;
-			this.solidInline = solidInline;
-			this.outlineColor = outlineColor;
-			this.hoverOutline = hoverOutline;
-			this.interactOutline = interactOutline;
-			this.hoverOutlineColor = hoverOutlineColor;
-			this.interactOutlineColor = interactOutlineColor;
-			this.renderQuality = renderQuality;
-			this.modelStateHash = modelStateHash;
-			this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
-		}
-	}
-
-	private static final class RenderedBillboardImage
-	{
-		private final BufferedImage image;
-
-		private RenderedBillboardImage(BufferedImage image)
-		{
-			this.image = image;
-		}
-	}
-
-	private static final class CachedBillboard implements TimedCacheEntry
-	{
-		private final BillboardCacheKey key;
-		private final Rectangle bounds;
-		private final BufferedImage image;
-		private long lastUsedMillis;
-		private long lastRedrawMillis;
-		private boolean dirty;
-		private boolean debugFrameRedrawn;
-		private boolean debugFrameInvalidated;
-		private NpcSnapDebug.StateDebugInfo stateDebugInfo;
-
-		private CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image, long lastUsedMillis)
-		{
-			this.key = key;
-			this.bounds = new Rectangle(bounds);
-			this.image = image;
-			this.lastUsedMillis = lastUsedMillis;
-			this.lastRedrawMillis = lastUsedMillis;
-			this.dirty = true;
-			this.debugFrameRedrawn = true;
-			this.debugFrameInvalidated = false;
-			this.stateDebugInfo = null;
-		}
-
-		private void touch(long nowMillis)
-		{
-			lastUsedMillis = nowMillis;
-		}
-
-		@Override
-		public long lastUsedMillis()
-		{
-			return lastUsedMillis;
-		}
-
-		private long lastRedrawMillis()
-		{
-			return lastRedrawMillis;
-		}
-
-		private boolean matchesPreviewKey(BillboardCachePreviewKey previewKey)
-		{
-			return previewKey != null
-				&& key.animationId == previewKey.animationId
-				&& key.animationFrame == previewKey.animationFrame
-				&& key.poseAnimationId == previewKey.poseAnimationId
-				&& key.poseAnimationFrame == previewKey.poseAnimationFrame
-				&& key.relativeYaw == previewKey.relativeYaw
-				&& key.relativePitch == previewKey.relativePitch
-				&& key.colorBands == previewKey.colorBands
-				&& key.lightBoost == previewKey.lightBoost
-				&& key.outlinePadding == previewKey.outlinePadding
-				&& key.highlightOutline == previewKey.highlightOutline
-				&& key.shadowOutline == previewKey.shadowOutline
-				&& key.solidOutline == previewKey.solidOutline
-				&& key.spriteShadow == previewKey.spriteShadow
-				&& key.highlightInline == previewKey.highlightInline
-				&& key.shadowInline == previewKey.shadowInline
-				&& key.solidInline == previewKey.solidInline
-				&& key.outlineColor == previewKey.outlineColor
-				&& key.hoverOutline == previewKey.hoverOutline
-				&& key.interactOutline == previewKey.interactOutline
-				&& key.hoverOutlineColor == previewKey.hoverOutlineColor
-				&& key.interactOutlineColor == previewKey.interactOutlineColor
-				&& key.renderQuality == previewKey.renderQuality
-				&& key.modelStateHash == previewKey.modelStateHash
-				&& key.animatedTextureOffsetStateHash == previewKey.animatedTextureOffsetStateHash;
-		}
-
-		private boolean consumeDirty()
-		{
-			boolean wasDirty = dirty;
-			dirty = false;
-			return wasDirty;
-		}
-
-		private void markDebugFrameRedrawn()
-		{
-			debugFrameRedrawn = true;
-			debugFrameInvalidated = false;
-		}
-
-		private boolean consumeDebugFrameRedrawn()
-		{
-			boolean wasRedrawn = debugFrameRedrawn;
-			debugFrameRedrawn = false;
-			return wasRedrawn;
-		}
-
-		private void markDebugFrameInvalidated()
-		{
-			debugFrameInvalidated = true;
-		}
-
-		private boolean consumeDebugFrameInvalidated()
-		{
-			boolean wasInvalidated = debugFrameInvalidated;
-			debugFrameInvalidated = false;
-			return wasInvalidated;
-		}
-
-		private NpcSnapDebug.StateDebugInfo stateDebugInfo()
-		{
-			return stateDebugInfo;
-		}
-
-		private void stateDebugInfo(NpcSnapDebug.StateDebugInfo stateDebugInfo)
-		{
-			this.stateDebugInfo = stateDebugInfo;
-		}
-
-		private void flush()
-		{
-			image.flush();
-		}
-	}
-
-	private static final class TextureCacheEntry implements TimedCacheEntry
-	{
-		private final int[] pixels;
-		private final int width;
-		private final int height;
-		private long lastUsedMillis;
-
-		private TextureCacheEntry(int[] pixels, int width, int height, long lastUsedMillis)
-		{
-			this.pixels = pixels;
-			this.width = width;
-			this.height = height;
-			this.lastUsedMillis = lastUsedMillis;
-		}
-
-		private void touch(long nowMillis)
-		{
-			lastUsedMillis = nowMillis;
-		}
-
-		@Override
-		public long lastUsedMillis()
-		{
-			return lastUsedMillis;
-		}
-	}
-
-	private static final class GroundItemBillboard
-	{
-		private final int plane;
-		private final LocalPoint localPoint;
-
-		private GroundItemBillboard(int plane, LocalPoint localPoint)
-		{
-			this.plane = plane;
-			this.localPoint = localPoint;
-		}
-	}
-
-	private enum BillboardTargetType
-	{
-		NPC,
-		PLAYER,
-		ACTOR_SPOT_ANIM,
-		PROJECTILE,
-		GRAPHICS_OBJECT,
-		GROUND_ITEM,
-		TILE_OBJECT
-	}
-
-	private enum VerticalAnchor
-	{
-		BOTTOM,
-		CENTER
-	}
-
-	private static final class BillboardTarget
-	{
-		private final BillboardTargetType type;
-		private final ClassifiedObjectType classifiedType;
-		private final Renderable renderable;
-		private final Actor parentActor;
-		private final TileObject tileObject;
-		private final ObservedTileObject observedTileObject;
-		private final GroundItemBillboard groundItem;
-		private final double depth;
-		private final int renderPriority;
-		private final PriorityTileKey priorityTileKey;
-		private final BillboardTargetKey targetKey;
-
-		private BillboardTarget(
-			BillboardTargetType type,
-			ClassifiedObjectType classifiedType,
-			Renderable renderable,
-			Actor parentActor,
-			TileObject tileObject,
-			ObservedTileObject observedTileObject,
-			GroundItemBillboard groundItem,
-			double depth,
-			int renderPriority,
-			PriorityTileKey priorityTileKey,
-			BillboardTargetKey targetKey
-		)
-		{
-			this.type = type;
-			this.classifiedType = classifiedType;
-			this.renderable = renderable;
-			this.parentActor = parentActor;
-			this.tileObject = tileObject;
-			this.observedTileObject = observedTileObject;
-			this.groundItem = groundItem;
-			this.depth = depth;
-			this.renderPriority = renderPriority;
-			this.priorityTileKey = priorityTileKey;
-			this.targetKey = targetKey;
-		}
-
-		private static BillboardTarget forRenderable(
-			BillboardTargetType type,
-			ClassifiedObjectType classifiedType,
-			Renderable renderable,
-			double depth,
-			LocalPoint localPoint,
-			int plane
-		)
-		{
-			int renderPriority = ObjectClassifier.renderPriority(classifiedType);
-			return new BillboardTarget(
-				type,
-				classifiedType,
-				renderable,
-				null,
-				null,
-				null,
-				null,
-				depth,
-				renderPriority,
-				PriorityTileKey.of(localPoint, plane, renderPriority),
-				BillboardTargetKey.forRenderable(type, renderable, localPoint, plane)
-			);
-		}
-
-		private static BillboardTarget forActorSpotAnim(ActorSpotAnim actorSpotAnim, Actor actor, double depth)
-		{
-			LocalPoint localPoint = actor.getLocalLocation();
-			int plane = actor.getWorldView().getPlane();
-			int renderPriority = ObjectClassifier.renderPriority(ClassifiedObjectType.EFFECT);
-			return new BillboardTarget(
-				BillboardTargetType.ACTOR_SPOT_ANIM,
-				ClassifiedObjectType.EFFECT,
-				actorSpotAnim,
-				actor,
-				null,
-				null,
-				null,
-				depth,
-				renderPriority,
-				PriorityTileKey.of(localPoint, plane, renderPriority),
-				BillboardTargetKey.forActorSpotAnim(actorSpotAnim, actor, localPoint, plane)
-			);
-		}
-
-		private static BillboardTarget forGroundItem(TileItem item, GroundItemBillboard groundItem, double depth)
-		{
-			int renderPriority = ObjectClassifier.renderPriority(ClassifiedObjectType.GROUND_ITEM);
-			return new BillboardTarget(
-				BillboardTargetType.GROUND_ITEM,
-				ClassifiedObjectType.GROUND_ITEM,
-				item,
-				null,
-				null,
-				null,
-				groundItem,
-				depth,
-				renderPriority,
-				PriorityTileKey.of(groundItem.localPoint, groundItem.plane, renderPriority),
-				BillboardTargetKey.forGroundItem(item, groundItem)
-			);
-		}
-
-		private static BillboardTarget forTileObject(ObservedTileObject observedTileObject, double depth)
-		{
-			ClassifiedObjectType classifiedType = observedTileObject != null ? observedTileObject.classifiedType : ClassifiedObjectType.UNKNOWN;
-			int renderPriority = ObjectClassifier.renderPriority(classifiedType);
-			return new BillboardTarget(
-				BillboardTargetType.TILE_OBJECT,
-				classifiedType,
-				null,
-				null,
-				observedTileObject.tileObject,
-				observedTileObject,
-				null,
-				depth,
-				renderPriority,
-				PriorityTileKey.of(firstLocalPoint(observedTileObject), firstPlane(observedTileObject), renderPriority),
-				BillboardTargetKey.forTileObject(observedTileObject.tileObject, firstLocalPoint(observedTileObject), firstPlane(observedTileObject))
-			);
-		}
-
-		private double getDepth()
-		{
-			return depth;
-		}
-
-		private int getRenderPriority()
-		{
-			return renderPriority;
-		}
-
-		private PriorityTileKey getPriorityTileKey()
-		{
-			return priorityTileKey;
-		}
-
-		private long priorityGroupSortKey()
-		{
-			return priorityTileKey != null ? priorityTileKey.sortKey() : BillboardPaintOrder.NO_PRIORITY_GROUP;
-		}
-
-		private static LocalPoint firstLocalPoint(ObservedTileObject observedTileObject)
-		{
-			if (observedTileObject == null)
-			{
-				return null;
-			}
-
-			for (ObjectRenderablePart part : observedTileObject.parts)
-			{
-				if (part.localPoint != null)
-				{
-					return part.localPoint;
-				}
-			}
-
-			return null;
-		}
-
-		private static int firstPlane(ObservedTileObject observedTileObject)
-		{
-			if (observedTileObject == null)
-			{
-				return -1;
-			}
-
-			for (ObjectRenderablePart part : observedTileObject.parts)
-			{
-				return part.plane;
-			}
-
-			return -1;
-		}
-	}
-
-	private static final class BillboardTargetKey
-	{
-		private final long orderKey;
-		private final long uniqueKey;
-
-		private BillboardTargetKey(long orderKey, long uniqueKey)
-		{
-			this.orderKey = orderKey;
-			this.uniqueKey = uniqueKey;
-		}
-
-		private static BillboardTargetKey forRenderable(BillboardTargetType type, Renderable renderable, LocalPoint localPoint, int plane)
-		{
-			int entityId = renderableEntityId(type, renderable);
-			long locationKey = locationKey(localPoint, plane);
-			long orderKey = composeOrderKey(type.ordinal(), entityId, locationKey);
-			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(renderable));
-			return new BillboardTargetKey(orderKey, uniqueKey);
-		}
-
-		private static BillboardTargetKey forActorSpotAnim(ActorSpotAnim actorSpotAnim, Actor actor, LocalPoint localPoint, int plane)
-		{
-			long locationKey = locationKey(localPoint, plane);
-			long orderKey = composeOrderKey(BillboardTargetType.ACTOR_SPOT_ANIM.ordinal(), actorSpotAnim.getId(), locationKey);
-			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(actorSpotAnim) ^ System.identityHashCode(actor));
-			return new BillboardTargetKey(orderKey, uniqueKey);
-		}
-
-		private static BillboardTargetKey forGroundItem(TileItem item, GroundItemBillboard groundItem)
-		{
-			long locationKey = locationKey(groundItem != null ? groundItem.localPoint : null, groundItem != null ? groundItem.plane : -1);
-			long orderKey = composeOrderKey(BillboardTargetType.GROUND_ITEM.ordinal(), item.getId(), locationKey);
-			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(item));
-			return new BillboardTargetKey(orderKey, uniqueKey);
-		}
-
-		private static BillboardTargetKey forTileObject(TileObject tileObject, LocalPoint localPoint, int plane)
-		{
-			long locationKey = locationKey(localPoint, plane);
-			long orderKey = composeOrderKey(BillboardTargetType.TILE_OBJECT.ordinal(), tileObject != null ? tileObject.getId() : -1, locationKey);
-			long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(tileObject));
-			return new BillboardTargetKey(orderKey, uniqueKey);
-		}
-
-		private static int compareForQueueOrder(BillboardTargetKey left, BillboardTargetKey right)
-		{
-			int byOrder = Long.compare(left.orderKey, right.orderKey);
-			return byOrder != 0 ? byOrder : Long.compare(left.uniqueKey, right.uniqueKey);
-		}
-
-		private long stableSortOrder()
-		{
-			return uniqueKey;
-		}
-
-		private static int renderableEntityId(BillboardTargetType type, Renderable renderable)
-		{
-			if (renderable == null)
-			{
-				return -1;
-			}
-
-			switch (type)
-			{
-				case NPC:
-					return ((NPC) renderable).getId();
-				case PROJECTILE:
-					return ((Projectile) renderable).getId();
-				case GRAPHICS_OBJECT:
-					return ((GraphicsObject) renderable).getId();
-				case GROUND_ITEM:
-					return ((TileItem) renderable).getId();
-				default:
-					return System.identityHashCode(renderable);
-			}
-		}
-
-		private static long composeOrderKey(int typeOrdinal, int entityId, long locationKey)
-		{
-			long key = ((long) typeOrdinal & 0xFFL) << 56;
-			key |= ((long) entityId & 0xFFFFFFL) << 32;
-			key |= locationKey & 0xFFFFFFFFL;
-			return key;
-		}
-
-		private static long composeUniqueKey(long orderKey, int identityHash)
-		{
-			return (orderKey * 31L) ^ (identityHash & 0xFFFFFFFFL);
-		}
-
-		private static long locationKey(LocalPoint localPoint, int plane)
-		{
-			if (localPoint == null)
-			{
-				return plane & 0x3L;
-			}
-
-			long tileX = (localPoint.getX() / LOCAL_TILE_SIZE) & 0x7FFL;
-			long tileY = (localPoint.getY() / LOCAL_TILE_SIZE) & 0x7FFL;
-			long planeBits = plane & 0x3L;
-			return (planeBits << 22) | (tileX << 11) | tileY;
-		}
-
-		@Override
-		public boolean equals(Object other)
-		{
-			if (this == other)
-			{
-				return true;
-			}
-
-			if (!(other instanceof BillboardTargetKey))
-			{
-				return false;
-			}
-
-			BillboardTargetKey that = (BillboardTargetKey) other;
-			return orderKey == that.orderKey && uniqueKey == that.uniqueKey;
-		}
-
-		@Override
-		public int hashCode()
-		{
-			int result = Long.hashCode(orderKey);
-			result = (31 * result) + Long.hashCode(uniqueKey);
-			return result;
-		}
-	}
-
-	private static final class BillboardUpdateState
-	{
-		private double qualityScale;
-		private int nextEligibleGameCycle;
-		private int lastRedrawGameCycle;
-		private long lastRedrawPositionKey;
-		private int lastRedrawAnimationHash;
-		private int lastRedrawViewHash;
-		private long lastObservedPositionKey;
-		private int lastObservedAnimationHash;
-		private boolean hasObservation;
-
-		private BillboardUpdateState(double qualityScale)
-		{
-			this.qualityScale = qualityScale;
-			this.nextEligibleGameCycle = Integer.MIN_VALUE;
-			this.lastRedrawGameCycle = Integer.MIN_VALUE;
-			this.lastRedrawPositionKey = Long.MIN_VALUE;
-			this.lastRedrawAnimationHash = Integer.MIN_VALUE;
-			this.lastRedrawViewHash = Integer.MIN_VALUE;
-			this.lastObservedPositionKey = Long.MIN_VALUE;
-			this.lastObservedAnimationHash = Integer.MIN_VALUE;
-			this.hasObservation = false;
-		}
-
-		private boolean isReady(int gameCycle, boolean hasCachedBillboard)
-		{
-			return !hasCachedBillboard || gameCycle >= nextEligibleGameCycle;
-		}
-
-		private boolean hasMoved(UpdateHeuristicSnapshot snapshot)
-		{
-			return hasObservation
-				&& snapshot.hasPosition()
-				&& lastObservedPositionKey != Long.MIN_VALUE
-				&& lastObservedPositionKey != snapshot.positionKey;
-		}
-
-		private boolean hasAnimationChanged(UpdateHeuristicSnapshot snapshot)
-		{
-			return hasObservation && lastObservedAnimationHash != Integer.MIN_VALUE && lastObservedAnimationHash != snapshot.animationHash;
-		}
-
-		private boolean hasPositionChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
-		{
-			return snapshot != null
-				&& snapshot.hasPosition()
-				&& lastRedrawPositionKey != Long.MIN_VALUE
-				&& lastRedrawPositionKey != snapshot.positionKey;
-		}
-
-		private boolean hasViewChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
-		{
-			return snapshot != null
-				&& lastRedrawViewHash != Integer.MIN_VALUE
-				&& lastRedrawViewHash != snapshot.viewHash;
-		}
-
-		private int cyclesSinceRedraw(int gameCycle)
-		{
-			if (lastRedrawGameCycle == Integer.MIN_VALUE)
-			{
-				return 64;
-			}
-
-			return Math.max(0, gameCycle - lastRedrawGameCycle);
-		}
-
-		private int overdueCycles(int gameCycle)
-		{
-			if (nextEligibleGameCycle == Integer.MIN_VALUE)
-			{
-				return cyclesSinceRedraw(gameCycle);
-			}
-
-			return Math.max(0, gameCycle - nextEligibleGameCycle);
-		}
-
-		private void observe(UpdateHeuristicSnapshot snapshot)
-		{
-			if (snapshot == null)
-			{
-				return;
-			}
-
-			lastObservedPositionKey = snapshot.positionKey;
-			lastObservedAnimationHash = snapshot.animationHash;
-			hasObservation = true;
-		}
-
-		private void defer(int gameCycle, int baseRefreshInterval)
-		{
-			nextEligibleGameCycle = gameCycle + Math.max(1, baseRefreshInterval);
-		}
-
-		private void advance(int gameCycle, int baseRefreshInterval, double fullQualityScale, UpdateHeuristicSnapshot snapshot, int minimumAnimatedRedrawInterval)
-		{
-			double clampedFullQuality = Math.max(MIN_RENDER_QUALITY, Math.min(1.0d, fullQualityScale));
-			double clampedCurrentQuality = Math.max(MIN_RENDER_QUALITY, Math.min(clampedFullQuality, qualityScale));
-			double refreshRatio = clampedCurrentQuality / clampedFullQuality;
-			int nextDelay = Math.max(1, (int) Math.round(baseRefreshInterval * refreshRatio));
-			if (snapshot != null && snapshot.animated)
-			{
-				nextDelay = Math.max(nextDelay, Math.max(1, minimumAnimatedRedrawInterval));
-			}
-			nextEligibleGameCycle = gameCycle + nextDelay;
-			qualityScale = Math.min(clampedFullQuality, clampedCurrentQuality * 2.0d);
-			lastRedrawGameCycle = gameCycle;
-			if (snapshot != null)
-			{
-				lastRedrawPositionKey = snapshot.positionKey;
-				lastRedrawAnimationHash = snapshot.animationHash;
-				lastRedrawViewHash = snapshot.viewHash;
-			}
-		}
-	}
-
-	private static final class FrameUpdatePlan
-	{
-		private final double qualityScale;
-		private final boolean forceHoverInteractionRedraw;
-
-		private FrameUpdatePlan(double qualityScale, boolean forceHoverInteractionRedraw)
-		{
-			this.qualityScale = qualityScale;
-			this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
-		}
-	}
-
-	private static final class UpdateHeuristicSnapshot
-	{
-		private final double depth;
-		private final long positionKey;
-		private final int animationHash;
-		private final int viewHash;
-		private final boolean animated;
-
-		private UpdateHeuristicSnapshot(double depth, long positionKey, int animationHash, int viewHash, boolean animated)
-		{
-			this.depth = depth;
-			this.positionKey = positionKey;
-			this.animationHash = animationHash;
-			this.viewHash = viewHash;
-			this.animated = animated;
-		}
-
-		private static UpdateHeuristicSnapshot empty()
-		{
-			return new UpdateHeuristicSnapshot(Double.POSITIVE_INFINITY, Long.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, false);
-		}
-
-		private static UpdateHeuristicSnapshot forDepth(double depth)
-		{
-			return new UpdateHeuristicSnapshot(depth, Long.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, false);
-		}
-
-		private static UpdateHeuristicSnapshot fromRequest(BillboardRenderRequest request, double depth, int animatedTextureOffsetStateHash)
-		{
-			long positionKey = positionKey(request.localPoint, request.plane);
-			int animationHash = 1;
-			int modelStateHash = modelStateHash(request.model);
-			int viewHash = 1;
-			viewHash = (31 * viewHash) + request.relativeYaw;
-			viewHash = (31 * viewHash) + request.relativePitch;
-			animationHash = (31 * animationHash) + request.animationId;
-			animationHash = (31 * animationHash) + request.animationFrame;
-			animationHash = (31 * animationHash) + request.poseAnimationId;
-			animationHash = (31 * animationHash) + request.poseAnimationFrame;
-			animationHash = (31 * animationHash) + request.animatedTextureId;
-			animationHash = (31 * animationHash) + modelStateHash;
-			animationHash = (31 * animationHash) + animatedTextureOffsetStateHash;
-			boolean animated = request.animationId >= 0
-				|| request.poseAnimationId >= 0
-				|| request.animationFrame >= 0
-				|| request.poseAnimationFrame >= 0
-				|| modelStateHash != 0
-				|| request.animatedTextureId >= 0;
-			return new UpdateHeuristicSnapshot(depth, positionKey, animationHash, viewHash, animated);
-		}
-
-		private boolean hasPosition()
-		{
-			return positionKey != Long.MIN_VALUE;
-		}
-
-		private static long positionKey(LocalPoint localPoint, int plane)
-		{
-			if (localPoint == null)
-			{
-				return Long.MIN_VALUE;
-			}
-
-			long x = localPoint.getX() & 0x1FFFFL;
-			long y = localPoint.getY() & 0x1FFFFL;
-			long z = plane & 0x3L;
-			return (z << 34) | (x << 17) | y;
-		}
-	}
-
-	private static final class QueuedBillboardTarget
-	{
-		private final BillboardTargetKey key;
-		private final double priorityScore;
-		private final int queueIndex;
-
-		private QueuedBillboardTarget(BillboardTargetKey key, double priorityScore, int queueIndex)
-		{
-			this.key = key;
-			this.priorityScore = priorityScore;
-			this.queueIndex = queueIndex;
-		}
-
-		private double getPriorityScore()
-		{
-			return priorityScore;
-		}
-
-		private int getQueueIndex()
-		{
-			return queueIndex;
-		}
-	}
-
-	private static final class PriorityTileKey
-	{
-		private final int plane;
-		private final int tileX;
-		private final int tileY;
-
-		private PriorityTileKey(int plane, int tileX, int tileY)
-		{
-			this.plane = plane;
-			this.tileX = tileX;
-			this.tileY = tileY;
-		}
-
-		private static PriorityTileKey of(LocalPoint localPoint, int plane, int renderPriority)
-		{
-			if (renderPriority == RENDER_PRIORITY_NONE || localPoint == null || plane < 0)
-			{
-				return null;
-			}
-
-			return new PriorityTileKey(plane, localPoint.getX() / LOCAL_TILE_SIZE, localPoint.getY() / LOCAL_TILE_SIZE);
-		}
-
-		private long sortKey()
-		{
-			return ((long) plane << 48)
-				^ ((long) (tileX & 0xFFFFFF) << 24)
-				^ (tileY & 0xFFFFFFL);
-		}
-
-		@Override
-		public boolean equals(Object other)
-		{
-			if (this == other)
-			{
-				return true;
-			}
-
-			if (!(other instanceof PriorityTileKey))
-			{
-				return false;
-			}
-
-			PriorityTileKey that = (PriorityTileKey) other;
-			return plane == that.plane && tileX == that.tileX && tileY == that.tileY;
-		}
-
-		@Override
-		public int hashCode()
-		{
-			int result = plane;
-			result = 31 * result + tileX;
-			result = 31 * result + tileY;
-			return result;
-		}
-	}
-
-	private static final class EffectDedupKey
-	{
-		private final int id;
-		private final int plane;
-		private final int tileX;
-		private final int tileY;
-
-		private EffectDedupKey(int id, int plane, int tileX, int tileY)
-		{
-			this.id = id;
-			this.plane = plane;
-			this.tileX = tileX;
-			this.tileY = tileY;
-		}
-
-		private static EffectDedupKey of(GraphicsObject graphicsObject)
-		{
-			LocalPoint localPoint = graphicsObject.getLocation();
-			return localPoint == null ? null : new EffectDedupKey(
-				graphicsObject.getId(),
-				graphicsObject.getLevel(),
-				localPoint.getX() / LOCAL_TILE_SIZE,
-				localPoint.getY() / LOCAL_TILE_SIZE
-			);
-		}
-
-		private static EffectDedupKey of(ActorSpotAnim actorSpotAnim, Actor actor)
-		{
-			LocalPoint localPoint = actor.getLocalLocation();
-			return localPoint == null ? null : new EffectDedupKey(
-				actorSpotAnim.getId(),
-				actor.getWorldView().getPlane(),
-				localPoint.getX() / LOCAL_TILE_SIZE,
-				localPoint.getY() / LOCAL_TILE_SIZE
-			);
-		}
-
-		@Override
-		public boolean equals(Object other)
-		{
-			if (this == other)
-			{
-				return true;
-			}
-
-			if (!(other instanceof EffectDedupKey))
-			{
-				return false;
-			}
-
-			EffectDedupKey that = (EffectDedupKey) other;
-			return id == that.id
-				&& plane == that.plane
-				&& tileX == that.tileX
-				&& tileY == that.tileY;
-		}
-
-		@Override
-		public int hashCode()
-		{
-			int result = Integer.hashCode(id);
-			result = (31 * result) + Integer.hashCode(plane);
-			result = (31 * result) + Integer.hashCode(tileX);
-			result = (31 * result) + Integer.hashCode(tileY);
-			return result;
-		}
-	}
-
-	private static final class OccupiedTileKey
-	{
-		private final int plane;
-		private final int tileX;
-		private final int tileY;
-
-		private OccupiedTileKey(int plane, int tileX, int tileY)
-		{
-			this.plane = plane;
-			this.tileX = tileX;
-			this.tileY = tileY;
-		}
-
-		private static OccupiedTileKey of(LocalPoint localPoint, int plane)
-		{
-			if (localPoint == null)
-			{
-				return null;
-			}
-
-			return new OccupiedTileKey(
-				plane,
-				localPoint.getX() / LOCAL_TILE_SIZE,
-				localPoint.getY() / LOCAL_TILE_SIZE
-			);
-		}
-
-		@Override
-		public boolean equals(Object other)
-		{
-			if (this == other)
-			{
-				return true;
-			}
-
-			if (!(other instanceof OccupiedTileKey))
-			{
-				return false;
-			}
-
-			OccupiedTileKey that = (OccupiedTileKey) other;
-			return plane == that.plane
-				&& tileX == that.tileX
-				&& tileY == that.tileY;
-		}
-
-		@Override
-		public int hashCode()
-		{
-			int result = Integer.hashCode(plane);
-			result = (31 * result) + Integer.hashCode(tileX);
-			result = (31 * result) + Integer.hashCode(tileY);
-			return result;
-		}
-	}
-
-	private static final class CollectedCandidates
-	{
-		private final List<BillboardTarget> candidates;
-		private final Map<OccupiedTileKey, Actor> topActorsByTile;
-		private final Map<OccupiedTileKey, List<Actor>> actorsByTile;
-
-		private CollectedCandidates(
-			List<BillboardTarget> candidates,
-			Map<OccupiedTileKey, Actor> topActorsByTile,
-			Map<OccupiedTileKey, List<Actor>> actorsByTile
-		)
-		{
-			this.candidates = candidates;
-			this.topActorsByTile = topActorsByTile;
-			this.actorsByTile = actorsByTile;
-		}
-	}
-
-	private static final class BillboardRenderRequest
-	{
-		private final Renderable renderable;
-		private final Model model;
-		private final LocalPoint localPoint;
-		private final int plane;
-		private final int verticalOffset;
-		private final int relativeYaw;
-		private final int relativePitch;
-		private final int animationId;
-		private final int animationFrame;
-		private final int poseAnimationId;
-		private final int poseAnimationFrame;
-		private final int animatedTextureId;
-		private final boolean shouldHoverOutline;
-		private final boolean shouldInteractOutline;
-		private final VerticalAnchor verticalAnchor;
-		private final NpcSnapDebug.FrameDebugInfo frameDebugInfo;
-
-		private BillboardRenderRequest(
-			Renderable renderable,
-			Model model,
-			LocalPoint localPoint,
-			int plane,
-			int verticalOffset,
-			int relativeYaw,
-			int relativePitch,
-			int animationId,
-			int animationFrame,
-			int poseAnimationId,
-			int poseAnimationFrame,
-			int animatedTextureId,
-			boolean shouldHoverOutline,
-			boolean shouldInteractOutline,
-			VerticalAnchor verticalAnchor,
-			NpcSnapDebug.FrameDebugInfo frameDebugInfo
-		)
-		{
-			this.renderable = renderable;
-			this.model = model;
-			this.localPoint = localPoint;
-			this.plane = plane;
-			this.verticalOffset = verticalOffset;
-			this.relativeYaw = relativeYaw;
-			this.relativePitch = relativePitch;
-			this.animationId = animationId;
-			this.animationFrame = animationFrame;
-			this.poseAnimationId = poseAnimationId;
-			this.poseAnimationFrame = poseAnimationFrame;
-			this.animatedTextureId = animatedTextureId;
-			this.shouldHoverOutline = shouldHoverOutline;
-			this.shouldInteractOutline = shouldInteractOutline;
-			this.verticalAnchor = verticalAnchor;
-			this.frameDebugInfo = frameDebugInfo;
-		}
-	}
-
-	private static final class BillboardRenderResult
-	{
-		private final Rectangle bounds;
-		private final BufferedImage image;
-
-		private BillboardRenderResult(Rectangle bounds, BufferedImage image)
-		{
-			this.bounds = bounds;
-			this.image = image;
-		}
-	}
-
-	private static final class PreparedBillboardDraw
-	{
-		private final BillboardRenderRequest request;
-		private final BillboardRenderResult result;
-		private final int paintOrder;
-		private final BufferedImage image;
-		private final Rectangle bounds;
-
-		private PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
-		{
-			this.request = request;
-			this.result = result;
-			this.paintOrder = paintOrder;
-			this.image = result != null ? result.image : null;
-			this.bounds = result != null ? result.bounds : null;
-		}
-	}
-
-	private static final class ObservedTileObject
-	{
-		private final TileObject tileObject;
-		private final List<ObjectRenderablePart> parts;
-		private ClassifiedObjectType classifiedType;
-		private ClassifiedObjectType lastLoggedClassification;
-		private String lastLoggedClassificationReason;
-
-		private ObservedTileObject(TileObject tileObject, List<ObjectRenderablePart> parts, ClassifiedObjectType classifiedType)
-		{
-			this.tileObject = tileObject;
-			this.parts = parts;
-			this.classifiedType = classifiedType;
-			this.lastLoggedClassification = null;
-			this.lastLoggedClassificationReason = null;
-		}
-	}
-
-	private static final class ObjectRenderablePart
-	{
-		private final Renderable renderable;
-		private final LocalPoint localPoint;
-		private final int plane;
-
-		private ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane)
-		{
-			this.renderable = renderable;
-			this.localPoint = localPoint;
-			this.plane = plane;
-		}
+		return localPlayer != null && BillboardPlaneUtils.shouldRenderTargetPlane(localPlayer.getWorldView().getPlane(), targetPlane);
 	}
 
 }

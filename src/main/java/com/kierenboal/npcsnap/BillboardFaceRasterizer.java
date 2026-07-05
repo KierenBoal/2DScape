@@ -1,0 +1,110 @@
+package com.kierenboal.npcsnap;
+
+import java.awt.Color;
+import java.awt.Rectangle;
+
+final class BillboardFaceRasterizer
+{
+	private BillboardFaceRasterizer()
+	{
+	}
+
+	static void rasterizeTexturedFace(
+		int[] imagePixels,
+		int imageWidth,
+		int imageHeight,
+		Rectangle imageBounds,
+		double qualityScale,
+		FaceDraw face,
+		int colorBands)
+	{
+		TextureSample textureSample = face.getTextureSample();
+		if (textureSample == null)
+		{
+			return;
+		}
+
+		float x0 = scaleCoordinate(face.x0, imageBounds.x, qualityScale);
+		float y0 = scaleCoordinate(face.y0, imageBounds.y, qualityScale);
+		float x1 = scaleCoordinate(face.x1, imageBounds.x, qualityScale);
+		float y1 = scaleCoordinate(face.y1, imageBounds.y, qualityScale);
+		float x2 = scaleCoordinate(face.x2, imageBounds.x, qualityScale);
+		float y2 = scaleCoordinate(face.y2, imageBounds.y, qualityScale);
+
+		float area = BillboardTriangleRasterizer.edge(x0, y0, x1, y1, x2, y2);
+		if (Math.abs(area) < 1.0e-6f)
+		{
+			return;
+		}
+
+		int minX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(x0, Math.min(x1, x2))), imageWidth);
+		int maxX = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(x0, Math.max(x1, x2))), imageWidth);
+		int minY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.floor(Math.min(y0, Math.min(y1, y2))), imageHeight);
+		int maxY = BillboardTriangleRasterizer.clampRasterCoordinate((int) Math.ceil(Math.max(y0, Math.max(y1, y2))), imageHeight);
+		if (minX > maxX || minY > maxY)
+		{
+			return;
+		}
+
+		Color shade = NpcSnapColorBanding.snapToRamp(face.getColor(), colorBands);
+		TextureUvs textureUvs = face.getTextureUvs();
+		for (int y = minY; y <= maxY; y++)
+		{
+			float py = y + 0.5f;
+			int row = y * imageWidth;
+			for (int x = minX; x <= maxX; x++)
+			{
+				float px = x + 0.5f;
+				float w0 = BillboardTriangleRasterizer.edge(x1, y1, x2, y2, px, py) / area;
+				float w1 = BillboardTriangleRasterizer.edge(x2, y2, x0, y0, px, py) / area;
+				float w2 = 1.0f - w0 - w1;
+				if (w0 < 0f || w1 < 0f || w2 < 0f)
+				{
+					continue;
+				}
+
+				float u = (float) BillboardGeometryUtils.wrapUnit((w0 * textureUvs.u0) + (w1 * textureUvs.u1) + (w2 * textureUvs.u2) + textureSample.uOffset);
+				float v = (float) BillboardGeometryUtils.wrapUnit((w0 * textureUvs.v0) + (w1 * textureUvs.v1) + (w2 * textureUvs.v2) + textureSample.vOffset);
+				int textureX = Math.min(textureSample.entry.width - 1, (int) (u * textureSample.entry.width));
+				int textureY = Math.min(textureSample.entry.height - 1, (int) (v * textureSample.entry.height));
+				int samplePixel = textureSample.entry.pixels[(textureY * textureSample.entry.width) + textureX];
+				if ((samplePixel >>> 24) == 0 && (samplePixel & 0xFFFFFF) == 0)
+				{
+					continue;
+				}
+
+				int shadedPixel = BillboardColorUtils.modulateTexturePixel(samplePixel, shade, colorBands);
+				int pixelIndex = row + x;
+				imagePixels[pixelIndex] = BillboardTriangleRasterizer.blendPixel(imagePixels[pixelIndex], shadedPixel);
+			}
+		}
+	}
+
+	static void rasterizeSolidFace(
+		int[] imagePixels,
+		int imageWidth,
+		int imageHeight,
+		Rectangle imageBounds,
+		double qualityScale,
+		FaceDraw face,
+		int argb)
+	{
+		BillboardTriangleRasterizer.rasterizeSolidTriangle(
+			imagePixels,
+			imageWidth,
+			imageHeight,
+			scaleCoordinate(face.x0, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y0, imageBounds.y, qualityScale),
+			scaleCoordinate(face.x1, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y1, imageBounds.y, qualityScale),
+			scaleCoordinate(face.x2, imageBounds.x, qualityScale),
+			scaleCoordinate(face.y2, imageBounds.y, qualityScale),
+			argb
+		);
+	}
+
+	private static float scaleCoordinate(int coordinate, int origin, double qualityScale)
+	{
+		return (float) ((coordinate - origin) * qualityScale);
+	}
+}

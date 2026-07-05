@@ -14,7 +14,6 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.ItemLayer;
-import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
@@ -23,8 +22,6 @@ import net.runelite.api.Scene;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
-import net.runelite.api.Texture;
-import net.runelite.api.TextureProvider;
 import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
@@ -60,16 +57,13 @@ public class NpcSnapPlugin extends Plugin
 	private static final int LOGIN_XP_DROP_GRACE_TICKS = 10;
 
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
-	private final Map<Integer, int[]> originalTexturePixels = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
-	private boolean textureBandingApplied;
-	private boolean textureBandingPending = true;
 	private boolean pendingSkillXpSeed;
 	private int gameTickCounter;
 	private int loginXpDropGraceUntilTick = Integer.MIN_VALUE;
 	private int ignoredLoginXpDropTick = Integer.MIN_VALUE;
-	private int appliedTextureBands = -1;
 	private NpcSnapUiTextureManager uiTextureManager;
+	private NpcSnapTextureBandingManager textureBandingManager;
 
 	@Inject
 	private Client client;
@@ -104,7 +98,7 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		textureBandingPending = true;
+		ensureTextureBandingManager().markDirty();
 		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
@@ -130,7 +124,7 @@ public class NpcSnapPlugin extends Plugin
 		pendingSkillXpSeed = false;
 		animationFrameSnapper.clear();
 		debug.clearFrameStates();
-		restoreGlobalTextureQuality();
+		ensureTextureBandingManager().restore();
 		ensureUiTextureManager().restore();
 		log.debug("2DScape stopped");
 	}
@@ -270,7 +264,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked menuOptionClicked)
 	{
-		if (isActorInteraction(menuOptionClicked.getMenuAction()))
+		if (BillboardHoverInteractionResolver.isActorInteractionAction(menuOptionClicked.getMenuAction()))
 		{
 			billboardOverlay.noteActorInteraction(menuOptionClicked.getMenuEntry().getActor(), client.getTickCount());
 			return;
@@ -313,7 +307,7 @@ public class NpcSnapPlugin extends Plugin
 		if ("enableGlobalTextureBanding".equals(configChanged.getKey())
 			|| "globalTextureColorBands".equals(configChanged.getKey()))
 		{
-			textureBandingPending = true;
+			ensureTextureBandingManager().markDirty();
 			billboardOverlay.clearTextureCache();
 		}
 
@@ -365,39 +359,6 @@ public class NpcSnapPlugin extends Plugin
 		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
-	private static boolean isActorInteraction(MenuAction action)
-	{
-		if (action == null)
-		{
-			return false;
-		}
-
-		switch (action)
-		{
-			case ITEM_USE_ON_NPC:
-			case WIDGET_TARGET_ON_NPC:
-			case NPC_FIRST_OPTION:
-			case NPC_SECOND_OPTION:
-			case NPC_THIRD_OPTION:
-			case NPC_FOURTH_OPTION:
-			case NPC_FIFTH_OPTION:
-			case ITEM_USE_ON_PLAYER:
-			case WIDGET_TARGET_ON_PLAYER:
-			case PLAYER_FIRST_OPTION:
-			case PLAYER_SECOND_OPTION:
-			case PLAYER_THIRD_OPTION:
-			case PLAYER_FOURTH_OPTION:
-			case PLAYER_FIFTH_OPTION:
-			case PLAYER_SIXTH_OPTION:
-			case PLAYER_SEVENTH_OPTION:
-			case PLAYER_EIGHTH_OPTION:
-			case WORLD_ENTITY_FIRST_OPTION:
-				return true;
-			default:
-				return false;
-		}
-	}
-
 	@Override
 	public boolean drawObject(Scene scene, TileObject tileObject)
 	{
@@ -421,60 +382,44 @@ public class NpcSnapPlugin extends Plugin
 			//    suppression for GameObject/GroundObject/DecorativeObject/WallObject parts.
 			// 3. Moving actor clickbox logic into drawObject(), even though NPCs/players do not
 			//    use this callback path for their interaction state.
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (observeAndShouldHideTileObject(tileObject))
 			{
-				billboardOverlay.observeTileObject(tileObject);
-				if (billboardOverlay.shouldHideTileObject(tileObject))
-				{
-					return false;
-				}
+				return false;
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((GameObject) tileObject).getRenderable());
+			return shouldDrawRenderable(((GameObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof GroundObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (observeAndShouldHideTileObject(tileObject))
 			{
-				billboardOverlay.observeTileObject(tileObject);
-				if (billboardOverlay.shouldHideTileObject(tileObject))
-				{
-					return false;
-				}
+				return false;
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((GroundObject) tileObject).getRenderable());
+			return shouldDrawRenderable(((GroundObject) tileObject).getRenderable());
 		}
 
 		if (tileObject instanceof DecorativeObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (observeAndShouldHideTileObject(tileObject))
 			{
-				billboardOverlay.observeTileObject(tileObject);
-				if (billboardOverlay.shouldHideTileObject(tileObject))
-				{
-					return false;
-				}
+				return false;
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable())
-				&& !billboardOverlay.shouldHideRenderable(((DecorativeObject) tileObject).getRenderable2());
+			DecorativeObject decorativeObject = (DecorativeObject) tileObject;
+			return shouldDrawAllRenderables(decorativeObject.getRenderable(), decorativeObject.getRenderable2());
 		}
 
 		if (tileObject instanceof WallObject)
 		{
-			if (config.applyToObjects() || config.applyToGraphicsObjects())
+			if (observeAndShouldHideTileObject(tileObject))
 			{
-				billboardOverlay.observeTileObject(tileObject);
-				if (billboardOverlay.shouldHideTileObject(tileObject))
-				{
-					return false;
-				}
+				return false;
 			}
 
-			return !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable1())
-				&& !billboardOverlay.shouldHideRenderable(((WallObject) tileObject).getRenderable2());
+			WallObject wallObject = (WallObject) tileObject;
+			return shouldDrawAllRenderables(wallObject.getRenderable1(), wallObject.getRenderable2());
 		}
 
 		if (tileObject instanceof ItemLayer)
@@ -483,12 +428,39 @@ public class NpcSnapPlugin extends Plugin
 			billboardOverlay.noteSceneRenderable(itemLayer.getBottom());
 			billboardOverlay.noteSceneRenderable(itemLayer.getMiddle());
 			billboardOverlay.noteSceneRenderable(itemLayer.getTop());
-			return !billboardOverlay.shouldHideRenderable(itemLayer.getBottom())
-				&& !billboardOverlay.shouldHideRenderable(itemLayer.getMiddle())
-				&& !billboardOverlay.shouldHideRenderable(itemLayer.getTop());
+			return shouldDrawAllRenderables(itemLayer.getBottom(), itemLayer.getMiddle(), itemLayer.getTop());
 		}
 
 		return true;
+	}
+
+	private boolean observeAndShouldHideTileObject(TileObject tileObject)
+	{
+		if (!config.applyToObjects() && !config.applyToGraphicsObjects())
+		{
+			return false;
+		}
+
+		billboardOverlay.observeTileObject(tileObject);
+		return billboardOverlay.shouldHideTileObject(tileObject);
+	}
+
+	private boolean shouldDrawAllRenderables(Renderable... renderables)
+	{
+		for (Renderable renderable : renderables)
+		{
+			if (!shouldDrawRenderable(renderable))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private boolean shouldDrawRenderable(Renderable renderable)
+	{
+		return !billboardOverlay.shouldHideRenderable(renderable);
 	}
 
 	private void applyAnimationFrameSnap(Actor actor)
@@ -533,117 +505,7 @@ public class NpcSnapPlugin extends Plugin
 
 	private void syncGlobalTextureQuality()
 	{
-		boolean enabled = config.enableGlobalTextureBanding();
-		int bands = config.globalTextureColorBands();
-		if (!textureBandingPending
-			&& textureBandingApplied == enabled
-			&& (!enabled || appliedTextureBands == bands))
-		{
-			return;
-		}
-
-		restoreGlobalTextureQuality();
-		textureBandingPending = false;
-
-		if (enabled)
-		{
-			applyGlobalTextureQuality();
-		}
-	}
-
-	private void applyGlobalTextureQuality()
-	{
-		log.debug("applyGlobalTextureQuality");
-
-		TextureProvider textureProvider = client.getTextureProvider();
-		if (textureProvider == null)
-		{
-			textureBandingPending = true;
-			return;
-		}
-
-		Texture[] textures = textureProvider.getTextures();
-		if (textures == null)
-		{
-			textureBandingPending = true;
-			return;
-		}
-
-		resetTextureProviderCache(textureProvider);
-		int bands = config.globalTextureColorBands();
-		int changed = 0;
-		for (int textureId = 0; textureId < textures.length; textureId++)
-		{
-			int[] pixels = textureProvider.load(textureId);
-			Texture texture = textures[textureId];
-			if (texture != null && texture.getPixels() != null)
-			{
-				pixels = texture.getPixels();
-			}
-
-			if (pixels == null || pixels.length == 0)
-			{
-				log.debug("pixels null/empty for {}", textureId);
-				continue;
-			}
-
-			originalTexturePixels.put(textureId, pixels.clone());
-			NpcSnapColorBanding.applyBandsInPlace(pixels, bands);
-
-			changed++;
-		}
-
-		textureBandingApplied = true;
-		appliedTextureBands = bands;
-		log.debug("Applied global texture banding to {} textures with {} bands", changed, bands);
-	}
-
-	private void restoreGlobalTextureQuality()
-	{
-		if (!textureBandingApplied && originalTexturePixels.isEmpty())
-		{
-			return;
-		}
-
-		TextureProvider textureProvider = client.getTextureProvider();
-		Texture[] textures = textureProvider != null ? textureProvider.getTextures() : null;
-		for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
-		{
-			int textureId = entry.getKey();
-			int[] pixels = null;
-			if (textures != null && textureId >= 0 && textureId < textures.length)
-			{
-				Texture texture = textures[textureId];
-				if (texture != null)
-				{
-					pixels = texture.getPixels();
-				}
-			}
-
-			if (pixels == null && textureProvider != null)
-			{
-				pixels = textureProvider.load(textureId);
-			}
-
-			int[] originalPixels = entry.getValue();
-			if (pixels != null && pixels.length == originalPixels.length)
-			{
-				System.arraycopy(originalPixels, 0, pixels, 0, originalPixels.length);
-			}
-		}
-
-		originalTexturePixels.clear();
-		textureBandingApplied = false;
-		appliedTextureBands = -1;
-		if (textureProvider != null)
-		{
-			resetTextureProviderCache(textureProvider);
-		}
-	}
-
-	private static void resetTextureProviderCache(TextureProvider textureProvider)
-	{
-		textureProvider.setBrightness(textureProvider.getBrightness());
+		ensureTextureBandingManager().sync(config.enableGlobalTextureBanding(), config.globalTextureColorBands());
 	}
 
 	private void syncUiTextureQuality()
@@ -659,6 +521,16 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		return uiTextureManager;
+	}
+
+	private NpcSnapTextureBandingManager ensureTextureBandingManager()
+	{
+		if (textureBandingManager == null)
+		{
+			textureBandingManager = new NpcSnapTextureBandingManager(client);
+		}
+
+		return textureBandingManager;
 	}
 
 	private NpcSnapUiTextureManager.SpriteSnapshot loadSpriteSnapshot(int spriteId)
