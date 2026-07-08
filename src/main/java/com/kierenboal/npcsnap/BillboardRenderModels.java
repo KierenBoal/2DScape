@@ -190,11 +190,13 @@ final class BillboardRenderResult
 {
 	final Rectangle bounds;
 	final BufferedImage image;
+	final Rectangle sourceBounds;
 
-	BillboardRenderResult(Rectangle bounds, BufferedImage image)
+	BillboardRenderResult(Rectangle bounds, BufferedImage image, Rectangle sourceBounds)
 	{
 		this.bounds = bounds;
 		this.image = image;
+		this.sourceBounds = sourceBounds;
 	}
 }
 
@@ -205,6 +207,7 @@ final class PreparedBillboardDraw
 	final int paintOrder;
 	final BufferedImage image;
 	final Rectangle bounds;
+	final Rectangle sourceBounds;
 
 	PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
 	{
@@ -213,5 +216,6 @@ final class PreparedBillboardDraw
 		this.paintOrder = paintOrder;
 		this.image = result != null ? result.image : null;
 		this.bounds = result != null ? result.bounds : null;
+		this.sourceBounds = result != null ? result.sourceBounds : null;
 	}
 }

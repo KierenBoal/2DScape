@@ -6,6 +6,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
+import net.runelite.api.Point;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
@@ -112,6 +113,68 @@ final class BillboardDepthCalculator
 		double groundHeight = Perspective.getTileHeight(client, localPoint, plane);
 		double dz = (groundHeight + verticalOffset) - client.getCameraFpZ();
 		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+	}
+
+	double cameraForwardDepth(LocalPoint localPoint, int plane, double verticalOffset)
+	{
+		if (localPoint == null)
+		{
+			return Double.NaN;
+		}
+
+		double worldHeight = Perspective.getTileHeight(client, localPoint, plane) + verticalOffset;
+		return cameraForwardDepth(localPoint.getX(), localPoint.getY(), worldHeight);
+	}
+
+	double cameraForwardDepth(int localX, int localY, double worldHeight)
+	{
+		double x = localX - client.getCameraFpX();
+		double y = localY - client.getCameraFpY();
+		double z = worldHeight - client.getCameraFpZ();
+		int yaw = cameraYawIndex();
+		int pitch = cameraPitchIndex();
+		double yawSin = Perspective.SINE[yaw] / 65536.0d;
+		double yawCos = Perspective.COSINE[yaw] / 65536.0d;
+		double pitchSin = Perspective.SINE[pitch] / 65536.0d;
+		double pitchCos = Perspective.COSINE[pitch] / 65536.0d;
+		double cameraY = (y * yawCos) - (x * yawSin);
+		return (z * pitchSin) + (cameraY * pitchCos);
+	}
+
+	double cameraRightX()
+	{
+		int yaw = cameraYawIndex();
+		return Perspective.COSINE[yaw] / 65536.0d;
+	}
+
+	double cameraRightY()
+	{
+		int yaw = cameraYawIndex();
+		return Perspective.SINE[yaw] / 65536.0d;
+	}
+
+	double canvasYAtWorldHeight(int localX, int localY, double worldHeight)
+	{
+		Point point = Perspective.localToCanvas(client, localX, localY, (int) Math.round(worldHeight));
+		return point != null ? point.getY() : Double.NaN;
+	}
+
+	int cameraYawIndex()
+	{
+		return cameraAngleIndex(client.getCameraYaw());
+	}
+
+	int cameraPitchIndex()
+	{
+		return cameraAngleIndex(client.getCameraPitch());
+	}
+
+	private int cameraAngleIndex(int cameraAngle)
+	{
+		return Math.floorMod(
+			(int) Math.round((Math.floorMod(cameraAngle, BillboardAngleUtils.CAMERA_FULL_CIRCLE) * (double) Perspective.SINE.length) / BillboardAngleUtils.CAMERA_FULL_CIRCLE),
+			Perspective.SINE.length
+		);
 	}
 
 	private double cameraDistance(Actor actor, LocalPoint localPoint, double verticalOffset)

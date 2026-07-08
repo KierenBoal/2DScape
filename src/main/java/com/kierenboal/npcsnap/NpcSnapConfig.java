@@ -278,6 +278,17 @@ public interface NpcSnapConfig extends Config
 		return 33.0d;
 	}
 
+	@ConfigItem(
+		keyName = "billboardOcclusionQuality",
+		name = "Billboard occlusion",
+		description = "Hide billboard pixels behind terrain and scenery such as walls, hills, arches, and trees. Sampling is Low 16px, Medium 8px, High 4px, Ultra 2px, Max 1px.",
+		section = billboardSection
+	)
+	default BillboardOcclusionQuality billboardOcclusionQuality()
+	{
+		return BillboardOcclusionQuality.MEDIUM;
+	}
+
 	@Range(
 		min = 1,
 		max = 256
@@ -621,6 +632,28 @@ public interface NpcSnapConfig extends Config
 		section = debugSection
 	)
 	default boolean debugShowFrameRedraws()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugDrawBillboardOcclusionMask",
+		name = "Draw occlusion mask",
+		description = "Draw sampled world-geometry occlusion cells used to hide billboard pixels",
+		section = debugSection
+	)
+	default boolean debugDrawBillboardOcclusionMask()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "debugLogBillboardOcclusion",
+		name = "Debug Log Occlusion",
+		description = "Log throttled billboard occlusion collection stats for diagnosing missing or expensive world geometry masks",
+		section = debugSection
+	)
+	default boolean debugLogBillboardOcclusion()
 	{
 		return false;
 	}
