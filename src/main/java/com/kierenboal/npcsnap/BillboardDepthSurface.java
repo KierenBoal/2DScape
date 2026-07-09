@@ -89,6 +89,22 @@ final class BillboardDepthSurface
 		return point.depth;
 	}
 
+	double depthAtRow(int sourceY, int sourceHeight, int canvasY)
+	{
+		if (depthCalculator == null || sourceBounds == null || drawBounds == null || sourceHeight <= 0 || modelHeight <= 0 || !Double.isFinite(baseHeight))
+		{
+			return Double.NaN;
+		}
+
+		double verticalOffset = verticalOffsetForCanvasY(canvasY, sourceY, sourceHeight);
+		if (!Double.isFinite(verticalOffset))
+		{
+			return Double.NaN;
+		}
+
+		return depthCalculator.cameraForwardDepth(baseLocalX, baseLocalY, baseHeight + verticalOffset);
+	}
+
 	DebugPoint debugPointAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight, int canvasY)
 	{
 		if (depthCalculator == null || sourceBounds == null || drawBounds == null || sourceWidth <= 0 || sourceHeight <= 0 || modelHeight <= 0 || !Double.isFinite(baseHeight))

@@ -659,6 +659,17 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "debugPerformanceMetrics",
+		name = "Performance metrics",
+		description = "Draw sorted billboard frame timing metrics for diagnosing render bottlenecks",
+		section = debugSection
+	)
+	default boolean debugPerformanceMetrics()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "debugLogClassifications",
 		name = "Debug Log Classifications",
 		description = "Log NPC/Player/Object/Projectile classification decisions for debugging",

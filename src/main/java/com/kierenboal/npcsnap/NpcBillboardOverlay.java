@@ -5,7 +5,6 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.Rectangle;
-import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.ArrayDeque;
@@ -29,7 +28,6 @@ import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.DynamicObject;
 import net.runelite.api.GameState;
-import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
@@ -38,13 +36,9 @@ import net.runelite.api.Point;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
-import net.runelite.api.Scene;
-import net.runelite.api.SceneTileModel;
-import net.runelite.api.SceneTilePaint;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
-import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
@@ -57,8 +51,8 @@ class NpcBillboardOverlay extends Overlay
 {
 	private static final int BILLBOARD_FULL_CIRCLE = BillboardAngleUtils.BILLBOARD_FULL_CIRCLE;
 	private static final int OUTLINE_PADDING = 1;
-	private static final float TERRAIN_OCCLUSION_DEPTH_BIAS = BillboardConstants.LOCAL_TILE_SIZE * 2.0f;
-	private static final int DEBUG_OCCLUSION_SAMPLE_LIMIT = 8;
+	private static final int FALLBACK_MAX_DRAW_SIZE = 8192;
+	private static final double MIN_FORWARD_VISIBLE_DEPTH = 8.0d;
 	private static final int DEBUG_OCCLUSION_DEPTH_SAMPLE_LIMIT = 24;
 	private static final int DEBUG_OCCLUDED_PIXEL = new Color(255, 32, 32, 150).getRGB();
 	private final Client client;
@@ -66,9 +60,11 @@ class NpcBillboardOverlay extends Overlay
 	private final NpcSnapDebug debug;
 	private final AnimationFrameSnapper animationFrameSnapper;
 	private final BillboardDepthCalculator depthCalculator;
+	private final BillboardWorldOcclusionCollector worldOcclusionCollector;
 	private final BillboardOrientationCalculator orientationCalculator;
 	private final Map<Renderable, CachedBillboard> billboardCache = new IdentityHashMap<>();
 	private final BillboardTextureResolver textureResolver;
+	private final BillboardPerformanceMetrics performanceMetrics = new BillboardPerformanceMetrics();
 	private final GroundItemBillboardTracker groundItemTracker = new GroundItemBillboardTracker();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
@@ -89,35 +85,19 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask();
-	private final List<BillboardOcclusionMask.Occluder> worldOccluders = new ArrayList<>();
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<Renderable> suppressedRenderableSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
 	private float[] spriteXScratch = new float[0];
 	private float[] spriteYScratch = new float[0];
 	private float[] spriteDepthScratch = new float[0];
+	private boolean[] occlusionRowHasDepthScratch = new boolean[0];
+	private double[] occlusionRowDepthScratch = new double[0];
 	private BufferedImage frameCompositeImage;
 	private int[] frameCompositePixels = new int[0];
 	private char[] paintOrderBuffer = new char[0];
 	private int frameCompositeWidth;
 	private int frameCompositeHeight;
-	private Rectangle frameOcclusionInterestBounds;
-	private final List<Rectangle> frameOcclusionInterestRegions = new ArrayList<>();
-	private int debugOcclusionShapesAccepted;
-	private int debugOcclusionTerrainTilesConsidered;
-	private int debugOcclusionTerrainTilesAccepted;
-	private int debugOcclusionTerrainFacesAccepted;
-	private int debugOcclusionTriangleOccludersAccepted;
-	private int debugOcclusionFlatFallbackOccludersAccepted;
-	private int debugOcclusionSceneObjectsConsidered;
-	private int debugOcclusionSceneObjectsRejectedByFilter;
-	private int debugOcclusionSceneObjectsSkippedOutsideInterest;
-	private int debugOcclusionSceneObjectsWithoutParts;
-	private int debugOcclusionSceneObjectsAccepted;
-	private int debugOcclusionSceneObjectFacesAccepted;
-	private int debugOcclusionLastLoggedCycle = Integer.MIN_VALUE;
-	private final List<String> debugOcclusionAcceptedScenerySamples = new ArrayList<>();
-	private final List<String> debugOcclusionRejectedScenerySamples = new ArrayList<>();
 	private final List<String> debugOcclusionDepthSamples = new ArrayList<>();
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 	private Actor interactedActor;
@@ -135,6 +115,7 @@ class NpcBillboardOverlay extends Overlay
 		this.debug = debug;
 		this.animationFrameSnapper = animationFrameSnapper;
 		this.depthCalculator = new BillboardDepthCalculator(client);
+		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, performanceMetrics, log);
 		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
 		this.textureResolver = new BillboardTextureResolver(client, config);
 		this.classificationDebug = new BillboardClassificationDebug(client, config, log);
@@ -146,40 +127,74 @@ class NpcBillboardOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (client.getGameState() != GameState.LOGGED_IN)
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Render overlay"))
 		{
-			clearActiveState();
-			clearBillboardCache();
+			if (client.getGameState() != GameState.LOGGED_IN)
+			{
+				clearActiveState();
+				clearBillboardCache();
+				return null;
+			}
+
+			WorldView worldView = client.getTopLevelWorldView();
+			if (worldView == null)
+			{
+				clearActiveState();
+				clearBillboardCache();
+				return null;
+			}
+
+			if (!config.enable2dBillboardSprites())
+			{
+				clearActiveState();
+				clearBillboardCache();
+				return null;
+			}
+
+			List<BillboardTarget> visibleTargets;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Visible target lookup"))
+			{
+				visibleTargets = getVisibleTargets(worldView);
+			}
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Hover/interaction update"))
+			{
+				updateHoverInteractionState();
+				applyForcedHoverInteractionPlans(visibleTargets);
+			}
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Target sorting"))
+			{
+				visibleTargets = sortTargetsForRender(visibleTargets);
+			}
+			List<PreparedBillboardDraw> preparedDraws = new ArrayList<>();
+			for (int i = 0; i < visibleTargets.size(); i++)
+			{
+				renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
+			}
+			compositePreparedDraws(graphics, preparedDraws);
+
 			return null;
 		}
-
-		WorldView worldView = client.getTopLevelWorldView();
-		if (worldView == null)
+		finally
 		{
-			clearActiveState();
-			clearBillboardCache();
-			return null;
+			performanceMetrics.finishFrame();
+			drawPerformanceMetrics(graphics);
+		}
+	}
+
+	private void drawPerformanceMetrics(Graphics2D graphics)
+	{
+		if (!performanceMetrics.isEnabled() || graphics == null)
+		{
+			return;
 		}
 
-		if (!config.enable2dBillboardSprites())
+		Rectangle viewport = getViewportBounds();
+		if (viewport.width <= 0 || viewport.height <= 0)
 		{
-			clearActiveState();
-			clearBillboardCache();
-			return null;
+			return;
 		}
 
-		List<BillboardTarget> visibleTargets = getVisibleTargets(worldView);
-		updateHoverInteractionState();
-		applyForcedHoverInteractionPlans(visibleTargets);
-		visibleTargets = sortTargetsForRender(visibleTargets);
-		List<PreparedBillboardDraw> preparedDraws = new ArrayList<>();
-		for (int i = 0; i < visibleTargets.size(); i++)
-		{
-			renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
-		}
-		compositePreparedDraws(graphics, preparedDraws);
-
-		return null;
+		debug.drawPerformanceMetrics(graphics, viewport, performanceMetrics.rows(20));
 	}
 
 	void trackGroundItem(TileItem item, Tile tile)
@@ -218,8 +233,7 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		activeRenderableTargets.clear();
-		frameOcclusionInterestBounds = null;
-		frameOcclusionInterestRegions.clear();
+		worldOcclusionCollector.clearInterest();
 		clearInteractionState();
 		clearActiveSelections();
 		clearRenderQueue();
@@ -319,69 +333,32 @@ class NpcBillboardOverlay extends Overlay
 
 	void beginFrame()
 	{
-		expireCaches(System.currentTimeMillis());
-		worldOccluders.clear();
-		frameOcclusionInterestBounds = null;
-		frameOcclusionInterestRegions.clear();
-		clearDebugOcclusionStats();
-		sceneRenderablesLastFrame.clear();
-		sceneRenderablesLastFrame.addAll(sceneRenderablesThisFrame);
-		sceneRenderablesThisFrame.clear();
-		synchronized (observedTileObjectsLock)
+		performanceMetrics.beginFrame(config.debugPerformanceMetrics());
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Begin frame"))
 		{
-			visibleTileObjects.clear();
-			visibleTileObjects.putAll(observedTileObjects);
-			observedTileObjects.clear();
-		}
-		clearActiveSelections();
-		activeBillboardsGameCycle = Integer.MIN_VALUE;
-	}
-
-	private boolean addSceneryShapeFallbackOccluder(
-		TileObject tileObject,
-		ObservedTileObject observed,
-		double fallbackDepth,
-		BillboardOcclusionQuality quality)
-	{
-		if (tileObject instanceof GameObject)
-		{
-			return addWorldOccluder(((GameObject) tileObject).getConvexHull(), partDepth(observed, 0, fallbackDepth, quality));
-		}
-
-		if (tileObject instanceof WallObject)
-		{
-			WallObject wallObject = (WallObject) tileObject;
-			boolean addedFirst = addWorldOccluder(wallObject.getConvexHull(), partDepth(observed, 0, fallbackDepth, quality));
-			boolean addedSecond = addWorldOccluder(wallObject.getConvexHull2(), partDepth(observed, 1, fallbackDepth, quality));
-			if (!addedFirst || !addedSecond)
+			expireCaches(System.currentTimeMillis());
+			worldOcclusionCollector.resetFrame();
+			debugOcclusionDepthSamples.clear();
+			sceneRenderablesLastFrame.clear();
+			sceneRenderablesLastFrame.addAll(sceneRenderablesThisFrame);
+			sceneRenderablesThisFrame.clear();
+			synchronized (observedTileObjectsLock)
 			{
-				return addWorldOccluder(tileObject.getClickbox(), fallbackDepth) || addedFirst || addedSecond;
+				visibleTileObjects.clear();
+				visibleTileObjects.putAll(observedTileObjects);
+				observedTileObjects.clear();
 			}
-			return true;
+			clearActiveSelections();
+			activeBillboardsGameCycle = Integer.MIN_VALUE;
 		}
-
-		return false;
-	}
-
-	private double partDepth(ObservedTileObject observed, int partIndex, double fallbackDepth, BillboardOcclusionQuality quality)
-	{
-		if (observed == null || partIndex < 0 || partIndex >= observed.parts.size())
-		{
-			return fallbackDepth;
-		}
-
-		double depth = nearestModelVertexDepth(observed.parts.get(partIndex), quality.vertexStride());
-		if (!Double.isFinite(depth))
-		{
-			return fallbackDepth;
-		}
-
-		return depth;
 	}
 
 	void prepareFrame(WorldView worldView)
 	{
-		ensureActiveBillboardsCurrent(worldView);
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Prepare frame"))
+		{
+			ensureActiveBillboardsCurrent(worldView);
+		}
 	}
 
 	void noteActorInteraction(Actor actor, int tickCount)
@@ -433,6 +410,11 @@ class NpcBillboardOverlay extends Overlay
 		return renderable != null && sceneRenderablesLastFrame.contains(renderable);
 	}
 
+	private boolean wasSceneRenderableDrawnThisFrame(Renderable renderable)
+	{
+		return renderable != null && sceneRenderablesThisFrame.contains(renderable);
+	}
+
 	void observeTileObject(TileObject tileObject)
 	{
 		ObservedTileObject observed = buildObservedTileObject(tileObject);
@@ -482,27 +464,34 @@ class NpcBillboardOverlay extends Overlay
 
 	private void renderTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
 	{
-		if (target.type == BillboardTargetType.TILE_OBJECT)
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Per-target billboard render"))
 		{
-			renderTileObjectTarget(target, paintOrder, preparedDraws);
-			return;
-		}
+			if (target.type == BillboardTargetType.TILE_OBJECT)
+			{
+				renderTileObjectTarget(target, paintOrder, preparedDraws);
+				return;
+			}
 
-		BillboardRenderRequest request = buildRenderRequest(target);
-		if (request == null)
-		{
-			return;
-		}
+			BillboardRenderRequest request;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Build render request"))
+			{
+				request = buildRenderRequest(target);
+			}
+			if (request == null)
+			{
+				return;
+			}
 
-		int queuePosition = debugQueuePositions.getOrDefault(target.targetKey, -1);
-		BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), queuePosition);
-		if (result == null)
-		{
-			return;
-		}
+			int queuePosition = debugQueuePositions.getOrDefault(target.targetKey, -1);
+			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), queuePosition);
+			if (result == null)
+			{
+				return;
+			}
 
-		isReadyToRedrawDebug(target);
-		preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
+			isReadyToRedrawDebug(target);
+			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
+		}
 	}
 
 	private void renderTileObjectTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
@@ -514,7 +503,11 @@ class NpcBillboardOverlay extends Overlay
 
 		for (ObjectRenderablePart part : target.observedTileObject.parts)
 		{
-			BillboardRenderRequest request = buildRenderRequest(target, part);
+			BillboardRenderRequest request;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Build render request"))
+			{
+				request = buildRenderRequest(target, part);
+			}
 			if (request == null)
 			{
 				continue;
@@ -669,41 +662,64 @@ class NpcBillboardOverlay extends Overlay
 
 	private void compositePreparedDraws(Graphics2D graphics, List<PreparedBillboardDraw> preparedDraws)
 	{
-		if (preparedDraws.isEmpty())
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Composite prepared draws"))
 		{
-			return;
-		}
+			if (preparedDraws.isEmpty())
+			{
+				return;
+			}
 
-		int viewportX = client.getViewportXOffset();
-		int viewportY = client.getViewportYOffset();
-		int viewportWidth = client.getViewportWidth();
-		int viewportHeight = client.getViewportHeight();
-		if (viewportWidth <= 0 || viewportHeight <= 0)
-		{
-			return;
-		}
+			int viewportX = client.getViewportXOffset();
+			int viewportY = client.getViewportYOffset();
+			int viewportWidth = client.getViewportWidth();
+			int viewportHeight = client.getViewportHeight();
+			if (viewportWidth <= 0 || viewportHeight <= 0)
+			{
+				return;
+			}
 
-		ensureFrameCompositeCapacity(viewportWidth, viewportHeight);
-		Arrays.fill(frameCompositePixels, 0, viewportWidth * viewportHeight, 0);
-		Arrays.fill(paintOrderBuffer, 0, viewportWidth * viewportHeight, (char) 0);
-		List<Rectangle> occlusionRegions = occlusionInterestRegions(preparedDraws, viewportX, viewportY, viewportWidth, viewportHeight);
-		Rectangle occlusionBounds = unionBounds(occlusionRegions);
-		occlusionMask.prepare(worldOccluders, config.billboardOcclusionQuality(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
-		collectDebugOcclusionDepthSamples(preparedDraws);
-		logDebugOcclusionStats(occlusionBounds);
-		for (int i = preparedDraws.size() - 1; i >= 0; i--)
-		{
-			blitPreparedDraw(preparedDraws.get(i), viewportX, viewportY, viewportWidth, viewportHeight);
-		}
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Clear frame buffers"))
+			{
+				ensureFrameCompositeCapacity(viewportWidth, viewportHeight);
+				Arrays.fill(frameCompositePixels, 0, viewportWidth * viewportHeight, 0);
+				Arrays.fill(paintOrderBuffer, 0, viewportWidth * viewportHeight, (char) 0);
+			}
+			List<Rectangle> occlusionRegions;
+			Rectangle occlusionBounds;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Build occlusion regions"))
+			{
+				occlusionRegions = occlusionInterestRegions(preparedDraws, viewportX, viewportY, viewportWidth, viewportHeight);
+				occlusionBounds = unionBounds(occlusionRegions);
+			}
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Prepare occlusion mask"))
+			{
+				occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
+			}
+			collectDebugOcclusionDepthSamples(preparedDraws);
+			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionBounds, debugOcclusionDepthSamples);
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Per-pixel billboard compositing"))
+			{
+				for (int i = preparedDraws.size() - 1; i >= 0; i--)
+				{
+					blitPreparedDraw(preparedDraws.get(i), viewportX, viewportY, viewportWidth, viewportHeight);
+				}
+			}
 
-		graphics.drawImage(frameCompositeImage, viewportX, viewportY, null);
-		if (config.debugDrawBillboardOcclusionMask())
-		{
-			occlusionMask.drawDebug(graphics);
-		}
-		for (PreparedBillboardDraw draw : preparedDraws)
-		{
-			drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Draw composite image"))
+			{
+				graphics.drawImage(frameCompositeImage, viewportX, viewportY, null);
+			}
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Debug overlay drawing"))
+			{
+				if (config.debugDrawBillboardOcclusionMask())
+				{
+					occlusionMask.drawDebug(graphics);
+				}
+				for (PreparedBillboardDraw draw : preparedDraws)
+				{
+					drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
+				}
+			}
 		}
 	}
 
@@ -780,25 +796,6 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return union;
-	}
-
-	private void clearDebugOcclusionStats()
-	{
-		debugOcclusionShapesAccepted = 0;
-		debugOcclusionTerrainTilesConsidered = 0;
-		debugOcclusionTerrainTilesAccepted = 0;
-		debugOcclusionTerrainFacesAccepted = 0;
-		debugOcclusionTriangleOccludersAccepted = 0;
-		debugOcclusionFlatFallbackOccludersAccepted = 0;
-		debugOcclusionSceneObjectsConsidered = 0;
-		debugOcclusionSceneObjectsRejectedByFilter = 0;
-		debugOcclusionSceneObjectsSkippedOutsideInterest = 0;
-		debugOcclusionSceneObjectsWithoutParts = 0;
-		debugOcclusionSceneObjectsAccepted = 0;
-		debugOcclusionSceneObjectFacesAccepted = 0;
-		debugOcclusionAcceptedScenerySamples.clear();
-		debugOcclusionRejectedScenerySamples.clear();
-		debugOcclusionDepthSamples.clear();
 	}
 
 	private void collectDebugOcclusionDepthSamples(List<PreparedBillboardDraw> preparedDraws)
@@ -913,52 +910,6 @@ class NpcBillboardOverlay extends Overlay
 		return Double.isFinite(value) ? String.format(Locale.ROOT, "%.2f", value) : "NaN";
 	}
 
-	private void logDebugOcclusionStats(Rectangle occlusionBounds)
-	{
-		if (!config.debugLogBillboardOcclusion())
-		{
-			return;
-		}
-
-		int gameCycle = client.getGameCycle();
-		if (debugOcclusionLastLoggedCycle != Integer.MIN_VALUE && gameCycle - debugOcclusionLastLoggedCycle < 30)
-		{
-			return;
-		}
-
-		debugOcclusionLastLoggedCycle = gameCycle;
-		log.debug(
-			"Billboard occlusion quality={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryOutsideInterest={} sceneryWithoutParts={} sceneryFaces={} terrainTiles={} terrainTilesAccepted={} terrainFaces={} shapes={} triangleOccluders={} flatFallbackOccluders={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
-			BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()),
-			client.getCameraYaw(),
-			client.getCameraPitch(),
-			depthCalculator.cameraYawIndex(),
-			depthCalculator.cameraPitchIndex(),
-			client.getCameraFpX(),
-			client.getCameraFpY(),
-			client.getCameraFpZ(),
-			debugOcclusionSceneObjectsConsidered,
-			debugOcclusionSceneObjectsAccepted,
-			debugOcclusionSceneObjectsRejectedByFilter,
-			debugOcclusionSceneObjectsSkippedOutsideInterest,
-			debugOcclusionSceneObjectsWithoutParts,
-			debugOcclusionSceneObjectFacesAccepted,
-			debugOcclusionTerrainTilesConsidered,
-			debugOcclusionTerrainTilesAccepted,
-			debugOcclusionTerrainFacesAccepted,
-			debugOcclusionShapesAccepted,
-			debugOcclusionTriangleOccludersAccepted,
-			debugOcclusionFlatFallbackOccludersAccepted,
-			occlusionMask.coveredCellCount(),
-			frameOcclusionInterestRegions.size(),
-			debugOcclusionAcceptedScenerySamples,
-			debugOcclusionRejectedScenerySamples,
-			frameOcclusionInterestBounds,
-			occlusionBounds,
-			debugOcclusionDepthSamples
-		);
-	}
-
 	private void blitPreparedDraw(PreparedBillboardDraw draw, int viewportX, int viewportY, int viewportWidth, int viewportHeight)
 	{
 		if (draw == null || draw.image == null || draw.bounds == null || draw.bounds.width <= 0 || draw.bounds.height <= 0)
@@ -983,24 +934,45 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
+		int drawWidth = draw.bounds.width;
+		int drawHeight = draw.bounds.height;
 		int paintOrder = draw.paintOrder;
-		BillboardDepthSurface billboardDepth = billboardDepthSurface(draw);
+		boolean hasActiveOcclusion = occlusionMask.coveredCellCount() > 0;
+		BillboardDepthSurface billboardDepth = hasActiveOcclusion ? billboardDepthSurface(draw) : null;
+		int clippedHeight = clipBottom - clipTop;
+		if (hasActiveOcclusion)
+		{
+			ensureOcclusionRowScratchCapacity(clippedHeight);
+			Arrays.fill(occlusionRowHasDepthScratch, 0, clippedHeight, false);
+		}
+
+		long occlusionElapsedNanos = 0L;
+		boolean measureOcclusion = performanceMetrics.isEnabled() && hasActiveOcclusion;
+		int occlusionSampleStep = hasActiveOcclusion ? occlusionMask.sampleStep() : 0;
 		for (int y = clipTop; y < clipBottom; y++)
 		{
 			int destY = y - viewportY;
-			int sourceY = ((y - draw.bounds.y) * sourceHeight) / draw.bounds.height;
+			int sourceY = (int) (((long) (y - draw.bounds.y) * sourceHeight) / drawHeight);
 			int destRow = destY * viewportWidth;
 			int sourceRow = sourceY * sourceWidth;
+			long sourceXNumerator = (long) (clipLeft - draw.bounds.x) * sourceWidth;
+			int clippedRow = y - clipTop;
+			boolean rowHasOcclusionCoverage = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
+			long rowOcclusionStart = measureOcclusion && rowHasOcclusionCoverage ? System.nanoTime() : 0L;
+			boolean cachedSampleOccluded = false;
+			int cachedSampleX = Integer.MIN_VALUE;
 			for (int x = clipLeft; x < clipRight; x++)
 			{
 				int destX = x - viewportX;
 				int destIndex = destRow + destX;
 				if (paintOrderBuffer[destIndex] > paintOrder)
 				{
+					sourceXNumerator += sourceWidth;
 					continue;
 				}
 
-				int sourceX = ((x - draw.bounds.x) * sourceWidth) / draw.bounds.width;
+				int sourceX = (int) (sourceXNumerator / drawWidth);
+				sourceXNumerator += sourceWidth;
 				int sourcePixel = sourcePixels[sourceRow + sourceX];
 				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
 				if (sourceAlpha == 0)
@@ -1008,23 +980,68 @@ class NpcBillboardOverlay extends Overlay
 					continue;
 				}
 
-				double pixelBillboardDepth = billboardDepth.depthAt(sourceX, sourceY, sourceWidth, sourceHeight, y);
-				if (occlusionMask.isOccluded(x, y, pixelBillboardDepth))
+				if (rowHasOcclusionCoverage)
 				{
-					if (config.debugDrawBillboardOcclusionMask())
+					if (!occlusionRowHasDepthScratch[clippedRow])
 					{
-						frameCompositePixels[destIndex] = BillboardTriangleRasterizer.blendPixel(frameCompositePixels[destIndex], DEBUG_OCCLUDED_PIXEL);
+						occlusionRowDepthScratch[clippedRow] = billboardDepth.depthAtRow(sourceY, sourceHeight, y);
+						occlusionRowHasDepthScratch[clippedRow] = true;
 					}
-					continue;
+
+					double pixelBillboardDepth = occlusionRowDepthScratch[clippedRow];
+					boolean occluded;
+					if (occlusionSampleStep > 1)
+					{
+						int sampleX = occlusionMask.sampleX(x);
+						if (sampleX != cachedSampleX)
+						{
+							cachedSampleX = sampleX;
+							cachedSampleOccluded = occlusionMask.isOccludedSample(sampleX, y, pixelBillboardDepth);
+						}
+						occluded = cachedSampleOccluded;
+					}
+					else
+					{
+						occluded = occlusionMask.isOccluded(x, y, pixelBillboardDepth);
+					}
+					if (occluded)
+					{
+						if (config.debugDrawBillboardOcclusionMask())
+						{
+							frameCompositePixels[destIndex] = BillboardTriangleRasterizer.blendPixel(frameCompositePixels[destIndex], DEBUG_OCCLUDED_PIXEL);
+						}
+						continue;
+					}
 				}
 
-				frameCompositePixels[destIndex] = BillboardTriangleRasterizer.blendPixel(frameCompositePixels[destIndex], sourcePixel);
+				frameCompositePixels[destIndex] = sourceAlpha == 0xFF
+					? sourcePixel
+					: BillboardTriangleRasterizer.blendPixel(frameCompositePixels[destIndex], sourcePixel);
 				if (sourceAlpha == 0xFF)
 				{
 					paintOrderBuffer[destIndex] = (char) paintOrder;
 				}
 			}
+			if (rowOcclusionStart > 0L)
+			{
+				occlusionElapsedNanos += System.nanoTime() - rowOcclusionStart;
+			}
 		}
+		if (occlusionElapsedNanos > 0L)
+		{
+			performanceMetrics.addElapsed("Per-pixel occlusion checks", occlusionElapsedNanos);
+		}
+	}
+
+	private void ensureOcclusionRowScratchCapacity(int height)
+	{
+		if (occlusionRowHasDepthScratch.length >= height)
+		{
+			return;
+		}
+
+		occlusionRowHasDepthScratch = new boolean[height];
+		occlusionRowDepthScratch = new double[height];
 	}
 
 	private BillboardDepthSurface billboardDepthSurface(PreparedBillboardDraw draw)
@@ -1208,15 +1225,22 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		CollectedCandidates collected = collectCandidates(worldView);
-		List<BillboardTarget> candidates = collected.candidates;
-		candidates.sort(Comparator
-			.comparingInt(this::candidateSelectionPriority).reversed()
-			.thenComparingDouble(BillboardTarget::getDepth));
-		int limit = Math.max(1, config.billboardMaxEntities());
-		if (candidates.size() > limit)
+		CollectedCandidates collected;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Collect candidates"))
 		{
-			candidates = new ArrayList<>(candidates.subList(0, limit));
+			collected = collectCandidates(worldView);
+		}
+		List<BillboardTarget> candidates = collected.candidates;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Sort/select targets"))
+		{
+			candidates.sort(Comparator
+				.comparingInt(this::candidateSelectionPriority).reversed()
+				.thenComparingDouble(BillboardTarget::getDepth));
+			int limit = Math.max(1, config.billboardMaxEntities());
+			if (candidates.size() > limit)
+			{
+				candidates = new ArrayList<>(candidates.subList(0, limit));
+			}
 		}
 
 		for (BillboardTarget target : candidates)
@@ -1237,19 +1261,28 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		BillboardOcclusionQuality occlusionQuality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
-		List<TerrainTraceTarget> occlusionTraceTargets = occlusionQuality == BillboardOcclusionQuality.OFF
-			? Collections.emptyList()
-			: buildOcclusionTraceTargets(candidates);
-		collectTerrainOccluders(worldView, occlusionTraceTargets, occlusionQuality);
-		markSuppressedStackedActors(collected);
-		scheduleFrameUpdates(sortTargetsForRender(new ArrayList<>(candidates)), gameCycle);
+		List<BillboardWorldOcclusionCollector.TraceTarget> occlusionTraceTargets;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Build occlusion trace targets"))
+		{
+			occlusionTraceTargets = occlusionQuality == BillboardOcclusionQuality.OFF
+				? Collections.emptyList()
+				: buildOcclusionTraceTargets(candidates);
+		}
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Gather world occluders"))
+		{
+			worldOcclusionCollector.collectTerrainOccluders(worldView, occlusionTraceTargets, occlusionQuality);
+		}
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Schedule frame updates"))
+		{
+			markSuppressedStackedActors(collected);
+			scheduleFrameUpdates(sortTargetsForRender(new ArrayList<>(candidates)), gameCycle);
+		}
 		updateActiveSnapshots();
 	}
 
-	private List<TerrainTraceTarget> buildOcclusionTraceTargets(List<BillboardTarget> targets)
+	private List<BillboardWorldOcclusionCollector.TraceTarget> buildOcclusionTraceTargets(List<BillboardTarget> targets)
 	{
-		frameOcclusionInterestBounds = null;
-		frameOcclusionInterestRegions.clear();
+		worldOcclusionCollector.clearInterest();
 		if (targets == null || targets.isEmpty())
 		{
 			return Collections.emptyList();
@@ -1265,20 +1298,20 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
-		List<TerrainTraceTarget> traceTargets = new ArrayList<>(targets.size());
+		List<BillboardWorldOcclusionCollector.TraceTarget> traceTargets = new ArrayList<>(targets.size());
 		for (BillboardTarget target : targets)
 		{
-			TerrainTraceTarget traceTarget = addOcclusionTraceTarget(target, viewportBounds);
+			BillboardWorldOcclusionCollector.TraceTarget traceTarget = addOcclusionTraceTarget(target, viewportBounds);
 			if (traceTarget != null)
 			{
 				traceTargets.add(traceTarget);
 			}
 		}
 
-		return frameOcclusionInterestBounds != null ? traceTargets : Collections.emptyList();
+		return worldOcclusionCollector.interestBounds() != null ? traceTargets : Collections.emptyList();
 	}
 
-	private TerrainTraceTarget addOcclusionTraceTarget(BillboardTarget target, Rectangle viewportBounds)
+	private BillboardWorldOcclusionCollector.TraceTarget addOcclusionTraceTarget(BillboardTarget target, Rectangle viewportBounds)
 	{
 		if (target == null)
 		{
@@ -1291,600 +1324,31 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		BillboardRenderRequest request = buildRenderRequest(target);
-		addOcclusionInterest(buildSortPreviewBounds(request), viewportBounds);
+		worldOcclusionCollector.addInterest(buildSortPreviewBounds(request), viewportBounds);
 		return request != null && request.localPoint != null
-			? new TerrainTraceTarget(request.localPoint, request.plane)
+			? new BillboardWorldOcclusionCollector.TraceTarget(request.localPoint, request.plane)
 			: null;
 	}
 
-	private TerrainTraceTarget addTileObjectOcclusionTraceTarget(BillboardTarget target, Rectangle viewportBounds)
+	private BillboardWorldOcclusionCollector.TraceTarget addTileObjectOcclusionTraceTarget(BillboardTarget target, Rectangle viewportBounds)
 	{
 		if (target == null || target.observedTileObject == null)
 		{
 			return null;
 		}
 
-		TerrainTraceTarget traceTarget = null;
+		BillboardWorldOcclusionCollector.TraceTarget traceTarget = null;
 		for (ObjectRenderablePart part : target.observedTileObject.parts)
 		{
 			BillboardRenderRequest request = buildRenderRequest(target, part);
-			addOcclusionInterest(buildSortPreviewBounds(request), viewportBounds);
+			worldOcclusionCollector.addInterest(buildSortPreviewBounds(request), viewportBounds);
 			if (traceTarget == null && request != null && request.localPoint != null)
 			{
-				traceTarget = new TerrainTraceTarget(request.localPoint, request.plane);
+				traceTarget = new BillboardWorldOcclusionCollector.TraceTarget(request.localPoint, request.plane);
 			}
 		}
 
 		return traceTarget;
-	}
-
-	private void addOcclusionInterest(Rectangle previewBounds, Rectangle viewportBounds)
-	{
-		if (previewBounds == null || viewportBounds == null)
-		{
-			return;
-		}
-
-		Rectangle clipped = viewportBounds.intersection(expandedOcclusionInterest(previewBounds, occlusionInterestMargin()));
-		if (!clipped.isEmpty())
-		{
-			frameOcclusionInterestRegions.add(clipped);
-			frameOcclusionInterestBounds = frameOcclusionInterestBounds == null
-				? clipped
-				: frameOcclusionInterestBounds.union(clipped);
-		}
-	}
-
-	private void collectTerrainOccluders(WorldView worldView, List<TerrainTraceTarget> traceTargets, BillboardOcclusionQuality quality)
-	{
-		if (quality == BillboardOcclusionQuality.OFF || frameOcclusionInterestBounds == null || worldView == null || traceTargets == null || traceTargets.isEmpty())
-		{
-			return;
-		}
-
-		Scene scene = worldView.getScene();
-		Tile[][][] tiles = scene != null ? scene.getTiles() : null;
-		if (tiles == null)
-		{
-			return;
-		}
-
-		Set<Long> visitedTiles = new HashSet<>();
-		Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
-		for (TerrainTraceTarget traceTarget : traceTargets)
-		{
-			if (traceTarget == null || !isPlaneEligible(traceTarget.plane))
-			{
-				continue;
-			}
-
-			collectTerrainCorridorOccluders(tiles, traceTarget, quality, visitedTiles, visitedObjects);
-		}
-	}
-
-	private void collectTerrainCorridorOccluders(
-		Tile[][][] tiles,
-		TerrainTraceTarget target,
-		BillboardOcclusionQuality quality,
-		Set<Long> visitedTiles,
-		Set<TileObject> visitedObjects)
-	{
-		int tileSize = BillboardConstants.LOCAL_TILE_SIZE;
-		int cameraX = Math.round(client.getCameraFpX());
-		int cameraY = Math.round(client.getCameraFpY());
-		int targetX = target.localPoint.getX();
-		int targetY = target.localPoint.getY();
-		int dx = targetX - cameraX;
-		int dy = targetY - cameraY;
-		int steps = Math.max(Math.abs(dx), Math.abs(dy)) / tileSize;
-		if (steps <= 0)
-		{
-			steps = 1;
-		}
-
-		int radiusTiles = terrainCorridorRadiusTiles(quality);
-		for (int step = 0; step <= steps; step++)
-		{
-			int x = cameraX + (int) Math.round((double) dx * step / steps);
-			int y = cameraY + (int) Math.round((double) dy * step / steps);
-			int centerTileX = Math.floorDiv(x, tileSize);
-			int centerTileY = Math.floorDiv(y, tileSize);
-			for (int offsetX = -radiusTiles; offsetX <= radiusTiles; offsetX++)
-			{
-				for (int offsetY = -radiusTiles; offsetY <= radiusTiles; offsetY++)
-				{
-					collectTerrainTileOccluder(tiles, target.plane, centerTileX + offsetX, centerTileY + offsetY, quality, visitedTiles, visitedObjects);
-				}
-			}
-		}
-	}
-
-	private int terrainCorridorRadiusTiles(BillboardOcclusionQuality quality)
-	{
-		switch (quality)
-		{
-			case MAX:
-				return 10;
-			case ULTRA:
-				return 8;
-			case HIGH:
-				return 6;
-			case MEDIUM:
-				return 4;
-			case LOW:
-			default:
-				return 2;
-		}
-	}
-
-	private void collectTerrainTileOccluder(
-		Tile[][][] tiles,
-		int plane,
-		int tileX,
-		int tileY,
-		BillboardOcclusionQuality quality,
-		Set<Long> visitedTiles,
-		Set<TileObject> visitedObjects)
-	{
-		if (plane < 0 || plane >= tiles.length || tiles[plane] == null || tileX < 0 || tileX >= tiles[plane].length)
-		{
-			return;
-		}
-
-		Tile[] row = tiles[plane][tileX];
-		if (row == null || tileY < 0 || tileY >= row.length)
-		{
-			return;
-		}
-
-		long key = terrainTileKey(plane, tileX, tileY);
-		if (!visitedTiles.add(key))
-		{
-			return;
-		}
-
-		collectTerrainTileOccluder(row[tileY], quality, visitedObjects);
-	}
-
-	private long terrainTileKey(int plane, int tileX, int tileY)
-	{
-		return ((long) plane << 48) ^ ((long) (tileX & 0xFFFFFF) << 24) ^ (tileY & 0xFFFFFFL);
-	}
-
-	private void collectTerrainTileOccluder(Tile tile, BillboardOcclusionQuality quality, Set<TileObject> visitedObjects)
-	{
-		if (tile == null || !isPlaneEligible(tile.getPlane()))
-		{
-			return;
-		}
-
-		LocalPoint localPoint = tile.getLocalLocation();
-		if (localPoint == null)
-		{
-			return;
-		}
-
-		debugOcclusionTerrainTilesConsidered++;
-		SceneTileModel model = tile.getSceneTileModel();
-		int acceptedFacesBefore = debugOcclusionTerrainFacesAccepted;
-		if (model != null)
-		{
-			collectTerrainModelOccluders(model, tile.getPlane());
-			if (debugOcclusionTerrainFacesAccepted > acceptedFacesBefore)
-			{
-				debugOcclusionTerrainTilesAccepted++;
-			}
-		}
-		else
-		{
-			SceneTilePaint paint = tile.getSceneTilePaint();
-			if (paint != null)
-			{
-				collectTerrainPaintOccluder(localPoint, tile.getPlane());
-				if (debugOcclusionTerrainFacesAccepted > acceptedFacesBefore)
-				{
-					debugOcclusionTerrainTilesAccepted++;
-				}
-			}
-		}
-
-		collectSceneTileObjectOccluders(tile, quality, visitedObjects);
-	}
-
-	private void collectSceneTileObjectOccluders(Tile tile, BillboardOcclusionQuality quality, Set<TileObject> visitedObjects)
-	{
-		if (tile == null)
-		{
-			return;
-		}
-
-		collectSceneTileObjectOccluder(tile.getWallObject(), quality, visitedObjects);
-		GameObject[] gameObjects = tile.getGameObjects();
-		if (gameObjects == null)
-		{
-			return;
-		}
-
-		for (GameObject gameObject : gameObjects)
-		{
-			collectSceneTileObjectOccluder(gameObject, quality, visitedObjects);
-		}
-	}
-
-	private void collectSceneTileObjectOccluder(TileObject tileObject, BillboardOcclusionQuality quality, Set<TileObject> visitedObjects)
-	{
-		if (tileObject == null || !isPlaneEligible(tileObject.getPlane()) || !visitedObjects.add(tileObject))
-		{
-			return;
-		}
-
-		debugOcclusionSceneObjectsConsidered++;
-		if (!BillboardSceneryOcclusionFilter.isOccluder(tileObject))
-		{
-			debugOcclusionSceneObjectsRejectedByFilter++;
-			addDebugOcclusionScenerySample(debugOcclusionRejectedScenerySamples, tileObject);
-			return;
-		}
-
-		if (!sceneryIntersectsOcclusionInterest(tileObject))
-		{
-			debugOcclusionSceneObjectsSkippedOutsideInterest++;
-			return;
-		}
-
-		ObservedTileObject observed = ObservedTileObjectBuilder.build(tileObject);
-		if (observed == null || observed.parts.isEmpty())
-		{
-			debugOcclusionSceneObjectsWithoutParts++;
-			return;
-		}
-
-		int acceptedFacesBefore = debugOcclusionSceneObjectFacesAccepted;
-		for (ObjectRenderablePart part : observed.parts)
-		{
-			collectSceneObjectPartOccluders(part, quality);
-		}
-
-		boolean acceptedModelFaces = debugOcclusionSceneObjectFacesAccepted > acceptedFacesBefore;
-		boolean acceptedFallback = !acceptedModelFaces && collectSceneObjectFallbackOccluder(tileObject, observed, quality);
-		if (acceptedModelFaces || acceptedFallback)
-		{
-			debugOcclusionSceneObjectsAccepted++;
-			addDebugOcclusionScenerySample(debugOcclusionAcceptedScenerySamples, tileObject);
-		}
-	}
-
-	private void addDebugOcclusionScenerySample(List<String> samples, TileObject tileObject)
-	{
-		if (!config.debugLogBillboardOcclusion() || samples == null || samples.size() >= DEBUG_OCCLUSION_SAMPLE_LIMIT || tileObject == null)
-		{
-			return;
-		}
-
-		samples.add(tileObject.getId() + ":" + debugObjectName(tileObject));
-	}
-
-	private String debugObjectName(TileObject tileObject)
-	{
-		if (tileObject == null || !client.isClientThread())
-		{
-			return "-";
-		}
-
-		net.runelite.api.ObjectComposition objectDefinition = client.getObjectDefinition(tileObject.getId());
-		if (objectDefinition == null)
-		{
-			return "-";
-		}
-
-		String name = objectDefinition.getName();
-		return name != null && !name.trim().isEmpty() ? name : "-";
-	}
-
-	private boolean collectSceneObjectFallbackOccluder(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
-	{
-		double fallbackDepth = tileObjectDepth(tileObject, observed, quality);
-		if (!Double.isFinite(fallbackDepth))
-		{
-			return false;
-		}
-
-		if (addSceneryShapeFallbackOccluder(tileObject, observed, fallbackDepth, quality))
-		{
-			return true;
-		}
-
-		return addWorldOccluder(tileObject.getClickbox(), fallbackDepth);
-	}
-
-	private boolean sceneryIntersectsOcclusionInterest(TileObject tileObject)
-	{
-		if (tileObject instanceof WallObject)
-		{
-			WallObject wallObject = (WallObject) tileObject;
-			return intersectsOcclusionInterest(wallObject.getConvexHull())
-				|| intersectsOcclusionInterest(wallObject.getConvexHull2())
-				|| intersectsOcclusionInterest(tileObject.getClickbox());
-		}
-
-		if (tileObject instanceof GameObject)
-		{
-			return intersectsOcclusionInterest(((GameObject) tileObject).getConvexHull())
-				|| intersectsOcclusionInterest(tileObject.getClickbox());
-		}
-
-		return false;
-	}
-
-	private boolean intersectsOcclusionInterest(Shape shape)
-	{
-		return shape != null && intersectsOcclusionInterest(shape.getBounds());
-	}
-
-	private boolean intersectsOcclusionInterest(Rectangle bounds)
-	{
-		if (bounds == null || bounds.isEmpty())
-		{
-			return false;
-		}
-
-		if (frameOcclusionInterestRegions.isEmpty())
-		{
-			return frameOcclusionInterestBounds != null && bounds.intersects(frameOcclusionInterestBounds);
-		}
-
-		for (Rectangle region : frameOcclusionInterestRegions)
-		{
-			if (region != null && bounds.intersects(region))
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private void collectSceneObjectPartOccluders(ObjectRenderablePart part, BillboardOcclusionQuality quality)
-	{
-		if (part == null || part.renderable == null || part.localPoint == null)
-		{
-			return;
-		}
-
-		Model model = part.renderable.getModel();
-		if (model == null || model.getVerticesCount() <= 0 || model.getFaceCount() <= 0)
-		{
-			return;
-		}
-
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
-		int[] faceIndices1 = model.getFaceIndices1();
-		int[] faceIndices2 = model.getFaceIndices2();
-		int[] faceIndices3 = model.getFaceIndices3();
-		if (verticesX == null || verticesY == null || verticesZ == null || faceIndices1 == null || faceIndices2 == null || faceIndices3 == null)
-		{
-			return;
-		}
-
-		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
-		int faceCount = Math.min(model.getFaceCount(), Math.min(faceIndices1.length, Math.min(faceIndices2.length, faceIndices3.length)));
-		int stride = objectFaceStride(quality);
-		for (int face = 0; face < faceCount; face += stride)
-		{
-			int a = faceIndices1[face];
-			int b = faceIndices2[face];
-			int c = faceIndices3[face];
-			if (a < 0 || b < 0 || c < 0 || a >= vertexCount || b >= vertexCount || c >= vertexCount)
-			{
-				continue;
-			}
-
-			addSceneObjectTriangleOccluder(
-				part,
-				verticesX[a], verticesY[a], verticesZ[a],
-				verticesX[b], verticesY[b], verticesZ[b],
-				verticesX[c], verticesY[c], verticesZ[c]
-			);
-		}
-	}
-
-	private int objectFaceStride(BillboardOcclusionQuality quality)
-	{
-		switch (quality)
-		{
-			case MAX:
-				return 1;
-			case ULTRA:
-				return 1;
-			case HIGH:
-				return 1;
-			case MEDIUM:
-				return 3;
-			case LOW:
-			default:
-				return 6;
-		}
-	}
-
-	private void addSceneObjectTriangleOccluder(
-		ObjectRenderablePart part,
-		float vx0,
-		float vy0,
-		float vz0,
-		float vx1,
-		float vy1,
-		float vz1,
-		float vx2,
-		float vy2,
-		float vz2)
-	{
-		if (!Float.isFinite(vx0) || !Float.isFinite(vy0) || !Float.isFinite(vz0)
-			|| !Float.isFinite(vx1) || !Float.isFinite(vy1) || !Float.isFinite(vz1)
-			|| !Float.isFinite(vx2) || !Float.isFinite(vy2) || !Float.isFinite(vz2))
-		{
-			return;
-		}
-
-		WorldVertex p0 = sceneObjectVertex(part, vx0, vy0, vz0);
-		WorldVertex p1 = sceneObjectVertex(part, vx1, vy1, vz1);
-		WorldVertex p2 = sceneObjectVertex(part, vx2, vy2, vz2);
-		addSceneObjectTriangleOccluder(p0, p1, p2);
-	}
-
-	private WorldVertex sceneObjectVertex(ObjectRenderablePart part, float vertexX, float vertexY, float vertexZ)
-	{
-		int localX = (int) Math.round(part.localPoint.getX() + vertexX);
-		int localY = (int) Math.round(part.localPoint.getY() + vertexZ);
-		int height = tileHeightAt(localX, localY, part.plane) + (int) Math.round(Math.max(0.0f, -vertexY));
-		return new WorldVertex(localX, localY, height);
-	}
-
-	private void addSceneObjectTriangleOccluder(WorldVertex v0, WorldVertex v1, WorldVertex v2)
-	{
-		Point p0 = Perspective.localToCanvas(client, v0.localX, v0.localY, v0.height);
-		Point p1 = Perspective.localToCanvas(client, v1.localX, v1.localY, v1.height);
-		Point p2 = Perspective.localToCanvas(client, v2.localX, v2.localY, v2.height);
-		if (p0 == null || p1 == null || p2 == null)
-		{
-			return;
-		}
-
-		Polygon polygon = new Polygon(
-			new int[] { p0.getX(), p1.getX(), p2.getX() },
-			new int[] { p0.getY(), p1.getY(), p2.getY() },
-			3
-		);
-		if (!intersectsOcclusionInterest(polygon.getBounds()))
-		{
-			return;
-		}
-
-		double depth0 = cameraForwardDepthToWorldPoint(v0.localX, v0.localY, v0.height);
-		double depth1 = cameraForwardDepthToWorldPoint(v1.localX, v1.localY, v1.height);
-		double depth2 = cameraForwardDepthToWorldPoint(v2.localX, v2.localY, v2.height);
-		BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
-			p0.getX(), p0.getY(), (float) depth0,
-			p1.getX(), p1.getY(), (float) depth1,
-			p2.getX(), p2.getY(), (float) depth2
-		);
-		if (occluder == null)
-		{
-			return;
-		}
-
-		worldOccluders.add(occluder);
-		debugOcclusionSceneObjectFacesAccepted++;
-		debugOcclusionShapesAccepted++;
-		debugOcclusionTriangleOccludersAccepted++;
-	}
-
-	private void collectTerrainPaintOccluder(LocalPoint localPoint, int plane)
-	{
-		int size = BillboardConstants.LOCAL_TILE_SIZE;
-		int halfSize = size / 2;
-		int x = localPoint.getX() - halfSize;
-		int y = localPoint.getY() - halfSize;
-		int swHeight = tileHeightAt(x, y, plane);
-		int seHeight = tileHeightAt(x + size, y, plane);
-		int neHeight = tileHeightAt(x + size, y + size, plane);
-		int nwHeight = tileHeightAt(x, y + size, plane);
-		addTerrainTriangleOccluder(x, y, swHeight, x + size, y, seHeight, x + size, y + size, neHeight, plane);
-		addTerrainTriangleOccluder(x, y, swHeight, x + size, y + size, neHeight, x, y + size, nwHeight, plane);
-	}
-
-	private void collectTerrainModelOccluders(SceneTileModel model, int plane)
-	{
-		int[] vertexX = model.getVertexX();
-		int[] vertexY = model.getVertexY();
-		int[] vertexZ = model.getVertexZ();
-		int[] faceX = model.getFaceX();
-		int[] faceY = model.getFaceY();
-		int[] faceZ = model.getFaceZ();
-		if (vertexX == null || vertexY == null || vertexZ == null || faceX == null || faceY == null || faceZ == null)
-		{
-			return;
-		}
-
-		int faceCount = Math.min(faceX.length, Math.min(faceY.length, faceZ.length));
-		int vertexCount = Math.min(vertexX.length, Math.min(vertexY.length, vertexZ.length));
-		for (int face = 0; face < faceCount; face++)
-		{
-			int a = faceX[face];
-			int b = faceY[face];
-			int c = faceZ[face];
-			if (a < 0 || b < 0 || c < 0 || a >= vertexCount || b >= vertexCount || c >= vertexCount)
-			{
-				continue;
-			}
-
-			addTerrainTriangleOccluder(
-				vertexX[a], vertexZ[a], vertexY[a],
-				vertexX[b], vertexZ[b], vertexY[b],
-				vertexX[c], vertexZ[c], vertexY[c],
-				plane
-			);
-		}
-	}
-
-	private void addTerrainTriangleOccluder(
-		int x0,
-		int y0,
-		int z0,
-		int x1,
-		int y1,
-		int z1,
-		int x2,
-		int y2,
-		int z2,
-		int plane)
-	{
-		Point p0 = Perspective.localToCanvas(client, x0, y0, z0);
-		Point p1 = Perspective.localToCanvas(client, x1, y1, z1);
-		Point p2 = Perspective.localToCanvas(client, x2, y2, z2);
-		if (p0 == null || p1 == null || p2 == null)
-		{
-			return;
-		}
-
-		Polygon polygon = new Polygon(
-			new int[] { p0.getX(), p1.getX(), p2.getX() },
-			new int[] { p0.getY(), p1.getY(), p2.getY() },
-			3
-		);
-		if (!intersectsOcclusionInterest(polygon.getBounds()))
-		{
-			return;
-		}
-
-		double depth0 = cameraForwardDepthToWorldPoint(x0, y0, z0) + TERRAIN_OCCLUSION_DEPTH_BIAS;
-		double depth1 = cameraForwardDepthToWorldPoint(x1, y1, z1) + TERRAIN_OCCLUSION_DEPTH_BIAS;
-		double depth2 = cameraForwardDepthToWorldPoint(x2, y2, z2) + TERRAIN_OCCLUSION_DEPTH_BIAS;
-		BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
-			p0.getX(), p0.getY(), (float) depth0,
-			p1.getX(), p1.getY(), (float) depth1,
-			p2.getX(), p2.getY(), (float) depth2
-		);
-		if (occluder == null)
-		{
-			return;
-		}
-
-		worldOccluders.add(occluder);
-		debugOcclusionTerrainFacesAccepted++;
-		debugOcclusionShapesAccepted++;
-		debugOcclusionTriangleOccludersAccepted++;
-	}
-
-	private int tileHeightAt(int localX, int localY, int plane)
-	{
-		return Perspective.getTileHeight(client, new LocalPoint(localX, localY), plane);
-	}
-
-	private double cameraForwardDepthToWorldPoint(int localX, int localY, int height)
-	{
-		return depthCalculator.cameraForwardDepth(localX, localY, height);
 	}
 
 	private void addActiveTileObjectBillboardParts(BillboardTarget target)
@@ -2781,7 +2245,14 @@ class NpcBillboardOverlay extends Overlay
 
 		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset());
 		Point canvasPoint = Perspective.localToCanvas(client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (actor.getModelHeight() / 2));
-		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+		if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+		{
+			return true;
+		}
+
+		BillboardRenderRequest request = buildActorRenderRequest(actor);
+		Rectangle modelBounds = projectedModelCanvasBounds(request);
+		return (modelBounds != null && modelBounds.intersects(viewport)) || isSceneRenderedInFront(actor, request);
 	}
 
 	private boolean isEligibleProjectile(LocalPoint localPlayerLocation, Projectile projectile, Rectangle viewport)
@@ -2808,7 +2279,14 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Point canvasPoint = Perspective.localToCanvas(client, projectileLocation, projectile.getFloor(), BillboardProjectileGeometry.verticalOffset(client, projectile));
-		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+		if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+		{
+			return true;
+		}
+
+		BillboardRenderRequest request = buildProjectileRenderRequest(projectile);
+		Rectangle modelBounds = projectedModelCanvasBounds(request);
+		return (modelBounds != null && modelBounds.intersects(viewport)) || isSceneRenderedInFront(projectile, request);
 	}
 
 	private void addActorSpotAnimCandidates(
@@ -2876,7 +2354,14 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Point canvasPoint = Perspective.localToCanvas(client, localPoint, graphicsObject.getLevel(), Math.max(0, graphicsObject.getZ()));
-		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+		if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+		{
+			return true;
+		}
+
+		BillboardRenderRequest request = buildGraphicsObjectRenderRequest(graphicsObject);
+		Rectangle modelBounds = projectedModelCanvasBounds(request);
+		return (modelBounds != null && modelBounds.intersects(viewport)) || isSceneRenderedInFront(graphicsObject, request);
 	}
 
 	private boolean isEligibleActorSpotAnim(Actor actor, ActorSpotAnim actorSpotAnim, Rectangle viewport)
@@ -2910,7 +2395,14 @@ class NpcBillboardOverlay extends Overlay
 
 		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
 		Point canvasPoint = Perspective.localToCanvas(client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2));
-		return canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY());
+		if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+		{
+			return true;
+		}
+
+		BillboardRenderRequest request = buildActorSpotAnimRenderRequest(actorSpotAnim, actor);
+		Rectangle modelBounds = projectedModelCanvasBounds(request);
+		return (modelBounds != null && modelBounds.intersects(viewport)) || isSceneRenderedInFront(actorSpotAnim, request);
 	}
 
 	private boolean isEligibleGroundItem(LocalPoint localPlayerLocation, TileItem item, GroundItemBillboard groundItem, Rectangle viewport)
@@ -2960,6 +2452,30 @@ class NpcBillboardOverlay extends Overlay
 
 			Point canvasPoint = Perspective.localToCanvas(client, part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2));
 			if (canvasPoint != null && viewport.contains(canvasPoint.getX(), canvasPoint.getY()))
+			{
+				return true;
+			}
+
+			BillboardRenderRequest request = new BillboardRenderRequest(
+				part.renderable,
+				part.renderable.getModel(),
+				part.localPoint,
+				part.plane,
+				0,
+				orientationCalculator.relativeYaw(),
+				orientationCalculator.relativePitch(),
+				-1,
+				-1,
+				-1,
+				-1,
+				-1,
+				false,
+				false,
+				VerticalAnchor.BOTTOM,
+				null
+			);
+			Rectangle modelBounds = projectedModelCanvasBounds(request);
+			if ((modelBounds != null && modelBounds.intersects(viewport)) || isSceneRenderedInFront(part.renderable, request))
 			{
 				return true;
 			}
@@ -3094,6 +2610,119 @@ class NpcBillboardOverlay extends Overlay
 		return !cached.matchesPreviewKey(buildPreviewCacheKey(request, qualityScale, nowMillis));
 	}
 
+	private Rectangle projectedModelCanvasBounds(BillboardRenderRequest request)
+	{
+		if (request == null || request.model == null || request.localPoint == null)
+		{
+			return null;
+		}
+
+		Model model = request.model;
+		int vertexCount = model.getVerticesCount();
+		if (vertexCount <= 0)
+		{
+			return null;
+		}
+
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		if (verticesX == null || verticesY == null || verticesZ == null)
+		{
+			return null;
+		}
+
+		vertexCount = Math.min(vertexCount, Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
+		int minX = Integer.MAX_VALUE;
+		int minY = Integer.MAX_VALUE;
+		int maxX = Integer.MIN_VALUE;
+		int maxY = Integer.MIN_VALUE;
+		for (int i = 0; i < vertexCount; i++)
+		{
+			if (!Float.isFinite(verticesX[i]) || !Float.isFinite(verticesY[i]) || !Float.isFinite(verticesZ[i]))
+			{
+				continue;
+			}
+
+			int localX = (int) Math.round(request.localPoint.getX() + verticesX[i]);
+			int localY = (int) Math.round(request.localPoint.getY() + verticesZ[i]);
+			int height = tileHeightAt(localX, localY, request.plane) + request.verticalOffset + (int) Math.round(Math.max(0.0f, -verticesY[i]));
+			Point point = Perspective.localToCanvas(client, localX, localY, height);
+			if (point == null)
+			{
+				continue;
+			}
+
+			minX = Math.min(minX, point.getX());
+			minY = Math.min(minY, point.getY());
+			maxX = Math.max(maxX, point.getX());
+			maxY = Math.max(maxY, point.getY());
+		}
+
+		if (minX == Integer.MAX_VALUE)
+		{
+			return null;
+		}
+
+		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+	}
+
+	private boolean isSceneRenderedInFront(Renderable renderable, BillboardRenderRequest request)
+	{
+		if (renderable == null || request == null || request.localPoint == null || !wasSceneRenderableDrawnThisFrame(renderable))
+		{
+			return false;
+		}
+
+		double centerDepth = depthCalculator.cameraForwardDepth(
+			request.localPoint,
+			request.plane,
+			request.verticalOffset + Math.max(0, renderable.getModelHeight() / 2.0d)
+		);
+		if (centerDepth > MIN_FORWARD_VISIBLE_DEPTH)
+		{
+			return true;
+		}
+
+		return hasModelVertexInFront(request);
+	}
+
+	private boolean hasModelVertexInFront(BillboardRenderRequest request)
+	{
+		Model model = request.model;
+		if (model == null || model.getVerticesCount() <= 0)
+		{
+			return false;
+		}
+
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		if (verticesX == null || verticesY == null || verticesZ == null)
+		{
+			return false;
+		}
+
+		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
+		for (int i = 0; i < vertexCount; i++)
+		{
+			if (!Float.isFinite(verticesX[i]) || !Float.isFinite(verticesY[i]) || !Float.isFinite(verticesZ[i]))
+			{
+				continue;
+			}
+
+			int localX = (int) Math.round(request.localPoint.getX() + verticesX[i]);
+			int localY = (int) Math.round(request.localPoint.getY() + verticesZ[i]);
+			int height = tileHeightAt(localX, localY, request.plane) + request.verticalOffset + (int) Math.round(Math.max(0.0f, -verticesY[i]));
+			if (depthCalculator.cameraForwardDepth(localX, localY, height) > MIN_FORWARD_VISIBLE_DEPTH)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private UpdateHeuristicSnapshot buildUpdateHeuristicSnapshot(BillboardTarget target)
 	{
 		if (target == null)
@@ -3176,69 +2805,82 @@ class NpcBillboardOverlay extends Overlay
 
 	private RenderedBillboardImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride, boolean shouldHoverOutline, boolean shouldInteractOutline)
 	{
-		Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(bounds, outlinePadding);
-		double qualityScale = renderQualityScale(qualityScaleOverride);
-		int imageWidth = Math.max(1, (int) Math.round(imageBounds.width * qualityScale));
-		int imageHeight = Math.max(1, (int) Math.round(imageBounds.height * qualityScale));
-		if (!BillboardGeometryUtils.isUsableDrawSize(imageWidth, imageHeight))
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Rasterization"))
 		{
-			return null;
-		}
-
-		BufferedImage image = new BufferedImage(imageWidth, imageHeight, BufferedImage.TYPE_INT_ARGB);
-		int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-		for (FaceDraw face : faces)
-		{
-			if (face.isTextured())
+			Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(bounds, outlinePadding);
+			double qualityScale = renderQualityScale(qualityScaleOverride);
+			int imageWidth = Math.max(1, (int) Math.round(imageBounds.width * qualityScale));
+			int imageHeight = Math.max(1, (int) Math.round(imageBounds.height * qualityScale));
+			if (!BillboardGeometryUtils.isUsableDrawSize(imageWidth, imageHeight))
 			{
-				BillboardFaceRasterizer.rasterizeTexturedFace(
-					imagePixels,
-					imageWidth,
-					imageHeight,
-					imageBounds,
-					qualityScale,
-					face,
-					config.billboardColorBands()
-				);
-				continue;
+				return null;
 			}
 
-			Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
-			BillboardFaceRasterizer.rasterizeSolidFace(
-				imagePixels,
-				imageWidth,
-				imageHeight,
-				imageBounds,
-				qualityScale,
-				face,
-				snappedColor.getRGB()
-			);
+			BufferedImage image = new BufferedImage(imageWidth, imageHeight, BufferedImage.TYPE_INT_ARGB);
+			int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+			for (FaceDraw face : faces)
+			{
+				if (face.isTextured())
+				{
+					try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Textured faces"))
+					{
+						BillboardFaceRasterizer.rasterizeTexturedFace(
+							imagePixels,
+							imageWidth,
+							imageHeight,
+							imageBounds,
+							qualityScale,
+							face,
+							config.billboardColorBands()
+						);
+					}
+					continue;
+				}
+
+				try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Solid faces"))
+				{
+					Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
+					BillboardFaceRasterizer.rasterizeSolidFace(
+						imagePixels,
+						imageWidth,
+						imageHeight,
+						imageBounds,
+						qualityScale,
+						face,
+						snappedColor.getRGB()
+					);
+				}
+			}
+
+			int[] exteriorOutlineIndices;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Outline/boundary effects"))
+			{
+				exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
+
+				if (hasAnyEdgeEffect())
+				{
+					BillboardOutlineRenderer.applyOutline(
+						image,
+						outlineScratch,
+						config.enableBillboardHighlightOutline(),
+						config.enableBillboardShadowOutline(),
+						config.enableBillboardSpriteOutline(),
+						config.enableBillboardSpriteShadows(),
+						config.enableBillboardHighlightInline(),
+						config.enableBillboardShadowInline(),
+						config.enableBillboardSpriteInline(),
+						config.billboardSpriteOutlineColor()
+					);
+				}
+
+				if (shouldHoverOutline || shouldInteractOutline)
+				{
+					applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
+				}
+			}
+
+			return new RenderedBillboardImage(image);
 		}
-
-		int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
-
-		if (hasAnyEdgeEffect())
-		{
-			BillboardOutlineRenderer.applyOutline(
-				image,
-				outlineScratch,
-				config.enableBillboardHighlightOutline(),
-				config.enableBillboardShadowOutline(),
-				config.enableBillboardSpriteOutline(),
-				config.enableBillboardSpriteShadows(),
-				config.enableBillboardHighlightInline(),
-				config.enableBillboardShadowInline(),
-				config.enableBillboardSpriteInline(),
-				config.billboardSpriteOutlineColor()
-			);
-		}
-
-		if (shouldHoverOutline || shouldInteractOutline)
-		{
-			applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
-		}
-
-		return new RenderedBillboardImage(image);
 	}
 
 	private void expireCaches(long nowMillis)
@@ -3542,43 +3184,68 @@ class NpcBillboardOverlay extends Overlay
 			int inversePitch = Math.floorMod(-request.relativePitch, BILLBOARD_FULL_CIRCLE);
 			double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
 			double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
-			for (int i = 0; i < vertexCount; i++)
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Transform vertices"))
 			{
-				double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
-				double rotatedZ = (verticesZ[i] * yawCos) - (verticesX[i] * yawSin);
-				spriteX[i] = (float) rotatedX;
-				spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
-				spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
+				for (int i = 0; i < vertexCount; i++)
+				{
+					double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
+					double rotatedZ = (verticesZ[i] * yawCos) - (verticesX[i] * yawSin);
+					spriteX[i] = (float) rotatedX;
+					spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
+					spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
+				}
 			}
 
-			BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, true);
-			if (builtFaces.faces.isEmpty())
+			BuiltFaces builtFaces;
+			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Gather faces"))
 			{
-				builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, false);
+				builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, true);
+				if (builtFaces.faces.isEmpty())
+				{
+					builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth, nowMillis, request.animatedTextureId, false);
+				}
 			}
 			if (!builtFaces.faces.isEmpty())
 			{
 				List<FaceDraw> faces = builtFaces.faces;
-				faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
-				Rectangle sourceBounds = BillboardGeometryUtils.computeBounds(faces);
+				Rectangle sourceBounds;
+				try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Sort faces / compute bounds"))
+				{
+					faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
+					sourceBounds = BillboardGeometryUtils.computeBounds(faces);
+				}
 				if (BillboardGeometryUtils.isUsableSourceBounds(sourceBounds))
 				{
 					int outlinePadding = outlinePadding();
 					Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(sourceBounds, outlinePadding);
-					if (buildDrawRect(request, renderable, imageBounds) == null)
+					Rectangle previewDrawRect;
+					try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Draw rect calculation"))
+					{
+						previewDrawRect = buildDrawRect(request, renderable, imageBounds);
+					}
+					if (previewDrawRect == null)
 					{
 						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis, queuePosition);
 					}
 
-					BillboardCacheKey cacheKey = buildCacheKey(
-						request,
-						outlinePadding,
-						builtFaces.textureStateHash,
-						qualityKey(updatePlan.qualityScale),
-						textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
-					);
-					cacheInvalidated = updatePlan.forceHoverInteractionRedraw
-						|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+					BillboardCacheKey cacheKey;
+					try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Cache key / cache check"))
+					{
+						cacheKey = buildCacheKey(
+							request,
+							outlinePadding,
+							builtFaces.textureStateHash,
+							qualityKey(updatePlan.qualityScale),
+							textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
+						);
+						cacheInvalidated = updatePlan.forceHoverInteractionRedraw
+							|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+						if (!cacheInvalidated && cached != null)
+						{
+							cached.touch(nowMillis);
+							updatePlanSucceeded = true;
+						}
+					}
 					if (cacheInvalidated)
 					{
 						RenderedBillboardImage rendered = renderBillboardImage(
@@ -3598,12 +3265,6 @@ class NpcBillboardOverlay extends Overlay
 							updatePlanSucceeded = true;
 						}
 					}
-					else if (cached != null)
-					{
-						cached.touch(nowMillis);
-						updatePlanSucceeded = true;
-					}
-
 					if (cacheInvalidated)
 					{
 						forceHoverInteractionRedraws.remove(renderable);
@@ -3622,7 +3283,10 @@ class NpcBillboardOverlay extends Overlay
 			updatePlan.markRedrawSucceeded();
 		}
 
-		return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis, queuePosition);
+		try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Draw rect calculation"))
+		{
+			return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis, queuePosition);
+		}
 	}
 
 	private BillboardRenderResult drawCachedBillboard(
@@ -3727,11 +3391,6 @@ class NpcBillboardOverlay extends Overlay
 	private Rectangle buildDrawRect(BillboardRenderRequest request, Renderable renderable, Rectangle billboardBounds)
 	{
 		Point basePoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
-		if (basePoint == null)
-		{
-			return null;
-		}
-
 		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
 		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
 		double distance = depthCalculator.cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
@@ -3744,15 +3403,95 @@ class NpcBillboardOverlay extends Overlay
 		int distanceHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
 		int projectedHeight = BillboardGeometryUtils.projectedHeight(basePoint, topPoint);
 		int targetHeight = distanceHeight > 0 ? distanceHeight : projectedHeight;
+		if (targetHeight <= 0)
+		{
+			targetHeight = fallbackDrawHeight(projectedModelCanvasBounds(request));
+		}
 		int targetWidth = BillboardGeometryUtils.aspectWidth(billboardBounds, targetHeight);
-		int anchorX = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getX() : basePoint.getX();
-		int anchorY = request.verticalAnchor == VerticalAnchor.CENTER && centerPoint != null ? centerPoint.getY() : basePoint.getY();
+		Point anchorPoint = drawAnchorPoint(request, basePoint, centerPoint, topPoint);
+		if (anchorPoint == null)
+		{
+			Rectangle modelBounds = projectedModelCanvasBounds(request);
+			anchorPoint = modelBounds != null && !modelBounds.isEmpty()
+				? new Point(modelBounds.x + (modelBounds.width / 2), modelBounds.y + (modelBounds.height / 2))
+				: viewportCenterPoint();
+			billboardBounds = new Rectangle(
+				billboardBounds.x,
+				billboardBounds.y + (billboardBounds.height / 2),
+				billboardBounds.width,
+				billboardBounds.height
+			);
+		}
+
+		int anchorX = anchorPoint.getX();
+		int anchorY = anchorPoint.getY();
 		if (!BillboardGeometryUtils.isUsableCanvasCoordinate(anchorX) || !BillboardGeometryUtils.isUsableCanvasCoordinate(anchorY))
 		{
 			return null;
 		}
 
 		return buildDrawRect(billboardBounds, anchorX, anchorY, targetWidth, targetHeight);
+	}
+
+	private int fallbackDrawHeight(Rectangle projectedModelBounds)
+	{
+		if (projectedModelBounds != null && projectedModelBounds.height > 0)
+		{
+			return Math.min(FALLBACK_MAX_DRAW_SIZE, Math.max(1, projectedModelBounds.height));
+		}
+
+		int viewportHeight = Math.max(1, client.getViewportHeight());
+		return Math.min(FALLBACK_MAX_DRAW_SIZE, Math.max(viewportHeight * 2, 1));
+	}
+
+	private Point viewportCenterPoint()
+	{
+		return new Point(
+			client.getViewportXOffset() + (Math.max(1, client.getViewportWidth()) / 2),
+			client.getViewportYOffset() + (Math.max(1, client.getViewportHeight()) / 2)
+		);
+	}
+
+	private Point drawAnchorPoint(BillboardRenderRequest request, Point basePoint, Point centerPoint, Point topPoint)
+	{
+		if (request.verticalAnchor == VerticalAnchor.CENTER)
+		{
+			if (centerPoint != null)
+			{
+				return centerPoint;
+			}
+
+			if (basePoint != null && topPoint != null)
+			{
+				return new Point((basePoint.getX() + topPoint.getX()) / 2, (basePoint.getY() + topPoint.getY()) / 2);
+			}
+
+			if (basePoint != null)
+			{
+				return basePoint;
+			}
+
+			return topPoint;
+		}
+
+		if (basePoint != null)
+		{
+			return basePoint;
+		}
+
+		if (centerPoint != null && topPoint != null)
+		{
+			int x = (centerPoint.getX() * 2) - topPoint.getX();
+			int y = (centerPoint.getY() * 2) - topPoint.getY();
+			return new Point(x, y);
+		}
+
+		if (centerPoint != null)
+		{
+			return centerPoint;
+		}
+
+		return topPoint;
 	}
 
 	private int outlinePadding()
@@ -3816,112 +3555,9 @@ class NpcBillboardOverlay extends Overlay
 		return ObservedTileObjectBuilder.build(tileObject);
 	}
 
-	private boolean addWorldOccluder(Shape shape, double depth)
+	private int tileHeightAt(int localX, int localY, int plane)
 	{
-		if (shape == null || shape.getBounds().isEmpty())
-		{
-			return false;
-		}
-
-		if (frameOcclusionInterestBounds != null && !intersectsOcclusionInterest(shape.getBounds()))
-		{
-			return false;
-		}
-
-		worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth));
-		debugOcclusionShapesAccepted++;
-		debugOcclusionFlatFallbackOccludersAccepted++;
-		return true;
-	}
-
-	private double tileObjectDepth(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
-	{
-		LocalPoint localPoint = tileObject.getLocalLocation();
-		if (localPoint == null)
-		{
-			return Double.NaN;
-		}
-
-		double nearest = Double.POSITIVE_INFINITY;
-		if (observed != null && !observed.parts.isEmpty())
-		{
-			for (ObjectRenderablePart part : observed.parts)
-			{
-				double depth = nearestModelVertexDepth(part, quality.vertexStride());
-				if (Double.isFinite(depth))
-				{
-					nearest = Math.min(nearest, depth);
-				}
-			}
-		}
-
-		if (Double.isFinite(nearest))
-		{
-			return nearest;
-		}
-
-		return depthCalculator.cameraForwardDepth(localPoint, tileObject.getPlane(), 0.0d);
-	}
-
-	private double nearestModelVertexDepth(ObjectRenderablePart part, int vertexStride)
-	{
-		if (part == null || part.renderable == null || part.localPoint == null)
-		{
-			return Double.NaN;
-		}
-
-		Model model = part.renderable.getModel();
-		if (model == null || model.getVerticesCount() <= 0)
-		{
-			return depthCalculator.cameraForwardDepth(part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2.0d));
-		}
-
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
-		if (verticesX == null || verticesY == null || verticesZ == null)
-		{
-			return depthCalculator.cameraForwardDepth(part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2.0d));
-		}
-
-		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
-		int stride = Math.max(1, vertexStride);
-		double nearest = Double.POSITIVE_INFINITY;
-		for (int i = 0; i < vertexCount; i += stride)
-		{
-			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[i], verticesY[i], verticesZ[i]);
-			if (Double.isFinite(depth))
-			{
-				nearest = Math.min(nearest, depth);
-			}
-		}
-
-		if (stride > 1 && vertexCount > 0)
-		{
-			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
-			if (Double.isFinite(depth))
-			{
-				nearest = Math.min(nearest, depth);
-			}
-		}
-
-		return Double.isFinite(nearest)
-			? nearest
-			: depthCalculator.cameraForwardDepth(part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2.0d));
-	}
-
-	private double modelVertexDepth(LocalPoint base, int plane, float vertexX, float vertexY, float vertexZ)
-	{
-		if (!Float.isFinite(vertexX) || !Float.isFinite(vertexY) || !Float.isFinite(vertexZ))
-		{
-			return Double.NaN;
-		}
-
-		LocalPoint vertexLocalPoint = new LocalPoint(
-			(int) Math.round(base.getX() + vertexX),
-			(int) Math.round(base.getY() + vertexZ)
-		);
-		return depthCalculator.cameraForwardDepth(vertexLocalPoint, plane, Math.max(0.0d, -vertexY));
+		return Perspective.getTileHeight(client, new LocalPoint(localX, localY), plane);
 	}
 
 	private boolean isPlaneEligible(int targetPlane)
@@ -3935,30 +3571,6 @@ class NpcBillboardOverlay extends Overlay
 		return localPlayer != null && BillboardPlaneUtils.shouldRenderTargetPlane(localPlayer.getWorldView().getPlane(), targetPlane);
 	}
 
-	private static final class TerrainTraceTarget
-	{
-		private final LocalPoint localPoint;
-		private final int plane;
-
-		private TerrainTraceTarget(LocalPoint localPoint, int plane)
-		{
-			this.localPoint = localPoint;
-			this.plane = plane;
-		}
-	}
-
-	private static final class WorldVertex
-	{
-		private final int localX;
-		private final int localY;
-		private final int height;
-
-		private WorldVertex(int localX, int localY, int height)
-		{
-			this.localX = localX;
-			this.localY = localY;
-			this.height = height;
-		}
-	}
 
 }
+

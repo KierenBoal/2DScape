@@ -16,6 +16,7 @@ final class BillboardOcclusionMask
 	private static final Color DEBUG_RASTER_BOUNDS = new Color(0, 220, 255, 220);
 
 	private float[] depthBuffer = new float[0];
+	private boolean[] rowCoverage = new boolean[0];
 	private int width;
 	private int height;
 	private int step;
@@ -65,6 +66,8 @@ final class BillboardOcclusionMask
 		if (qualityStep <= 0 || rasterBounds == null)
 		{
 			step = 0;
+			width = 0;
+			height = 0;
 			coveredCellCount = 0;
 			nearestDepth = Float.POSITIVE_INFINITY;
 			furthestDepth = Float.NEGATIVE_INFINITY;
@@ -81,7 +84,12 @@ final class BillboardOcclusionMask
 		{
 			depthBuffer = new float[size];
 		}
+		if (rowCoverage.length < height)
+		{
+			rowCoverage = new boolean[height];
+		}
 		Arrays.fill(depthBuffer, 0, size, Float.POSITIVE_INFINITY);
+		Arrays.fill(rowCoverage, 0, height, false);
 		coveredCellCount = 0;
 		nearestDepth = Float.POSITIVE_INFINITY;
 		furthestDepth = Float.NEGATIVE_INFINITY;
@@ -115,6 +123,44 @@ final class BillboardOcclusionMask
 
 		float occluderDepth = depthBuffer[(sampleY * width) + sampleX];
 		return Float.isFinite(occluderDepth) && occluderDepth + depthBias() < billboardDepth;
+	}
+
+	boolean isOccludedSample(int sampleX, int canvasY, double billboardDepth)
+	{
+		if (step <= 0 || !Double.isFinite(billboardDepth))
+		{
+			return false;
+		}
+
+		int sampleY = sampleY(canvasY);
+		if (sampleX < 0 || sampleY < 0 || sampleX >= width || sampleY >= height)
+		{
+			return false;
+		}
+
+		float occluderDepth = depthBuffer[(sampleY * width) + sampleX];
+		return Float.isFinite(occluderDepth) && occluderDepth + depthBias() < billboardDepth;
+	}
+
+	boolean hasCoverageAt(int canvasY)
+	{
+		if (step <= 0)
+		{
+			return false;
+		}
+
+		int sampleY = sampleY(canvasY);
+		return sampleY >= 0 && sampleY < height && rowCoverage[sampleY];
+	}
+
+	int sampleX(int canvasX)
+	{
+		return step > 0 ? (canvasX - viewportX) / step : -1;
+	}
+
+	int sampleStep()
+	{
+		return step;
 	}
 
 	float depthAt(int canvasX, int canvasY)
@@ -250,6 +296,7 @@ final class BillboardOcclusionMask
 					if (!Float.isFinite(depthBuffer[index]))
 					{
 						coveredCellCount++;
+						rowCoverage[sampleY] = true;
 					}
 					depthBuffer[index] = depth;
 				}
@@ -260,6 +307,11 @@ final class BillboardOcclusionMask
 	private float depthBias()
 	{
 		return Math.max(8f, step * 2f);
+	}
+
+	private int sampleY(int canvasY)
+	{
+		return (canvasY - viewportY) / step;
 	}
 
 	private void updateDepthRange(int size)

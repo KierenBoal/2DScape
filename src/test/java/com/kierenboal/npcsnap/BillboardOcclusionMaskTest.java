@@ -138,6 +138,41 @@ public class BillboardOcclusionMaskTest
 	}
 
 	@Test
+	public void reportsCoverageOnlyForRowsWithFiniteDepthCells()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(
+			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 8, 8, 8), 20f)),
+			BillboardOcclusionQuality.HIGH,
+			0,
+			0,
+			16,
+			16
+		);
+
+		assertFalse(mask.hasCoverageAt(2));
+		assertTrue(mask.hasCoverageAt(10));
+	}
+
+	@Test
+	public void sampleCellLookupMatchesCanvasLookupForCoarseQuality()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(
+			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 20f)),
+			BillboardOcclusionQuality.HIGH,
+			0,
+			0,
+			16,
+			16
+		);
+
+		int sampleX = mask.sampleX(6);
+		assertEquals(mask.isOccluded(6, 6, 40d), mask.isOccludedSample(sampleX, 6, 40d));
+		assertEquals(4, mask.sampleStep());
+	}
+
+	@Test
 	public void triangleDepthIsInterpolatedNearEachVertex()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();

@@ -26,6 +26,22 @@ public class BillboardDepthCalculatorTest
 	}
 
 	@Test
+	public void forwardDepthIsNegativeBehindCamera()
+	{
+		Client client = proxy(
+			Client.class,
+			method("getCameraFpX", 0.0f),
+			method("getCameraFpY", 0.0f),
+			method("getCameraFpZ", 0.0f),
+			method("getCameraYaw", 0),
+			method("getCameraPitch", 0)
+		);
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+
+		assertTrue(calculator.cameraForwardDepth(0, -128, 0.0d) < 0.0d);
+	}
+
+	@Test
 	public void forwardDepthIncludesCameraPitchVerticalComponent()
 	{
 		Client client = proxy(

@@ -6,13 +6,17 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.client.ui.FontManager;
 
 @Singleton
 class NpcSnapDebug
@@ -22,6 +26,7 @@ class NpcSnapDebug
 	private static final Color READY_TO_REDRAW_LOW_PRIORITY = new Color(128, 0, 128, 255);
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
+	private static final Color METRIC_VALUE_FOREGROUND = new Color(220, 220, 220, 255);
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -121,6 +126,95 @@ class NpcSnapDebug
 			}
 		}
 		
+	}
+
+	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
+	{
+		if (graphics == null || viewport == null || rows == null || rows.isEmpty())
+		{
+			return;
+		}
+
+		Font font = metricsFont();
+		Font oldFont = graphics.getFont();
+		Object oldTextAntialiasing = graphics.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
+		Object oldFractionalMetrics = graphics.getRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS);
+		graphics.setFont(font);
+		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+		FontMetrics metrics = graphics.getFontMetrics();
+		int padding = 5;
+		int gap = 12;
+		int lineHeight = metrics.getHeight();
+		int nameWidth = 0;
+		int valueWidth = 0;
+		for (BillboardPerformanceMetrics.MetricRow row : rows)
+		{
+			String name = indentedMetricName(row);
+			String values = metricValues(row);
+			nameWidth = Math.max(nameWidth, metrics.stringWidth(name));
+			valueWidth = Math.max(valueWidth, metrics.stringWidth(values));
+		}
+
+		int x = viewport.x + 8;
+		int y = viewport.y + 8;
+		int width = nameWidth + gap + valueWidth + (padding * 2);
+		int height = (lineHeight * rows.size()) + (padding * 2);
+		graphics.setColor(TEXT_BACKGROUND);
+		graphics.fillRect(x, y, width, height);
+		for (int i = 0; i < rows.size(); i++)
+		{
+			BillboardPerformanceMetrics.MetricRow row = rows.get(i);
+			if (row == null)
+			{
+				continue;
+			}
+
+			int lineY = y + padding + (i * lineHeight) + metrics.getAscent();
+			graphics.setColor(row.color);
+			graphics.drawString(indentedMetricName(row), x + padding, lineY);
+			graphics.setColor(METRIC_VALUE_FOREGROUND);
+			graphics.drawString(metricValues(row), x + padding + nameWidth + gap, lineY);
+		}
+		graphics.setFont(oldFont);
+		restoreRenderingHint(graphics, RenderingHints.KEY_TEXT_ANTIALIASING, oldTextAntialiasing, RenderingHints.VALUE_TEXT_ANTIALIAS_DEFAULT);
+		restoreRenderingHint(graphics, RenderingHints.KEY_FRACTIONALMETRICS, oldFractionalMetrics, RenderingHints.VALUE_FRACTIONALMETRICS_DEFAULT);
+	}
+
+	private void restoreRenderingHint(Graphics2D graphics, RenderingHints.Key key, Object value, Object fallback)
+	{
+		graphics.setRenderingHint(key, value != null ? value : fallback);
+	}
+
+	private Font metricsFont()
+	{
+		Font font = FontManager.getDefaultBoldFont();
+		if (font == null)
+		{
+			font = FontManager.getDefaultFont();
+		}
+		if (font == null)
+		{
+			font = new Font(Font.SANS_SERIF, Font.BOLD, 12);
+		}
+		return font.deriveFont(Font.BOLD, 12.0f);
+	}
+
+	private String indentedMetricName(BillboardPerformanceMetrics.MetricRow row)
+	{
+		int spaces = Math.max(0, row.depth) * 2;
+		StringBuilder builder = new StringBuilder(spaces + row.name.length());
+		for (int i = 0; i < spaces; i++)
+		{
+			builder.append(' ');
+		}
+		builder.append(row.name);
+		return builder.toString();
+	}
+
+	private String metricValues(BillboardPerformanceMetrics.MetricRow row)
+	{
+		return String.format(Locale.ROOT, "min %.1f  avg %.1f  max %.1f  %.0f%%", row.minMillis, row.avgMillis, row.maxMillis, row.percentOfOverall);
 	}
 
 	private String[] stateLines(RenderDebug renderDebug)
