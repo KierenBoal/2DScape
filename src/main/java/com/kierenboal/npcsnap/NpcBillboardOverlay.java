@@ -2165,6 +2165,7 @@ class NpcBillboardOverlay extends Overlay
 
 			BufferedImage image = new BufferedImage(imageWidth, imageHeight, BufferedImage.TYPE_INT_ARGB);
 			int[] imagePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+			int colorBands = config.billboardColorBands();
 			for (FaceDraw face : faces)
 			{
 				if (face.isTextured())
@@ -2178,7 +2179,7 @@ class NpcBillboardOverlay extends Overlay
 							imageBounds,
 							qualityScale,
 							face,
-							config.billboardColorBands()
+							colorBands
 						);
 					}
 					continue;
@@ -2186,7 +2187,7 @@ class NpcBillboardOverlay extends Overlay
 
 				try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Solid faces"))
 				{
-					Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), config.billboardColorBands());
+					Color snappedColor = NpcSnapColorBanding.snapToRamp(face.getColor(), colorBands);
 					BillboardFaceRasterizer.rasterizeSolidFace(
 						imagePixels,
 						imageWidth,
@@ -2199,30 +2200,33 @@ class NpcBillboardOverlay extends Overlay
 				}
 			}
 
-			int[] exteriorOutlineIndices;
-			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Outline/boundary effects"))
+			boolean anyEdgeEffect = hasAnyEdgeEffect();
+			if (anyEdgeEffect || shouldHoverOutline || shouldInteractOutline)
 			{
-				exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
-
-				if (hasAnyEdgeEffect())
+				try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Outline/boundary effects"))
 				{
-					BillboardOutlineRenderer.applyOutline(
-						image,
-						outlineScratch,
-						config.enableBillboardHighlightOutline(),
-						config.enableBillboardShadowOutline(),
-						config.enableBillboardSpriteOutline(),
-						config.enableBillboardSpriteShadows(),
-						config.enableBillboardHighlightInline(),
-						config.enableBillboardShadowInline(),
-						config.enableBillboardSpriteInline(),
-						config.billboardSpriteOutlineColor()
-					);
-				}
+					int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(image, outlineScratch);
 
-				if (shouldHoverOutline || shouldInteractOutline)
-				{
-					applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
+					if (anyEdgeEffect)
+					{
+						BillboardOutlineRenderer.applyOutline(
+							image,
+							outlineScratch,
+							config.enableBillboardHighlightOutline(),
+							config.enableBillboardShadowOutline(),
+							config.enableBillboardSpriteOutline(),
+							config.enableBillboardSpriteShadows(),
+							config.enableBillboardHighlightInline(),
+							config.enableBillboardShadowInline(),
+							config.enableBillboardSpriteInline(),
+							config.billboardSpriteOutlineColor()
+						);
+					}
+
+					if (shouldHoverOutline || shouldInteractOutline)
+					{
+						applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
+					}
 				}
 			}
 
