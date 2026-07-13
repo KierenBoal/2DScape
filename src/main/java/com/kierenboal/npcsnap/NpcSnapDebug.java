@@ -8,6 +8,8 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -27,6 +29,9 @@ class NpcSnapDebug
 	private static final Color TEXT_BACKGROUND = new Color(0, 0, 0, 170);
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 	private static final Color METRIC_VALUE_FOREGROUND = new Color(220, 220, 220, 255);
+	private static final Color METRIC_HOTSPOT_FOREGROUND = new Color(255, 80, 80, 255);
+	private static final String[] METRIC_HEADERS = {"Method", "Min", "Avg", "Max", "Total"};
+	private static final int HOTSPOT_METRIC_COUNT = 3;
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -146,22 +151,38 @@ class NpcSnapDebug
 		int padding = 5;
 		int gap = 12;
 		int lineHeight = metrics.getHeight();
-		int nameWidth = 0;
-		int valueWidth = 0;
+		int[] columnWidths = new int[METRIC_HEADERS.length];
+		for (int column = 0; column < METRIC_HEADERS.length; column++)
+		{
+			columnWidths[column] = metrics.stringWidth(METRIC_HEADERS[column]);
+		}
 		for (BillboardPerformanceMetrics.MetricRow row : rows)
 		{
-			String name = indentedMetricName(row);
-			String values = metricValues(row);
-			nameWidth = Math.max(nameWidth, metrics.stringWidth(name));
-			valueWidth = Math.max(valueWidth, metrics.stringWidth(values));
+			String[] values = metricValues(row);
+			for (int column = 0; column < values.length; column++)
+			{
+				columnWidths[column] = Math.max(columnWidths[column], metrics.stringWidth(values[column]));
+			}
 		}
 
 		int x = viewport.x + 8;
 		int y = viewport.y + 8;
-		int width = nameWidth + gap + valueWidth + (padding * 2);
-		int height = (lineHeight * rows.size()) + (padding * 2);
+		int width = (padding * 2) + (gap * (columnWidths.length - 1));
+		for (int columnWidth : columnWidths)
+		{
+			width += columnWidth;
+		}
+		int height = (lineHeight * (rows.size() + 1)) + (padding * 2);
 		graphics.setColor(TEXT_BACKGROUND);
 		graphics.fillRect(x, y, width, height);
+		int[] columnX = metricColumnPositions(x + padding, columnWidths, gap);
+		int headerY = y + padding + metrics.getAscent();
+		graphics.setColor(METRIC_VALUE_FOREGROUND);
+		for (int column = 0; column < METRIC_HEADERS.length; column++)
+		{
+			graphics.drawString(METRIC_HEADERS[column], columnX[column], headerY);
+		}
+		boolean[] hotspotRows = highestTotalTimeRows(rows);
 		for (int i = 0; i < rows.size(); i++)
 		{
 			BillboardPerformanceMetrics.MetricRow row = rows.get(i);
@@ -170,11 +191,15 @@ class NpcSnapDebug
 				continue;
 			}
 
-			int lineY = y + padding + (i * lineHeight) + metrics.getAscent();
+			int lineY = y + padding + ((i + 1) * lineHeight) + metrics.getAscent();
 			graphics.setColor(row.color);
-			graphics.drawString(indentedMetricName(row), x + padding, lineY);
-			graphics.setColor(METRIC_VALUE_FOREGROUND);
-			graphics.drawString(metricValues(row), x + padding + nameWidth + gap, lineY);
+			String[] values = metricValues(row);
+			graphics.drawString(values[0], columnX[0], lineY);
+			for (int column = 1; column < values.length; column++)
+			{
+				graphics.setColor(column == values.length - 1 && hotspotRows[i] ? METRIC_HOTSPOT_FOREGROUND : METRIC_VALUE_FOREGROUND);
+				graphics.drawString(values[column], columnX[column], lineY);
+			}
 		}
 		graphics.setFont(oldFont);
 		restoreRenderingHint(graphics, RenderingHints.KEY_TEXT_ANTIALIASING, oldTextAntialiasing, RenderingHints.VALUE_TEXT_ANTIALIAS_DEFAULT);
@@ -212,9 +237,48 @@ class NpcSnapDebug
 		return builder.toString();
 	}
 
-	private String metricValues(BillboardPerformanceMetrics.MetricRow row)
+	private int[] metricColumnPositions(int firstColumnX, int[] columnWidths, int gap)
 	{
-		return String.format(Locale.ROOT, "min %.1f  avg %.1f  max %.1f  %.0f%%", row.minMillis, row.avgMillis, row.maxMillis, row.percentOfOverall);
+		int[] columnX = new int[columnWidths.length];
+		int x = firstColumnX;
+		for (int column = 0; column < columnWidths.length; column++)
+		{
+			columnX[column] = x;
+			x += columnWidths[column] + gap;
+		}
+		return columnX;
+	}
+
+	private boolean[] highestTotalTimeRows(List<BillboardPerformanceMetrics.MetricRow> rows)
+	{
+		boolean[] hotspots = new boolean[rows.size()];
+		List<Integer> candidates = new ArrayList<>();
+		for (int index = 0; index < rows.size(); index++)
+		{
+			BillboardPerformanceMetrics.MetricRow row = rows.get(index);
+			if (row != null && row.depth > 0)
+			{
+				candidates.add(index);
+			}
+		}
+		candidates.sort(Comparator.comparingDouble((Integer index) -> rows.get(index).percentOfOverall).reversed());
+		for (int index = 0; index < Math.min(HOTSPOT_METRIC_COUNT, candidates.size()); index++)
+		{
+			hotspots[candidates.get(index)] = true;
+		}
+		return hotspots;
+	}
+
+	private String[] metricValues(BillboardPerformanceMetrics.MetricRow row)
+	{
+		return new String[]
+		{
+			indentedMetricName(row),
+			String.format(Locale.ROOT, "%.1f", row.minMillis),
+			String.format(Locale.ROOT, "%.1f", row.avgMillis),
+			String.format(Locale.ROOT, "%.1f", row.maxMillis),
+			String.format(Locale.ROOT, "%.0f%%", row.percentOfOverall)
+		};
 	}
 
 	private String[] stateLines(RenderDebug renderDebug)

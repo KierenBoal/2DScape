@@ -16,6 +16,7 @@ final class BillboardOcclusionMask
 	private static final Color DEBUG_RASTER_BOUNDS = new Color(0, 220, 255, 220);
 
 	private float[] depthBuffer = new float[0];
+	private String[] sourceBuffer = new String[0];
 	private boolean[] rowCoverage = new boolean[0];
 	private int width;
 	private int height;
@@ -84,11 +85,16 @@ final class BillboardOcclusionMask
 		{
 			depthBuffer = new float[size];
 		}
+		if (sourceBuffer.length < size)
+		{
+			sourceBuffer = new String[size];
+		}
 		if (rowCoverage.length < height)
 		{
 			rowCoverage = new boolean[height];
 		}
 		Arrays.fill(depthBuffer, 0, size, Float.POSITIVE_INFINITY);
+		Arrays.fill(sourceBuffer, 0, size, null);
 		Arrays.fill(rowCoverage, 0, height, false);
 		coveredCellCount = 0;
 		nearestDepth = Float.POSITIVE_INFINITY;
@@ -178,6 +184,23 @@ final class BillboardOcclusionMask
 		}
 
 		return depthBuffer[(sampleY * width) + sampleX];
+	}
+
+	String sourceAt(int canvasX, int canvasY)
+	{
+		if (step <= 0)
+		{
+			return null;
+		}
+
+		int sampleX = (canvasX - viewportX) / step;
+		int sampleY = (canvasY - viewportY) / step;
+		if (sampleX < 0 || sampleY < 0 || sampleX >= width || sampleY >= height)
+		{
+			return null;
+		}
+
+		return sourceBuffer[(sampleY * width) + sampleX];
 	}
 
 	float occlusionDepthBias()
@@ -299,6 +322,7 @@ final class BillboardOcclusionMask
 						rowCoverage[sampleY] = true;
 					}
 					depthBuffer[index] = depth;
+					sourceBuffer[index] = occluder.source();
 				}
 			}
 		}
@@ -439,8 +463,14 @@ final class BillboardOcclusionMask
 		private final int y2;
 		private final float depth2;
 		private final Rectangle bounds;
+		private final String source;
 
 		Occluder(Shape shape, float depth)
+		{
+			this(shape, depth, null);
+		}
+
+		Occluder(Shape shape, float depth, String source)
 		{
 			this.shape = shape;
 			this.depth = depth;
@@ -455,19 +485,25 @@ final class BillboardOcclusionMask
 			y2 = 0;
 			depth2 = Float.NaN;
 			bounds = shape != null ? shape.getBounds() : null;
+			this.source = source;
 		}
 
 		static Occluder triangle(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2)
+		{
+			return triangle(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2, null);
+		}
+
+		static Occluder triangle(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2, String source)
 		{
 			if (!Float.isFinite(depth0) || !Float.isFinite(depth1) || !Float.isFinite(depth2))
 			{
 				return null;
 			}
 
-			return new Occluder(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2);
+			return new Occluder(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2, source);
 		}
 
-		private Occluder(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2)
+		private Occluder(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2, String source)
 		{
 			shape = null;
 			depth = Float.NaN;
@@ -486,11 +522,17 @@ final class BillboardOcclusionMask
 			int maxX = Math.max(x0, Math.max(x1, x2));
 			int maxY = Math.max(y0, Math.max(y1, y2));
 			bounds = new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+			this.source = source;
 		}
 
 		private Rectangle bounds()
 		{
 			return bounds;
+		}
+
+		private String source()
+		{
+			return source;
 		}
 
 		private boolean contains(int canvasX, int canvasY)

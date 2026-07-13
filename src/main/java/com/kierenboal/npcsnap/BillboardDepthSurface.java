@@ -5,7 +5,6 @@ import net.runelite.api.coords.LocalPoint;
 
 final class BillboardDepthSurface
 {
-	private static final int HEIGHT_SOLVE_ITERATIONS = 12;
 	private static final BillboardDepthSurface INVALID = new BillboardDepthSurface(null, 0, 0, Double.NaN, 0, null, null);
 
 	private final BillboardDepthCalculator depthCalculator;
@@ -96,7 +95,7 @@ final class BillboardDepthSurface
 			return Double.NaN;
 		}
 
-		double verticalOffset = verticalOffsetForCanvasY(canvasY, sourceY, sourceHeight);
+		double verticalOffset = verticalOffset(sourceY, sourceHeight);
 		if (!Double.isFinite(verticalOffset))
 		{
 			return Double.NaN;
@@ -114,7 +113,7 @@ final class BillboardDepthSurface
 
 		double spriteX = sourceBounds.x + (((sourceX + 0.5d) * sourceBounds.width) / sourceWidth);
 		double horizontalOffset = spriteX;
-		double verticalOffset = verticalOffsetForCanvasY(canvasY, sourceY, sourceHeight);
+		double verticalOffset = verticalOffset(sourceY, sourceHeight);
 		if (!Double.isFinite(horizontalOffset) || !Double.isFinite(verticalOffset))
 		{
 			return DebugPoint.invalid();
@@ -139,52 +138,6 @@ final class BillboardDepthSurface
 	{
 		double t = Math.max(0.0d, Math.min(1.0d, (sourceY + 0.5d) / Math.max(1.0d, sourceHeight)));
 		return modelHeight * (1.0d - t);
-	}
-
-	private double verticalOffsetForCanvasY(int canvasY, int sourceY, int sourceHeight)
-	{
-		double baseCanvasY = depthCalculator.canvasYAtWorldHeight(baseLocalX, baseLocalY, baseHeight);
-		double topCanvasY = depthCalculator.canvasYAtWorldHeight(baseLocalX, baseLocalY, baseHeight + modelHeight);
-		if (!Double.isFinite(baseCanvasY) || !Double.isFinite(topCanvasY) || Math.abs(baseCanvasY - topCanvasY) < 1.0d)
-		{
-			return verticalOffset(sourceY, sourceHeight);
-		}
-
-		double clampedCanvasY = Math.max(Math.min(baseCanvasY, topCanvasY), Math.min(Math.max(baseCanvasY, topCanvasY), canvasY));
-		double low = 0.0d;
-		double high = modelHeight;
-		boolean yDecreasesWithHeight = topCanvasY < baseCanvasY;
-		for (int i = 0; i < HEIGHT_SOLVE_ITERATIONS; i++)
-		{
-			double mid = (low + high) * 0.5d;
-			double midCanvasY = depthCalculator.canvasYAtWorldHeight(baseLocalX, baseLocalY, baseHeight + mid);
-			if (!Double.isFinite(midCanvasY))
-			{
-				return verticalOffset(sourceY, sourceHeight);
-			}
-
-			if (yDecreasesWithHeight)
-			{
-				if (midCanvasY > clampedCanvasY)
-				{
-					low = mid;
-				}
-				else
-				{
-					high = mid;
-				}
-			}
-			else if (midCanvasY < clampedCanvasY)
-			{
-				low = mid;
-			}
-			else
-			{
-				high = mid;
-			}
-		}
-
-		return Math.max(0.0d, Math.min(modelHeight, (low + high) * 0.5d));
 	}
 
 	static final class DebugPoint

@@ -6,6 +6,7 @@ import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -100,6 +101,24 @@ public class BillboardDepthSurfaceTest
 		);
 
 		assertTrue(Math.abs(forwardSprite.depthAt(10, 80, 20, 100) - turnedSprite.depthAt(10, 80, 20, 100)) < 1.0d);
+	}
+
+	@Test
+	public void sourceRowControlsDepthWhenBillboardDrawBoundsDifferFromModelProjection()
+	{
+		BillboardDepthSurface surface = new BillboardDepthSurface(
+			new BillboardDepthCalculator(client(0, 4096)),
+			0,
+			0,
+			0.0d,
+			100,
+			new Rectangle(-10, -200, 20, 100),
+			new Rectangle(400, 100, 20, 100),
+			0,
+			0
+		);
+
+		assertEquals(surface.depthAt(10, 49, 20, 100, -500), surface.depthAt(10, 49, 20, 100, 5_000), 0.01d);
 	}
 
 	@Test

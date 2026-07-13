@@ -317,6 +317,11 @@ public class NpcSnapPlugin extends Plugin
 		{
 			ensureUiTextureManager().markDirty();
 		}
+
+		if ("useInventorySpritesForGroundItems".equals(configChanged.getKey()))
+		{
+			billboardOverlay.clearBillboardCache();
+		}
 	}
 
 	@Override

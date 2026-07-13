@@ -245,6 +245,26 @@ public class BillboardOcclusionMaskTest
 	}
 
 	@Test
+	public void reportsSourceOfNearestOccluder()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(
+			Arrays.asList(
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 20f, "far-wall"),
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 10f, "near-wall")
+			),
+			BillboardOcclusionQuality.HIGH,
+			0,
+			0,
+			16,
+			16
+		);
+
+		assertEquals("near-wall", mask.sourceAt(2, 2));
+		assertEquals(null, mask.sourceAt(12, 12));
+	}
+
+	@Test
 	public void debugRenderFadesFartherDepthsTowardBlack()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();

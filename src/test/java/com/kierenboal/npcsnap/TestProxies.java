@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 
 final class TestProxies
 {
@@ -13,6 +14,11 @@ final class TestProxies
 	}
 
 	static MethodResult method(String name, Object result)
+	{
+		return new MethodResult(name, result);
+	}
+
+	static MethodResult methodSupplier(String name, Supplier<?> result)
 	{
 		return new MethodResult(name, result);
 	}
@@ -60,7 +66,8 @@ final class TestProxies
 			String name = method.getName();
 			if (methods.containsKey(name))
 			{
-				return methods.get(name);
+				Object result = methods.get(name);
+				return result instanceof Supplier ? ((Supplier<?>) result).get() : result;
 			}
 
 			if ("toString".equals(name))

@@ -253,6 +253,32 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "useInventorySpritesForGroundItems",
+		name = "Use inventory sprites for ground items",
+		description = "Render ground-item billboards from RuneScape's generated inventory icons instead of their world models",
+		section = billboardSection
+	)
+	default boolean useInventorySpritesForGroundItems()
+	{
+		return false;
+	}
+
+	@Range(
+		min = 1,
+		max = 256
+	)
+	@ConfigItem(
+		keyName = "groundItemSpriteColorBands",
+		name = "Ground item sprite color bands",
+		description = "Number of brightness bands used by generated ground-item inventory sprites",
+		section = billboardSection
+	)
+	default int groundItemSpriteColorBands()
+	{
+		return 8;
+	}
+
+	@ConfigItem(
 		keyName = "renderBillboardsOnAllPlanes",
 		name = "Render billboards on all planes",
 		description = "Draw billboards regardless of the local player's current plane",

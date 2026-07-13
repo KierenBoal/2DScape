@@ -10,17 +10,18 @@ Because of that, billboard occlusion is implemented as an approximate software m
 
 ## Pipeline
 
-1. Before compositing billboards, scene tiles are collected along a small camera-to-billboard corridor for each active billboard target.
-2. Accepted terrain tiles contribute projected triangle shapes from `SceneTilePaint` or `SceneTileModel`.
+1. Before compositing billboards, scene tiles are collected along a small camera-to-billboard corridor for each active billboard target. Each selected tile also contributes its linked `Tile.getBridge()` chain, so bridge-layer geometry is included even when the linked tile reports a different plane.
+2. Uneven terrain tiles contribute projected triangle shapes from `SceneTilePaint` or `SceneTileModel`; perfectly level floor triangles are ignored so they cannot falsely occlude billboards standing on the same floor. Terrain from bridge-linked tiles is also ignored because linked tiles represent a render layer rather than reliable visible terrain.
 3. Scenery on those scene tiles contributes projected model-face triangles only when it passes the scenery filter:
    - `WallObject` is always eligible.
    - `GameObject` is eligible only when its renderable has meaningful vertical height, which keeps low/loose objects out while allowing walls, arches, trees, and similar static scenery.
    - `DecorativeObject` and `GroundObject` are intentionally excluded.
-4. Eligible scenery can also contribute convex-hull/clickbox fallback shapes so walls and arches can still occlude when model faces are missing or sparse.
+4. Eligible scenery can also contribute convex-hull/clickbox fallback shapes so walls and arches can still occlude when model faces are missing or sparse. Bridge-linked scenery is accepted only when RuneLite rendered one of its parts in the preceding frame; this restores visible upper structure while rejecting roof geometry the client hid.
 5. Draw-callback objects are not used for occlusion; they are deliberately ignored so arbitrary objects do not affect billboard visibility.
 6. Each accepted shape receives an approximate nearest camera-forward depth from sampled model vertices or terrain triangle vertices. The vertex stride is controlled by `BillboardOcclusionQuality`.
 7. `BillboardOcclusionMask` stores a low-resolution depth grid clipped to the union of visible billboard draw bounds, but only rasterizes cells inside the individual billboard rectangles. Empty space between billboards is skipped.
-8. Billboard compositing maps each non-transparent billboard pixel back into sprite/model space, estimates that pixel's world position on the camera-facing billboard surface, and skips it when the sampled world occluder depth is nearer, with a small bias to reduce z-fighting-style flicker.
+8. Billboard compositing maps each non-transparent billboard pixel back into sprite/model space, uses its draw-relative image row to estimate height on the camera-facing billboard surface, and skips it when the sampled world occluder depth is nearer, with a small bias to reduce z-fighting-style flicker.
+9. Geometry wholly behind the camera's near-plane safety threshold is discarded before it can populate the mask. This avoids false coverage from bridge or roof data behind the camera, but does not attempt to reproduce RuneLite's unexposed per-tile roof-removal decision.
 
 ## Quality Levels
 
@@ -42,7 +43,7 @@ Use these debug options together:
 
 Interpretation:
 
-- Billboard draws over terrain and no cyan cells appear: the terrain corridor may be too narrow for that camera angle, the terrain triangle did not intersect the billboard interest area, or the billboard bounds were not available yet.
+- Billboard draws over terrain and no cyan cells appear: the terrain may be level (check `flatTerrainFacesSkipped`), the corridor may be too narrow for that camera angle, the terrain triangle did not intersect the billboard interest area, or the billboard bounds were not available yet.
 - Billboard draws over a wall, arch, tree, or other scenery and no cyan cells appear: check `sceneryCandidates`, `sceneryAccepted`, `sceneryRejectedByFilter`, `sceneryOutsideInterest`, `sceneryWithoutParts`, and `sceneryFaces`. These counters show whether the corridor missed the scenery, the filter rejected it, it was outside the billboard bounds, or RuneLite exposed no usable renderable model.
 - Cyan cells appear but the billboard still draws over the wall: the world depth estimate or bias is wrong for that geometry, or the billboard pixel's estimated surface depth does not match the in-game model posture closely enough.
 - FPS drops with many billboards: compare considered, accepted, and shape counts at `LOW`, `MEDIUM`, `HIGH`, `ULTRA`, and `MAX`.
