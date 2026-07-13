@@ -581,6 +581,7 @@ public final class BillboardOcclusionMask
 			x2 = 0;
 			y2 = 0;
 			depth2 = Float.NaN;
+			barycentricDenominator = Double.NaN;
 			bounds = shape.getBounds();
 			this.source = source;
 		}
