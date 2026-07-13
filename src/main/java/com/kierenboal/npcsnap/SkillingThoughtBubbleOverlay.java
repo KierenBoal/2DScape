@@ -52,6 +52,7 @@ class SkillingThoughtBubbleOverlay extends Overlay
 	private final SkillingActivityTracker skillingActivityTracker;
 	private final SpriteManager spriteManager;
 	private final SkillIconManager skillIconManager;
+	private final SkillingBubbleAnimation animation;
 	private final Map<Skill, BufferedImage> skillImages = new EnumMap<>(Skill.class);
 
 	@Inject
@@ -68,6 +69,7 @@ class SkillingThoughtBubbleOverlay extends Overlay
 		this.skillingActivityTracker = skillingActivityTracker;
 		this.spriteManager = spriteManager;
 		this.skillIconManager = skillIconManager;
+		this.animation = new SkillingBubbleAnimation(skillingActivityTracker);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(PRIORITY_HIGHEST);
@@ -100,7 +102,7 @@ class SkillingThoughtBubbleOverlay extends Overlay
 			return null;
 		}
 
-		float alpha = bubbleAlpha(activeSkills, nowMillis);
+		float alpha = animation.bubbleAlpha(activeSkills, nowMillis);
 		if (alpha <= 0.0f)
 		{
 			return null;
@@ -129,7 +131,7 @@ class SkillingThoughtBubbleOverlay extends Overlay
 		int bubbleWidth = Math.max(MIN_BUBBLE_SIZE, iconsWidth + (BUBBLE_PADDING * 2));
 		int bubbleHeight = MIN_BUBBLE_SIZE;
 		double time = nowMillis / 1000.0d;
-		float introProgress = bubbleIntroProgress(activeSkills, nowMillis);
+		float introProgress = animation.introProgress(activeSkills, nowMillis);
 		BubblePlacement restingPlacement = chooseBubblePlacement(player, anchor, bubbleWidth, bubbleHeight);
 		BubblePlacement animatedPlacement = interpolatePlacement(anchor, restingPlacement, bubbleWidth, bubbleHeight, introProgress);
 		int bubbleX = animatedPlacement.x + (int) Math.round(Math.sin(time * 1.2d) * 1.2d);
@@ -180,59 +182,6 @@ class SkillingThoughtBubbleOverlay extends Overlay
 		int drawX = x + ((maxWidth - drawWidth) / 2);
 		int drawY = y + ((maxHeight - drawHeight) / 2);
 		graphics.drawImage(image, drawX, drawY, drawWidth, drawHeight, null);
-	}
-
-	private float bubbleAlpha(List<Skill> activeSkills, long nowMillis)
-	{
-		float alpha = 0.0f;
-		for (Skill skill : activeSkills)
-		{
-			alpha = Math.max(alpha, skillAlpha(skill, nowMillis));
-		}
-		return alpha;
-	}
-
-	private float bubbleIntroProgress(List<Skill> activeSkills, long nowMillis)
-	{
-		float progress = 1.0f;
-		for (Skill skill : activeSkills)
-		{
-			long visibleFrom = skillingActivityTracker.getVisibleFromMillis(skill);
-			if (visibleFrom <= 0L)
-			{
-				continue;
-			}
-
-			progress = Math.min(progress, clampAlpha((float) (nowMillis - visibleFrom) / FADE_IN_MILLIS));
-		}
-		return progress;
-	}
-
-	private float skillAlpha(Skill skill, long nowMillis)
-	{
-		long visibleFrom = skillingActivityTracker.getVisibleFromMillis(skill);
-		long activeUntil = skillingActivityTracker.getActiveUntilMillis(skill);
-		if (visibleFrom <= 0L || activeUntil <= 0L)
-		{
-			return 0.0f;
-		}
-
-		if (nowMillis < visibleFrom + FADE_IN_MILLIS)
-		{
-			return clampAlpha((float) (nowMillis - visibleFrom) / FADE_IN_MILLIS);
-		}
-
-		if (nowMillis <= activeUntil)
-		{
-			return 1.0f;
-		}
-
-		return clampAlpha(1.0f - ((float) (nowMillis - activeUntil) / FADE_OUT_MILLIS));
-	}
-
-	private static float clampAlpha(float alpha)
-	{
-		return Math.max(0.0f, Math.min(1.0f, alpha));
 	}
 
 	private BubblePlacement chooseBubblePlacement(Player player, Point anchor, int bubbleWidth, int bubbleHeight)

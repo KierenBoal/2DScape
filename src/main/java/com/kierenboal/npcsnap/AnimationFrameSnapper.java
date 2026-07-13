@@ -14,7 +14,7 @@ class AnimationFrameSnapper
 	private final Map<Integer, Integer> animationFrameCache = new HashMap<>();
 
 	@Inject
-	private AnimationFrameSnapper(Client client)
+	AnimationFrameSnapper(Client client)
 	{
 		this.client = client;
 	}

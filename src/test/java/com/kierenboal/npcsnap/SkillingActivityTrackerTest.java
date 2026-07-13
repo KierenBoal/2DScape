@@ -106,4 +106,29 @@ public class SkillingActivityTrackerTest
 		assertEquals(1_000L, tracker.getVisibleFromMillis(Skill.WOODCUTTING));
 		assertEquals(15_000L, tracker.getActiveUntilMillis(Skill.WOODCUTTING));
 	}
+
+	@Test
+	public void zeroTimeoutExpiresAtTheEventTime()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		tracker.seedXp(Skill.MINING, 100);
+
+		assertTrue(tracker.recordXp(Skill.MINING, 125, 2_000L, -1L));
+		assertTrue(tracker.getRenderableSkills(2_000L, 0L).isEmpty());
+	}
+
+	@Test
+	public void clearRemovesXpSeedsAndVisibleState()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		tracker.seedXp(Skill.MINING, 100);
+		tracker.recordXp(Skill.MINING, 125, 2_000L, 10_000L);
+
+		tracker.clear();
+
+		assertFalse(tracker.isTrackedXpIncrease(Skill.MINING, 150));
+		assertEquals(0L, tracker.getVisibleFromMillis(Skill.MINING));
+		assertEquals(0L, tracker.getActiveUntilMillis(Skill.MINING));
+		assertTrue(tracker.getRenderableSkills(2_000L, 1_000L).isEmpty());
+	}
 }

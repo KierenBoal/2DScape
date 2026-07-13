@@ -8,21 +8,15 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
-import net.runelite.api.DecorativeObject;
 import net.runelite.api.GameState;
-import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
-import net.runelite.api.GroundObject;
-import net.runelite.api.ItemLayer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.SpritePixels;
-import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
-import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
@@ -54,16 +48,14 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class NpcSnapPlugin extends Plugin
 	implements Hooks.RenderableDrawListener
 {
-	private static final int LOGIN_XP_DROP_GRACE_TICKS = 10;
-
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreNpcState;
+	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private boolean pendingSkillXpSeed;
-	private int gameTickCounter;
-	private int loginXpDropGraceUntilTick = Integer.MIN_VALUE;
-	private int ignoredLoginXpDropTick = Integer.MIN_VALUE;
 	private NpcSnapUiTextureManager uiTextureManager;
 	private NpcSnapTextureBandingManager textureBandingManager;
+	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
+	private NpcSnapConfigChangeHandler configChangeHandler;
 
 	@Inject
 	private Client client;
@@ -155,14 +147,17 @@ public class NpcSnapPlugin extends Plugin
 			billboardOverlay.syncGroundItems(worldView);
 		}
 
-		for (NPC npc : worldView.npcs())
+		if (config.applyToNpcs())
 		{
-			if (npc == null || !config.applyToNpcs())
+			for (NPC npc : worldView.npcs())
 			{
-				continue;
-			}
+				if (npc == null)
+				{
+					continue;
+				}
 
-			applyAnimationFrameSnap(npc);
+				applyAnimationFrameSnap(npc);
+			}
 		}
 
 		if (config.applyToPlayers())
@@ -208,7 +203,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged)
 	{
-		if (shouldIgnoreLoginXpDrop(statChanged))
+		if (loginXpDropGuard.shouldIgnore(statChanged, client.getGameState(), skillingActivityTracker))
 		{
 			skillingActivityTracker.seedXp(statChanged.getSkill(), statChanged.getXp());
 			return;
@@ -221,7 +216,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
-		gameTickCounter++;
+		loginXpDropGuard.advanceTick();
 		billboardOverlay.clearStaleInteraction(client.getLocalPlayer(), client.getTickCount());
 		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
 		{
@@ -239,16 +234,14 @@ public class NpcSnapPlugin extends Plugin
 		{
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = true;
-			loginXpDropGraceUntilTick = gameTickCounter + LOGIN_XP_DROP_GRACE_TICKS;
-			ignoredLoginXpDropTick = Integer.MIN_VALUE;
+			loginXpDropGuard.onLoggedIn();
 			ensureUiTextureManager().markDirty();
 		}
 		else
 		{
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = false;
-			loginXpDropGraceUntilTick = Integer.MIN_VALUE;
-			ignoredLoginXpDropTick = Integer.MIN_VALUE;
+			loginXpDropGuard.onLoggedOut();
 			billboardOverlay.clearInteractionState();
 			ensureUiTextureManager().restore();
 			ensureUiTextureManager().markDirty();
@@ -299,173 +292,72 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
-		if (!"npc-snap".equals(configChanged.getGroup()))
-		{
-			return;
-		}
+		ensureConfigChangeHandler().handle(configChanged.getGroup(), configChanged.getKey());
+	}
 
-		if ("enableGlobalTextureBanding".equals(configChanged.getKey())
-			|| "globalTextureColorBands".equals(configChanged.getKey()))
+	private NpcSnapConfigChangeHandler ensureConfigChangeHandler()
+	{
+		if (configChangeHandler == null)
 		{
-			ensureTextureBandingManager().markDirty();
-			billboardOverlay.clearTextureCache();
+			configChangeHandler = new NpcSnapConfigChangeHandler(
+				() -> ensureTextureBandingManager().markDirty(),
+				billboardOverlay::clearTextureCache,
+				() -> ensureUiTextureManager().markDirty(),
+				billboardOverlay::clearBillboardCache);
 		}
-
-		if ("enableUiTextureBanding".equals(configChanged.getKey())
-			|| "uiTextureColorBands".equals(configChanged.getKey())
-			|| "uiSpriteQuality".equals(configChanged.getKey()))
-		{
-			ensureUiTextureManager().markDirty();
-		}
-
-		if ("useInventorySpritesForGroundItems".equals(configChanged.getKey()))
-		{
-			billboardOverlay.clearBillboardCache();
-		}
+		return configChangeHandler;
 	}
 
 	@Override
 	public boolean addEntity(Renderable renderable, boolean drawingUi)
 	{
-		if (!config.enable2dBillboardSprites() || drawingUi)
-		{
-			return true;
-		}
-
-		// IMPORTANT: addEntity is the actor interaction path, not the actor hiding path.
-		// NPCs and players must continue through addEntity even when a billboard is active,
-		// because RuneLite builds their hover/right-click targeting from this callback chain.
-		// If an actor starts becoming unclickable after changes around billboard hiding,
-		// the first thing to check is whether addEntity was changed to return false for
-		// NPCs/players with billboards. That will remove the clickbox/menu state entirely.
-		//
-		// Visual suppression for billboarded actors is handled indirectly elsewhere by the
-		// renderer; do not "optimize" actor hiding here unless you have verified in-game
-		// that NPC/player clickboxes and targeting still work correctly.
-		billboardOverlay.noteSceneRenderable(renderable);
-
-		if (ObjectClassifier.keepsActorInteraction(renderable))
-		{
-			return true;
-		}
-
-		return !billboardOverlay.shouldHideRenderable(renderable);
+		return ensureSceneDrawCallbacks().addEntity(renderable, drawingUi);
 	}
 
 	@Override
 	public boolean draw(Renderable renderable, boolean drawingUi)
 	{
-		if (!config.enable2dBillboardSprites() || drawingUi)
-		{
-			return true;
-		}
-
-		billboardOverlay.noteSceneRenderable(renderable);
-		return !billboardOverlay.shouldHideRenderable(renderable);
+		return ensureSceneDrawCallbacks().draw(renderable, drawingUi);
 	}
 
 	@Override
 	public boolean drawObject(Scene scene, TileObject tileObject)
 	{
-		if (!config.enable2dBillboardSprites())
-		{
-			return true;
-		}
-
-		if (tileObject instanceof GameObject)
-		{
-			// IMPORTANT: drawObject is the visual suppression path for TileObjects and their
-			// backing renderables. This method is easy to regress because addEntity must keep
-			// actors alive for clickboxes, while drawObject must aggressively return false for
-			// billboarded TileObject renderables so the original 3D model does not render
-			// underneath the sprite.
-			//
-			// The common failure modes here are:
-			// 1. Returning true unconditionally after observeTileObject()/shouldHideTileObject(),
-			//    which causes the original model to render under the billboard.
-			// 2. Removing the per-renderable shouldHideRenderable() checks below, which breaks
-			//    suppression for GameObject/GroundObject/DecorativeObject/WallObject parts.
-			// 3. Moving actor clickbox logic into drawObject(), even though NPCs/players do not
-			//    use this callback path for their interaction state.
-			if (observeAndShouldHideTileObject(tileObject))
-			{
-				return false;
-			}
-
-			return shouldDrawRenderable(((GameObject) tileObject).getRenderable());
-		}
-
-		if (tileObject instanceof GroundObject)
-		{
-			if (observeAndShouldHideTileObject(tileObject))
-			{
-				return false;
-			}
-
-			return shouldDrawRenderable(((GroundObject) tileObject).getRenderable());
-		}
-
-		if (tileObject instanceof DecorativeObject)
-		{
-			if (observeAndShouldHideTileObject(tileObject))
-			{
-				return false;
-			}
-
-			DecorativeObject decorativeObject = (DecorativeObject) tileObject;
-			return shouldDrawAllRenderables(decorativeObject.getRenderable(), decorativeObject.getRenderable2());
-		}
-
-		if (tileObject instanceof WallObject)
-		{
-			if (observeAndShouldHideTileObject(tileObject))
-			{
-				return false;
-			}
-
-			WallObject wallObject = (WallObject) tileObject;
-			return shouldDrawAllRenderables(wallObject.getRenderable1(), wallObject.getRenderable2());
-		}
-
-		if (tileObject instanceof ItemLayer)
-		{
-			ItemLayer itemLayer = (ItemLayer) tileObject;
-			billboardOverlay.noteSceneRenderable(itemLayer.getBottom());
-			billboardOverlay.noteSceneRenderable(itemLayer.getMiddle());
-			billboardOverlay.noteSceneRenderable(itemLayer.getTop());
-			return shouldDrawAllRenderables(itemLayer.getBottom(), itemLayer.getMiddle(), itemLayer.getTop());
-		}
-
-		return true;
+		return ensureSceneDrawCallbacks().drawObject(tileObject);
 	}
 
-	private boolean observeAndShouldHideTileObject(TileObject tileObject)
+	private BillboardSceneDrawCallbacks ensureSceneDrawCallbacks()
 	{
-		if (!config.applyToObjects() && !config.applyToGraphicsObjects())
+		if (sceneDrawCallbacks == null)
 		{
-			return false;
-		}
-
-		billboardOverlay.observeTileObject(tileObject);
-		return billboardOverlay.shouldHideTileObject(tileObject);
-	}
-
-	private boolean shouldDrawAllRenderables(Renderable... renderables)
-	{
-		for (Renderable renderable : renderables)
-		{
-			if (!shouldDrawRenderable(renderable))
+			sceneDrawCallbacks = new BillboardSceneDrawCallbacks(config, new BillboardSceneDrawCallbacks.OverlayAccess()
 			{
-				return false;
-			}
+				@Override
+				public void noteSceneRenderable(Renderable renderable)
+				{
+					billboardOverlay.noteSceneRenderable(renderable);
+				}
+
+				@Override
+				public void observeTileObject(TileObject tileObject)
+				{
+					billboardOverlay.observeTileObject(tileObject);
+				}
+
+				@Override
+				public boolean shouldHideRenderable(Renderable renderable)
+				{
+					return billboardOverlay.shouldHideRenderable(renderable);
+				}
+
+				@Override
+				public boolean shouldHideTileObject(TileObject tileObject)
+				{
+					return billboardOverlay.shouldHideTileObject(tileObject);
+				}
+			});
 		}
-
-		return true;
-	}
-
-	private boolean shouldDrawRenderable(Renderable renderable)
-	{
-		return !billboardOverlay.shouldHideRenderable(renderable);
+		return sceneDrawCallbacks;
 	}
 
 	private void applyAnimationFrameSnap(Actor actor)
@@ -573,25 +465,6 @@ public class NpcSnapPlugin extends Plugin
 		{
 			skillingActivityTracker.seedXp(skill, client.getSkillExperience(skill));
 		}
-	}
-
-	private boolean shouldIgnoreLoginXpDrop(StatChanged statChanged)
-	{
-		if (statChanged == null
-			|| client.getGameState() != GameState.LOGGED_IN
-			|| gameTickCounter > loginXpDropGraceUntilTick
-			|| !skillingActivityTracker.isTrackedXpIncrease(statChanged.getSkill(), statChanged.getXp()))
-		{
-			return false;
-		}
-
-		if (ignoredLoginXpDropTick == Integer.MIN_VALUE)
-		{
-			ignoredLoginXpDropTick = gameTickCounter;
-			return true;
-		}
-
-		return ignoredLoginXpDropTick == gameTickCounter;
 	}
 
 	@Value

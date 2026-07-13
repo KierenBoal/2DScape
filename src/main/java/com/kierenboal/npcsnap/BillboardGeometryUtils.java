@@ -17,7 +17,7 @@ final class BillboardGeometryUtils
 
 	static Rectangle expandedBounds(Rectangle bounds, int padding)
 	{
-		if (padding <= 0)
+		if (bounds == null || padding <= 0)
 		{
 			return bounds;
 		}
@@ -27,7 +27,8 @@ final class BillboardGeometryUtils
 
 	static boolean isUsableSourceBounds(Rectangle bounds)
 	{
-		return bounds.width > 0
+		return bounds != null
+			&& bounds.width > 0
 			&& bounds.height > 0
 			&& bounds.width <= MAX_SOURCE_BILLBOARD_SIZE
 			&& bounds.height <= MAX_SOURCE_BILLBOARD_SIZE

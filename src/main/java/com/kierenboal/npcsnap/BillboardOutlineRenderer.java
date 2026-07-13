@@ -6,7 +6,6 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.Arrays;
-import java.util.ArrayDeque;
 
 final class BillboardOutlineRenderer
 {
@@ -164,7 +163,9 @@ final class BillboardOutlineRenderer
 		private boolean[] visited = new boolean[0];
 		private boolean[] exteriorTransparentBoundary = new boolean[0];
 		private boolean[] exteriorOpaqueBoundary = new boolean[0];
-		private final ArrayDeque<Integer> queue = new ArrayDeque<>();
+		private int[] queue = new int[0];
+		private int queueHead;
+		private int queueTail;
 
 		private void ensureCapacity(int capacity)
 		{
@@ -177,6 +178,28 @@ final class BillboardOutlineRenderer
 			visited = new boolean[capacity];
 			exteriorTransparentBoundary = new boolean[capacity];
 			exteriorOpaqueBoundary = new boolean[capacity];
+			queue = new int[capacity];
+		}
+
+		private void clearQueue()
+		{
+			queueHead = 0;
+			queueTail = 0;
+		}
+
+		private void enqueue(int index)
+		{
+			queue[queueTail++] = index;
+		}
+
+		private boolean hasQueuedPixels()
+		{
+			return queueHead < queueTail;
+		}
+
+		private int dequeue()
+		{
+			return queue[queueHead++];
 		}
 	}
 
@@ -348,31 +371,31 @@ final class BillboardOutlineRenderer
 		return (blendedAlpha << 24);
 	}
 
-	private static void enqueueBorderTransparentPixels(int[] pixels, int width, int height, boolean[] visited, ArrayDeque<Integer> queue)
+	private static void enqueueBorderTransparentPixels(int[] pixels, int width, int height, Scratch scratch)
 	{
 		for (int x = 0; x < width; x++)
 		{
-			enqueueTransparentPixel(pixels, width, 0, x, visited, queue);
-			enqueueTransparentPixel(pixels, width, height - 1, x, visited, queue);
+			enqueueTransparentPixel(pixels, width, 0, x, scratch);
+			enqueueTransparentPixel(pixels, width, height - 1, x, scratch);
 		}
 
 		for (int y = 1; y < height - 1; y++)
 		{
-			enqueueTransparentPixel(pixels, width, y, 0, visited, queue);
-			enqueueTransparentPixel(pixels, width, y, width - 1, visited, queue);
+			enqueueTransparentPixel(pixels, width, y, 0, scratch);
+			enqueueTransparentPixel(pixels, width, y, width - 1, scratch);
 		}
 	}
 
-	private static void enqueueTransparentPixel(int[] pixels, int width, int y, int x, boolean[] visited, ArrayDeque<Integer> queue)
+	private static void enqueueTransparentPixel(int[] pixels, int width, int y, int x, Scratch scratch)
 	{
 		int index = y * width + x;
-		if (visited[index] || isOpaque(pixels[index]))
+		if (scratch.visited[index] || isOpaque(pixels[index]))
 		{
 			return;
 		}
 
-		visited[index] = true;
-		queue.addLast(index);
+		scratch.visited[index] = true;
+		scratch.enqueue(index);
 	}
 
 	private static int shadowOutlineColor(int[] pixels, int width, int height, int x, int y)
@@ -526,12 +549,12 @@ final class BillboardOutlineRenderer
 		Arrays.fill(scratch.visited, 0, pixelCount, false);
 		Arrays.fill(scratch.exteriorTransparentBoundary, 0, pixelCount, false);
 		Arrays.fill(scratch.exteriorOpaqueBoundary, 0, pixelCount, false);
-		scratch.queue.clear();
+		scratch.clearQueue();
 
-		enqueueBorderTransparentPixels(sourcePixels, width, height, scratch.visited, scratch.queue);
-		while (!scratch.queue.isEmpty())
+		enqueueBorderTransparentPixels(sourcePixels, width, height, scratch);
+		while (scratch.hasQueuedPixels())
 		{
-			int index = scratch.queue.removeFirst();
+			int index = scratch.dequeue();
 			int x = index % width;
 			int y = index / width;
 			if (hasOpaqueNeighbor(sourcePixels, width, height, x, y))
@@ -556,7 +579,7 @@ final class BillboardOutlineRenderer
 				}
 
 				scratch.visited[nextIndex] = true;
-				scratch.queue.addLast(nextIndex);
+				scratch.enqueue(nextIndex);
 			}
 		}
 	}

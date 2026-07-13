@@ -1,11 +1,13 @@
 package com.kierenboal.npcsnap;
 
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import net.runelite.api.Renderable;
+import net.runelite.api.Point;
 import net.runelite.api.Tile;
 import org.junit.Test;
 
@@ -19,6 +21,15 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardWorldOcclusionCollectorTest
 {
+	@Test
+	public void triangleBoundsIncludesAllEdgePixelsWithoutPolygonAllocation()
+	{
+		assertEquals(
+			new Rectangle(2, 3, 9, 10),
+			BillboardWorldOcclusionCollector.triangleBounds(
+				new Point(2, 8), new Point(10, 3), new Point(6, 12)));
+	}
+
 	@Test
 	public void addsDirectTileAndBridgeTileOnDifferentPlane()
 	{

@@ -38,7 +38,7 @@ class NpcSnapDebug
 	private final Map<Actor, FrameState> actorFrames = new IdentityHashMap<>();
 
 	@Inject
-	private NpcSnapDebug(Client client, NpcSnapConfig config)
+	NpcSnapDebug(Client client, NpcSnapConfig config)
 	{
 		this.client = client;
 		this.config = config;

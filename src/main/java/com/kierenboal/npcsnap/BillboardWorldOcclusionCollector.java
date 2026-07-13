@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap;
 
-import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.util.ArrayList;
@@ -38,6 +37,11 @@ final class BillboardWorldOcclusionCollector
 	private final Logger log;
 	private final List<BillboardOcclusionMask.Occluder> worldOccluders = new ArrayList<>();
 	private final List<Rectangle> interestRegions = new ArrayList<>();
+	private final Set<Long> visitedTileCoordinates = new HashSet<>();
+	private final Set<Tile> visitedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<Tile> bridgeLinkedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final List<Tile> terrainTiles = new ArrayList<>();
 	private Rectangle interestBounds;
 	private int debugShapesAccepted;
 	private int debugTerrainTilesConsidered;
@@ -96,7 +100,7 @@ final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		Rectangle clipped = viewportBounds.intersection(NpcBillboardOverlay.expandedOcclusionInterest(previewBounds, occlusionInterestMargin()));
+		Rectangle clipped = viewportBounds.intersection(BillboardOcclusionRegions.expanded(previewBounds, occlusionInterestMargin()));
 		if (!clipped.isEmpty())
 		{
 			interestRegions.add(clipped);
@@ -123,11 +127,11 @@ final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		Set<Long> visitedTileCoordinates = new HashSet<>();
-		Set<Tile> visitedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
-		Set<Tile> bridgeLinkedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
-		Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
-		List<Tile> terrainTiles = new ArrayList<>();
+		visitedTileCoordinates.clear();
+		visitedTiles.clear();
+		bridgeLinkedTiles.clear();
+		visitedObjects.clear();
+		terrainTiles.clear();
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain corridor traversal"))
 		{
 			for (TraceTarget traceTarget : traceTargets)
@@ -813,12 +817,7 @@ final class BillboardWorldOcclusionCollector
 				return;
 			}
 
-			Polygon polygon = new Polygon(
-				new int[] { p0.getX(), p1.getX(), p2.getX() },
-				new int[] { p0.getY(), p1.getY(), p2.getY() },
-				3
-			);
-			if (!intersectsInterest(polygon.getBounds()))
+			if (!intersectsInterest(triangleBounds(p0, p1, p2)))
 			{
 				return;
 			}
@@ -926,12 +925,7 @@ final class BillboardWorldOcclusionCollector
 				return;
 			}
 
-			Polygon polygon = new Polygon(
-				new int[] { p0.getX(), p1.getX(), p2.getX() },
-				new int[] { p0.getY(), p1.getY(), p2.getY() },
-				3
-			);
-			if (!intersectsInterest(polygon.getBounds()))
+			if (!intersectsInterest(triangleBounds(p0, p1, p2)))
 			{
 				return;
 			}
@@ -960,6 +954,15 @@ final class BillboardWorldOcclusionCollector
 	static boolean isUnevenTerrainTriangle(int height0, int height1, int height2)
 	{
 		return height0 != height1 || height1 != height2;
+	}
+
+	static Rectangle triangleBounds(Point p0, Point p1, Point p2)
+	{
+		int minX = Math.min(p0.getX(), Math.min(p1.getX(), p2.getX()));
+		int minY = Math.min(p0.getY(), Math.min(p1.getY(), p2.getY()));
+		int maxX = Math.max(p0.getX(), Math.max(p1.getX(), p2.getX()));
+		int maxY = Math.max(p0.getY(), Math.max(p1.getY(), p2.getY()));
+		return new Rectangle(minX, minY, Math.max(1, maxX - minX + 1), Math.max(1, maxY - minY + 1));
 	}
 
 	static boolean hasForwardVertex(double depth0, double depth1, double depth2)

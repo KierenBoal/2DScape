@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Singleton;
@@ -91,19 +92,20 @@ class SkillingActivityTracker
 
 	List<Skill> getRenderableSkills(long nowMillis, long fadeOutMillis)
 	{
-		List<Skill> activeSkills = new ArrayList<>();
+		List<Skill> activeSkills = new ArrayList<>(activeUntilMillis.size());
 		long removalThreshold = nowMillis - Math.max(0L, fadeOutMillis);
-		activeUntilMillis.entrySet().removeIf(entry ->
+		Iterator<Map.Entry<Skill, Long>> iterator = activeUntilMillis.entrySet().iterator();
+		while (iterator.hasNext())
 		{
-			boolean expired = entry.getValue() <= removalThreshold;
-			if (expired)
+			Map.Entry<Skill, Long> entry = iterator.next();
+			if (entry.getValue() <= removalThreshold)
 			{
 				visibleFromMillis.remove(entry.getKey());
+				iterator.remove();
 			}
-			return expired;
-		});
+		}
 
-		for (Skill skill : Skill.values())
+		for (Skill skill : TRACKED_SKILLS)
 		{
 			Long expiresAt = activeUntilMillis.get(skill);
 			if (expiresAt != null && expiresAt > removalThreshold)

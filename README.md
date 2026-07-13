@@ -30,7 +30,7 @@
 ## About
 This plugin is an attempt to recreate the old RuneScape Classic art style inside OSRS by visually replacing NPCs, players, projectiles, pets, ground items, and more with 2D billboard sprites.
 
-It's not trying to be a perfect RSC recreation, the color pallets and art design just don't fit that anymore; but how close and asthetically pleasing can we get it?
+It's not trying to be a perfect RSC recreation—the color palettes and art design just don't fit that anymore—but how close and aesthetically pleasing can we get it?
 
 ## How It Works
 The plugin keeps track of actors, projectiles, tiles, and other renderable bits, then turns them into billboarded 2D sprites that always face the camera.
