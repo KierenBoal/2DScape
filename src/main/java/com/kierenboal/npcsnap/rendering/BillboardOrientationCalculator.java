@@ -48,7 +48,7 @@ public final class BillboardOrientationCalculator
 		int rawPitch = cameraPitch();
 		if (!config.enableRotationSnapping())
 		{
-			return rawPitch;
+			return -rawPitch;
 		}
 
 		int snappedPitch = BillboardAngleUtils.snapPitchByAngles(rawPitch, 0, config.numberOfPitchRotationAngles());
@@ -71,7 +71,7 @@ public final class BillboardOrientationCalculator
 		int rawPitch = cameraPitch();
 		if (!config.enableRotationSnapping())
 		{
-			return rawPitch;
+			return -rawPitch;
 		}
 
 		return -BillboardAngleUtils.snapPitchByAngles(rawPitch, BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, config.numberOfPitchRotationAngles());

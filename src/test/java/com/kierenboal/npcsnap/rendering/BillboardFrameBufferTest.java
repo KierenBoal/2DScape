@@ -41,6 +41,40 @@ public class BillboardFrameBufferTest
 	}
 
 	@Test
+	public void transparentForegroundBlendsOverFartherOpaquePixel()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(1, 1);
+		buffer.blit(draw(image(1, 1, new int[] {0x80FF0000}), new Rectangle(0, 0, 1, 1), 10), 0, 0, 1, 1, false);
+		buffer.blit(draw(image(1, 1, new int[] {0xFF0000FF}), new Rectangle(0, 0, 1, 1), 5), 0, 0, 1, 1, false);
+
+		assertEquals(0xFF80007F, buffer.image().getRGB(0, 0));
+	}
+
+	@Test
+	public void fartherTransparentPixelCannotDrawOverNearerOpaquePixel()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(1, 1);
+		buffer.blit(draw(image(1, 1, new int[] {0xFFFF0000}), new Rectangle(0, 0, 1, 1), 10), 0, 0, 1, 1, false);
+		buffer.blit(draw(image(1, 1, new int[] {0x8000FF00}), new Rectangle(0, 0, 1, 1), 5), 0, 0, 1, 1, false);
+
+		assertEquals(0xFFFF0000, buffer.image().getRGB(0, 0));
+	}
+
+	@Test
+	public void multipleTransparentLayersCombineNearestToFarthest()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(1, 1);
+		buffer.blit(draw(image(1, 1, new int[] {0x80FF0000}), new Rectangle(0, 0, 1, 1), 10), 0, 0, 1, 1, false);
+		buffer.blit(draw(image(1, 1, new int[] {0x8000FF00}), new Rectangle(0, 0, 1, 1), 8), 0, 0, 1, 1, false);
+		buffer.blit(draw(image(1, 1, new int[] {0xFF0000FF}), new Rectangle(0, 0, 1, 1), 5), 0, 0, 1, 1, false);
+
+		assertEquals(0xFF7F3F40, buffer.image().getRGB(0, 0));
+	}
+
+	@Test
 	public void beginClearsReusedBuffersAndResizeRecreatesThem()
 	{
 		BillboardFrameBuffer buffer = buffer();

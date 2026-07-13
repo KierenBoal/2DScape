@@ -18,8 +18,8 @@ Because of that, billboard occlusion is implemented as an approximate software m
    - `DecorativeObject` and `GroundObject` are intentionally excluded.
 4. Eligible scenery can also contribute convex-hull/clickbox fallback shapes so walls and arches can still occlude when model faces are missing or sparse. Bridge-linked scenery is accepted only when RuneLite rendered one of its parts in the preceding frame; this restores visible upper structure while rejecting roof geometry the client hid.
 5. Draw-callback objects are not used for occlusion; they are deliberately ignored so arbitrary objects do not affect billboard visibility.
-6. Each accepted shape receives an approximate nearest camera-forward depth from sampled model vertices or terrain triangle vertices. The vertex stride is controlled by `BillboardOcclusionQuality`.
-7. `BillboardOcclusionMask` stores a low-resolution depth grid clipped to the union of visible billboard draw bounds, but only rasterizes cells inside the individual billboard rectangles. Empty space between billboards is skipped.
+6. Triangle-backed shapes receive interpolated camera-forward depth from their model or terrain vertices. Geometry-less convex-hull/clickbox fallbacks project the object's base and top and vary camera-forward depth by screen row; reciprocal-depth interpolation matches perspective projection along that vertical anchor. If that projection is unavailable, the fallback conservatively uses the farthest sampled model depth for the whole shape. The vertex stride is controlled by `BillboardOcclusionQuality`.
+7. `BillboardOcclusionMask` stores a low-resolution depth grid clipped to the union of visible billboard draw bounds, but only rasterizes cells inside the individual billboard rectangles. Empty space between billboards is skipped. Coarse cells retain their winning occluder so vertical fallback depth can be evaluated at the current pixel row, preventing horizontal depth bands without full-resolution coverage rasterization.
 8. Billboard compositing maps each non-transparent billboard pixel back into sprite/model space, uses its draw-relative image row to estimate height on the camera-facing billboard surface, and skips it when the sampled world occluder depth is nearer, with a small bias to reduce z-fighting-style flicker.
 9. Geometry wholly behind the camera's near-plane safety threshold is discarded before it can populate the mask. This avoids false coverage from bridge or roof data behind the camera, but does not attempt to reproduce RuneLite's unexposed per-tile roof-removal decision.
 
@@ -39,7 +39,7 @@ The quality level affects the screen-space mask resolution, the model-vertex sam
 Use these debug options together:
 
 - `Draw occlusion mask`: draws translucent cyan cells where world geometry was sampled into the mask. Billboard pixels hidden by the occlusion test are painted red.
-- `Debug Log Occlusion`: logs throttled collection stats at `debug` level. The log reports `sources=terrain,scenery`; there is no draw-callback object occlusion path. Unique scenery candidates are split into accepted objects plus objects rejected by the scenery filter, skipped for being outside the billboard bounds, or skipped because RuneLite exposed no renderable parts. The log includes bounded `acceptedScenery` and `rejectedScenery` samples in `id:name` form.
+- `Debug Log Occlusion`: logs throttled collection stats at `debug` level. The log reports `sources=terrain,scenery`; there is no draw-callback object occlusion path. Unique scenery candidates are split into accepted objects plus objects rejected by the scenery filter, skipped for being outside the billboard bounds, or skipped because RuneLite exposed no renderable parts. `triangleOccluders`, `verticalFallbackOccluders`, and `flatFallbackOccluders` identify which depth representation was used. The log includes bounded `acceptedScenery` and `rejectedScenery` samples in `id:name` form.
 
 Interpretation:
 
@@ -52,6 +52,6 @@ Interpretation:
 
 - The mask is shape-based, not true triangle depth.
 - Convex hulls and clickboxes can over-cover concave or thin geometry.
-- World depth is based on sampled model vertices. Billboard depth is estimated per visible pixel on a camera-facing surface, not from the original in-game model's exact triangle at that pixel.
+- World depth is based on sampled model vertices. Billboard depth is estimated per visible pixel on a camera-facing surface, not from the original in-game model's exact triangle at that pixel. Convex-hull/clickbox fallbacks deliberately favor visibility when the billboard intersects the occluder's sampled depth range.
 - Terrain and scene-object geometry are sampled along camera-to-billboard corridors, not from the full rendered scene.
 - Final correctness must be verified in-game because RuneLite's public API does not expose the authoritative framebuffer/depth result.

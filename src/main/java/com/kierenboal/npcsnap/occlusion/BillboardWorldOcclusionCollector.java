@@ -59,6 +59,7 @@ public final class BillboardWorldOcclusionCollector
 	private int debugBridgeTerrainTilesSkipped;
 	private int debugBridgeTilesIncluded;
 	private int debugTriangleOccludersAccepted;
+	private int debugVerticalFallbackOccludersAccepted;
 	private int debugFlatFallbackOccludersAccepted;
 	private int debugBridgeFallbacksSuppressed;
 	private int debugBridgeSceneryNotRendered;
@@ -192,7 +193,7 @@ public final class BillboardWorldOcclusionCollector
 
 		debugLastLoggedCycle = gameCycle;
 		log.debug(
-			"Billboard occlusion quality={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryOutsideInterest={} sceneryWithoutParts={} sceneryFaces={} terrainTiles={} terrainTilesAccepted={} terrainFaces={} flatTerrainFacesSkipped={} bridgeTerrainTilesSkipped={} bridgeTiles={} bridgeTileSamples={} shapes={} triangleOccluders={} flatFallbackOccluders={} bridgeFallbacksSuppressed={} bridgeSceneryNotRendered={} behindCameraRejected={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
+			"Billboard occlusion quality={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryOutsideInterest={} sceneryWithoutParts={} sceneryFaces={} terrainTiles={} terrainTilesAccepted={} terrainFaces={} flatTerrainFacesSkipped={} bridgeTerrainTilesSkipped={} bridgeTiles={} bridgeTileSamples={} shapes={} triangleOccluders={} verticalFallbackOccluders={} flatFallbackOccluders={} bridgeFallbacksSuppressed={} bridgeSceneryNotRendered={} behindCameraRejected={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
 			BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()),
 			client.getCameraYaw(),
 			client.getCameraPitch(),
@@ -216,6 +217,7 @@ public final class BillboardWorldOcclusionCollector
 			debugBridgeTileSamples,
 			debugShapesAccepted,
 			debugTriangleOccludersAccepted,
+			debugVerticalFallbackOccludersAccepted,
 			debugFlatFallbackOccludersAccepted,
 			debugBridgeFallbacksSuppressed,
 			debugBridgeSceneryNotRendered,
@@ -240,6 +242,7 @@ public final class BillboardWorldOcclusionCollector
 		debugBridgeTerrainTilesSkipped = 0;
 		debugBridgeTilesIncluded = 0;
 		debugTriangleOccludersAccepted = 0;
+		debugVerticalFallbackOccludersAccepted = 0;
 		debugFlatFallbackOccludersAccepted = 0;
 		debugBridgeFallbacksSuppressed = 0;
 		debugBridgeSceneryNotRendered = 0;
@@ -582,7 +585,7 @@ public final class BillboardWorldOcclusionCollector
 			return true;
 		}
 
-		return addWorldOccluder(tileObject.getClickbox(), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"));
+		return addFallbackWorldOccluder(tileObject.getClickbox(), firstPart(observed), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"));
 	}
 
 	private boolean addSceneryShapeFallbackOccluder(
@@ -593,22 +596,34 @@ public final class BillboardWorldOcclusionCollector
 	{
 		if (tileObject instanceof GameObject)
 		{
-			return addWorldOccluder(((GameObject) tileObject).getConvexHull(), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull"));
+			return addFallbackWorldOccluder(((GameObject) tileObject).getConvexHull(), part(observed, 0), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull"));
 		}
 
 		if (tileObject instanceof WallObject)
 		{
 			WallObject wallObject = (WallObject) tileObject;
-			boolean addedFirst = addWorldOccluder(wallObject.getConvexHull(), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-1"));
-			boolean addedSecond = addWorldOccluder(wallObject.getConvexHull2(), partDepth(observed, 1, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-2"));
+			boolean addedFirst = addFallbackWorldOccluder(wallObject.getConvexHull(), part(observed, 0), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-1"));
+			boolean addedSecond = addFallbackWorldOccluder(wallObject.getConvexHull2(), part(observed, 1), partDepth(observed, 1, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-2"));
 			if (!addedFirst || !addedSecond)
 			{
-				return addWorldOccluder(tileObject.getClickbox(), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox")) || addedFirst || addedSecond;
+				return addFallbackWorldOccluder(tileObject.getClickbox(), firstPart(observed), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox")) || addedFirst || addedSecond;
 			}
 			return true;
 		}
 
 		return false;
+	}
+
+	private ObjectRenderablePart firstPart(ObservedTileObject observed)
+	{
+		return part(observed, 0);
+	}
+
+	private ObjectRenderablePart part(ObservedTileObject observed, int partIndex)
+	{
+		return observed != null && partIndex >= 0 && partIndex < observed.parts.size()
+			? observed.parts.get(partIndex)
+			: null;
 	}
 
 	private double partDepth(ObservedTileObject observed, int partIndex, double fallbackDepth, BillboardOcclusionQuality quality)
@@ -618,7 +633,7 @@ public final class BillboardWorldOcclusionCollector
 			return fallbackDepth;
 		}
 
-		double depth = nearestModelVertexDepth(observed.parts.get(partIndex), quality.vertexStride());
+		double depth = conservativeModelVertexDepth(observed.parts.get(partIndex), quality.vertexStride());
 		return Double.isFinite(depth) ? depth : fallbackDepth;
 	}
 
@@ -993,28 +1008,28 @@ public final class BillboardWorldOcclusionCollector
 			return Double.NaN;
 		}
 
-		double nearest = Double.POSITIVE_INFINITY;
+		double furthest = Double.NEGATIVE_INFINITY;
 		if (observed != null && !observed.parts.isEmpty())
 		{
 			for (ObjectRenderablePart part : observed.parts)
 			{
-				double depth = nearestModelVertexDepth(part, quality.vertexStride());
+				double depth = conservativeModelVertexDepth(part, quality.vertexStride());
 				if (Double.isFinite(depth))
 				{
-					nearest = Math.min(nearest, depth);
+					furthest = Math.max(furthest, depth);
 				}
 			}
 		}
 
-		if (Double.isFinite(nearest))
+		if (Double.isFinite(furthest))
 		{
-			return nearest;
+			return furthest;
 		}
 
 		return depthCalculator.cameraForwardDepth(localPoint, tileObject.getPlane(), 0.0d);
 	}
 
-	private double nearestModelVertexDepth(ObjectRenderablePart part, int vertexStride)
+	private double conservativeModelVertexDepth(ObjectRenderablePart part, int vertexStride)
 	{
 		if (part == null || part.renderable == null || part.localPoint == null)
 		{
@@ -1037,13 +1052,18 @@ public final class BillboardWorldOcclusionCollector
 
 		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
 		int stride = Math.max(1, vertexStride);
-		double nearest = Double.POSITIVE_INFINITY;
+		// A fallback hull has screen-space coverage but no per-pixel world position. Using
+		// its nearest vertex as a constant depth assigns the closest corner to the whole
+		// shape and clips billboards that are actually in front of the wall. Prefer the
+		// furthest sampled vertex: ambiguous intersections remain visible, while objects
+		// definitely behind the complete hull are still occluded.
+		double furthest = Double.NEGATIVE_INFINITY;
 		for (int i = 0; i < vertexCount; i += stride)
 		{
 			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[i], verticesY[i], verticesZ[i]);
 			if (Double.isFinite(depth))
 			{
-				nearest = Math.min(nearest, depth);
+				furthest = Math.max(furthest, depth);
 			}
 		}
 
@@ -1052,13 +1072,52 @@ public final class BillboardWorldOcclusionCollector
 			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
 			if (Double.isFinite(depth))
 			{
-				nearest = Math.min(nearest, depth);
+				furthest = Math.max(furthest, depth);
 			}
 		}
 
-		return Double.isFinite(nearest)
-			? nearest
+		return Double.isFinite(furthest)
+			? furthest
 			: depthCalculator.cameraForwardDepth(part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2.0d));
+	}
+
+	private boolean addFallbackWorldOccluder(Shape shape, ObjectRenderablePart part, double flatDepth, String source)
+	{
+		if (shape == null || shape.getBounds().isEmpty() || part == null || part.localPoint == null || part.renderable == null)
+		{
+			return addWorldOccluder(shape, flatDepth, source);
+		}
+
+		int modelHeight = Math.max(0, part.renderable.getModelHeight());
+		int baseHeight = tileHeightAt(part.localPoint.getX(), part.localPoint.getY(), part.plane);
+		Point basePoint = Perspective.localToCanvas(client, part.localPoint, part.plane, 0);
+		Point topPoint = Perspective.localToCanvas(client, part.localPoint, part.plane, modelHeight);
+		double baseDepth = depthCalculator.cameraForwardDepth(part.localPoint.getX(), part.localPoint.getY(), baseHeight);
+		double topDepth = depthCalculator.cameraForwardDepth(part.localPoint.getX(), part.localPoint.getY(), baseHeight + modelHeight);
+		String verticalSource = config.debugLogBillboardOcclusion() && basePoint != null && topPoint != null
+			? source + " verticalBase=" + basePoint.getY() + ":" + Math.round(baseDepth)
+				+ " verticalTop=" + topPoint.getY() + ":" + Math.round(topDepth)
+			: source;
+		BillboardOcclusionMask.Occluder occluder = basePoint != null && topPoint != null
+			? BillboardOcclusionMask.Occluder.vertical(
+				shape,
+				basePoint.getY(), (float) baseDepth,
+				topPoint.getY(), (float) topDepth,
+				verticalSource)
+			: null;
+		if (occluder == null || !isForwardOccluderDepth(baseDepth) || !isForwardOccluderDepth(topDepth))
+		{
+			return addWorldOccluder(shape, flatDepth, source);
+		}
+		if (interestBounds != null && !intersectsInterest(shape.getBounds()))
+		{
+			return false;
+		}
+
+		worldOccluders.add(occluder);
+		debugShapesAccepted++;
+		debugVerticalFallbackOccludersAccepted++;
+		return true;
 	}
 
 	private double modelVertexDepth(LocalPoint base, int plane, float vertexX, float vertexY, float vertexZ)

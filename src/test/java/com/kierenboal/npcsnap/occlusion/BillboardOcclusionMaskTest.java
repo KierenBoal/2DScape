@@ -225,6 +225,58 @@ public class BillboardOcclusionMaskTest
 	}
 
 	@Test
+	public void verticalFallbackTracksPerspectiveDepthByRow()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(
+			Collections.singletonList(BillboardOcclusionMask.Occluder.vertical(
+				new Rectangle(0, 0, 12, 12),
+				10, 100f,
+				0, 200f,
+				"vertical-wall")),
+			BillboardOcclusionQuality.MAX,
+			0,
+			0,
+			12,
+			12
+		);
+
+		assertEquals(200f, mask.depthAt(5, 0), 0.01f);
+		assertEquals(133.33f, mask.depthAt(5, 5), 0.02f);
+		assertEquals(100f, mask.depthAt(5, 10), 0.01f);
+		assertEquals("vertical-wall", mask.sourceAt(5, 5));
+		assertFalse(mask.isOccluded(5, 0, 200d));
+		assertTrue(mask.isOccluded(5, 0, 220d));
+	}
+
+	@Test
+	public void coarseVerticalFallbackRecomputesDepthWithinEachMaskRow()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(
+			Collections.singletonList(BillboardOcclusionMask.Occluder.vertical(
+				new Rectangle(0, 0, 16, 16),
+				16, 100f,
+				0, 400f,
+				"vertical-wall")),
+			BillboardOcclusionQuality.HIGH,
+			0,
+			0,
+			16,
+			16
+		);
+
+		for (int y = 0; y < 16; y++)
+		{
+			double t = (y - 16) / -16.0d;
+			double surfaceDepth = 1.0d / (((1.0d - t) / 100.0d) + (t / 400.0d));
+			assertEquals(surfaceDepth, mask.depthAt(2, y), 0.02d);
+			assertFalse(mask.isOccluded(2, y, surfaceDepth));
+			assertTrue(mask.isOccluded(2, y, surfaceDepth + 20.0d));
+		}
+	}
+
+	@Test
 	public void nearestOverlappingOccluderWins()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();

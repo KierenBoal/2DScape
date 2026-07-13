@@ -16,6 +16,7 @@ public final class BillboardOcclusionMask
 	private static final Color DEBUG_RASTER_BOUNDS = new Color(0, 220, 255, 220);
 
 	private float[] depthBuffer = new float[0];
+	private Occluder[] occluderBuffer = new Occluder[0];
 	private String[] sourceBuffer = new String[0];
 	private boolean[] rowCoverage = new boolean[0];
 	private int width;
@@ -89,11 +90,16 @@ public final class BillboardOcclusionMask
 		{
 			sourceBuffer = new String[size];
 		}
+		if (occluderBuffer.length < size)
+		{
+			occluderBuffer = new Occluder[size];
+		}
 		if (rowCoverage.length < height)
 		{
 			rowCoverage = new boolean[height];
 		}
 		Arrays.fill(depthBuffer, 0, size, Float.POSITIVE_INFINITY);
+		Arrays.fill(occluderBuffer, 0, size, null);
 		Arrays.fill(sourceBuffer, 0, size, null);
 		Arrays.fill(rowCoverage, 0, height, false);
 		coveredCellCount = 0;
@@ -127,7 +133,8 @@ public final class BillboardOcclusionMask
 			return false;
 		}
 
-		float occluderDepth = depthBuffer[(sampleY * width) + sampleX];
+		int index = (sampleY * width) + sampleX;
+		float occluderDepth = depthAt(index, canvasX, canvasY);
 		return Float.isFinite(occluderDepth) && occluderDepth + depthBias() < billboardDepth;
 	}
 
@@ -144,7 +151,9 @@ public final class BillboardOcclusionMask
 			return false;
 		}
 
-		float occluderDepth = depthBuffer[(sampleY * width) + sampleX];
+		int index = (sampleY * width) + sampleX;
+		int canvasX = viewportX + (sampleX * step) + (step / 2);
+		float occluderDepth = depthAt(index, canvasX, canvasY);
 		return Float.isFinite(occluderDepth) && occluderDepth + depthBias() < billboardDepth;
 	}
 
@@ -183,7 +192,8 @@ public final class BillboardOcclusionMask
 			return Float.NaN;
 		}
 
-		return depthBuffer[(sampleY * width) + sampleX];
+		int index = (sampleY * width) + sampleX;
+		return depthAt(index, canvasX, canvasY);
 	}
 
 	public String sourceAt(int canvasX, int canvasY)
@@ -201,6 +211,19 @@ public final class BillboardOcclusionMask
 		}
 
 		return sourceBuffer[(sampleY * width) + sampleX];
+	}
+
+	private float depthAt(int index, int canvasX, int canvasY)
+	{
+		float sampledDepth = depthBuffer[index];
+		Occluder occluder = occluderBuffer[index];
+		if (occluder == null || !occluder.vertical)
+		{
+			return sampledDepth;
+		}
+
+		float rowDepth = occluder.depthAt(canvasX, canvasY);
+		return Float.isFinite(rowDepth) ? rowDepth : sampledDepth;
 	}
 
 	public float occlusionDepthBias()
@@ -322,6 +345,7 @@ public final class BillboardOcclusionMask
 						rowCoverage[sampleY] = true;
 					}
 					depthBuffer[index] = depth;
+					occluderBuffer[index] = occluder;
 					sourceBuffer[index] = occluder.source();
 				}
 			}
@@ -453,6 +477,7 @@ public final class BillboardOcclusionMask
 		private final Shape shape;
 		private final float depth;
 		private final boolean triangle;
+		private final boolean vertical;
 		private final int x0;
 		private final int y0;
 		private final float depth0;
@@ -475,6 +500,7 @@ public final class BillboardOcclusionMask
 			this.shape = shape;
 			this.depth = depth;
 			triangle = false;
+			vertical = false;
 			x0 = 0;
 			y0 = 0;
 			depth0 = Float.NaN;
@@ -508,6 +534,7 @@ public final class BillboardOcclusionMask
 			shape = null;
 			depth = Float.NaN;
 			triangle = true;
+			vertical = false;
 			this.x0 = x0;
 			this.y0 = y0;
 			this.depth0 = depth0;
@@ -522,6 +549,36 @@ public final class BillboardOcclusionMask
 			int maxX = Math.max(x0, Math.max(x1, x2));
 			int maxY = Math.max(y0, Math.max(y1, y2));
 			bounds = new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+			this.source = source;
+		}
+
+		static Occluder vertical(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source)
+		{
+			if (shape == null || shape.getBounds().isEmpty() || baseY == topY
+				|| !Float.isFinite(baseDepth) || !Float.isFinite(topDepth) || baseDepth <= 0.0f || topDepth <= 0.0f)
+			{
+				return null;
+			}
+
+			return new Occluder(shape, baseY, baseDepth, topY, topDepth, source);
+		}
+
+		private Occluder(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source)
+		{
+			this.shape = shape;
+			depth = Float.NaN;
+			triangle = false;
+			vertical = true;
+			x0 = 0;
+			y0 = baseY;
+			depth0 = baseDepth;
+			x1 = 0;
+			y1 = topY;
+			depth1 = topDepth;
+			x2 = 0;
+			y2 = 0;
+			depth2 = Float.NaN;
+			bounds = shape.getBounds();
 			this.source = source;
 		}
 
@@ -547,6 +604,22 @@ public final class BillboardOcclusionMask
 
 		private float depthAt(int canvasX, int canvasY)
 		{
+			if (vertical)
+			{
+				// Perspective projection makes reciprocal camera depth linear in screen Y
+				// along a fixed vertical world line. This is exact for the sampled anchor
+				// and avoids treating an entire tall hull as if it were at one depth.
+				double t = (canvasY - y0) / (double) (y1 - y0);
+				double reciprocalDepth = ((1.0d - t) / depth0) + (t / depth1);
+				if (!Double.isFinite(reciprocalDepth) || reciprocalDepth <= 0.0d)
+				{
+					return Float.NaN;
+				}
+
+				double interpolated = 1.0d / reciprocalDepth;
+				return Double.isFinite(interpolated) ? (float) interpolated : Float.NaN;
+			}
+
 			if (!triangle)
 			{
 				return depth;

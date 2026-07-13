@@ -37,12 +37,22 @@ public class BillboardOrientationCalculatorTest
 	}
 
 	@Test
-	public void pitchIsClampedToSupportedRange()
+	public void unsnappedPitchIsClampedAndInvertedForModelSpace()
 	{
 		Client client = proxy(Client.class, method("getCameraPitch", 12000));
 		NpcSnapConfig config = proxy(NpcSnapConfig.class, method("enableRotationSnapping", false));
 		BillboardOrientationCalculator calculator = new BillboardOrientationCalculator(client, config);
 
-		Assert.assertEquals(BillboardAngleUtils.MAX_PITCH, calculator.relativePitch());
+		Assert.assertEquals(-BillboardAngleUtils.MAX_PITCH, calculator.relativePitch());
+	}
+
+	@Test
+	public void unsnappedGroundItemPitchIsInvertedForModelSpace()
+	{
+		Client client = proxy(Client.class, method("getCameraPitch", 1024));
+		NpcSnapConfig config = proxy(NpcSnapConfig.class, method("enableRotationSnapping", false));
+		BillboardOrientationCalculator calculator = new BillboardOrientationCalculator(client, config);
+
+		Assert.assertEquals(-1024, calculator.relativeGroundItemPitch());
 	}
 }

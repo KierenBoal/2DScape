@@ -153,10 +153,12 @@ public final class BillboardFrameBuffer
 					}
 				}
 
-				pixels[destinationIndex] = sourceAlpha == 0xFF
-					? sourcePixel
-					: BillboardTriangleRasterizer.blendPixel(pixels[destinationIndex], sourcePixel);
-				if (sourceAlpha == 0xFF)
+				// Draws arrive nearest-to-farthest. The accumulated destination is therefore
+				// in front of this source pixel and must be composited over it. Reversing the
+				// blend arguments preserves transparent foreground layers instead of allowing
+				// later, farther pixels to draw on top of or replace them.
+				pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(sourcePixel, pixels[destinationIndex]);
+				if (((pixels[destinationIndex] >>> 24) & 0xFF) == 0xFF)
 				{
 					paintOrder[destinationIndex] = (char) drawPaintOrder;
 				}

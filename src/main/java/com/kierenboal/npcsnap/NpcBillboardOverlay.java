@@ -47,6 +47,7 @@ import com.kierenboal.npcsnap.state.FrameUpdatePlan;
 import com.kierenboal.npcsnap.state.QueuedBillboardTarget;
 import com.kierenboal.npcsnap.state.TimedCacheEntry;
 import com.kierenboal.npcsnap.state.UpdateHeuristicSnapshot;
+import com.kierenboal.npcsnap.targeting.ActorStackTracker;
 import com.kierenboal.npcsnap.targeting.BillboardClassificationDebug;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
@@ -146,6 +147,7 @@ class NpcBillboardOverlay extends Overlay
 	private final BillboardOcclusionDebugSampler occlusionDebugSampler = new BillboardOcclusionDebugSampler(occlusionMask, this::billboardDepthSurface);
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 	private final BillboardInteractionState interactionState = new BillboardInteractionState();
+	private final ActorStackTracker actorStackTracker = new ActorStackTracker();
 	private final BillboardRenderRequestFactory requestFactory;
 	private final BillboardTargetEligibility targetEligibility;
 
@@ -279,6 +281,7 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		activeRenderableTargets.clear();
+		actorStackTracker.clear();
 		worldOcclusionCollector.clearInterest();
 		clearInteractionState();
 		clearActiveSelections();
@@ -1466,6 +1469,7 @@ class NpcBillboardOverlay extends Overlay
 		Map<OccupiedTileKey, Actor> topActorsByTile = new HashMap<>();
 		Map<Actor, BillboardTarget> actorTargets = new IdentityHashMap<>();
 		Map<OccupiedTileKey, List<Actor>> actorsByTile = new HashMap<>();
+		Map<OccupiedTileKey, List<Actor>> actorOccupancyByTile = new HashMap<>();
 		List<Actor> eligibleActorsForEffects = new ArrayList<>();
 		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
 		Set<OccupiedTileKey> claimedActorEffectTiles = new HashSet<>();
@@ -1474,8 +1478,12 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (NPC npc : worldView.npcs())
 			{
-				if (npc == null
-					|| !wasSceneRenderableDrawnLastFrame(npc)
+				if (npc == null)
+				{
+					continue;
+				}
+				noteActorOccupancy(actorOccupancyByTile, npc);
+				if (!wasSceneRenderableDrawnLastFrame(npc)
 					|| !targetEligibility.actor(localPlayerLocation, npc.getLocalLocation(), npc, viewport))
 				{
 					continue;
@@ -1504,8 +1512,12 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (Player player : worldView.players())
 			{
-				if (player == null
-					|| !wasSceneRenderableDrawnLastFrame(player)
+				if (player == null)
+				{
+					continue;
+				}
+				noteActorOccupancy(actorOccupancyByTile, player);
+				if (!wasSceneRenderableDrawnLastFrame(player)
 					|| !targetEligibility.actor(localPlayerLocation, player.getLocalLocation(), player, viewport))
 				{
 					continue;
@@ -1530,6 +1542,7 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
+		applyConfirmedActorStacks(topActorsByTile, actorsByTile, actorOccupancyByTile, actorTargets);
 		for (BillboardTarget actorTarget : actorTargets.values())
 		{
 			candidates.add(actorTarget);
@@ -1537,6 +1550,10 @@ class NpcBillboardOverlay extends Overlay
 
 		for (Actor actor : eligibleActorsForEffects)
 		{
+			if (!actorTargets.containsKey(actor))
+			{
+				continue;
+			}
 			addActorSpotAnimCandidates(
 				candidates,
 				actor,
@@ -1667,6 +1684,49 @@ class NpcBillboardOverlay extends Overlay
 		return actors != null && actors.size() > 1;
 	}
 
+	private void applyConfirmedActorStacks(
+		Map<OccupiedTileKey, Actor> topActorsByTile,
+		Map<OccupiedTileKey, List<Actor>> actorsByTile,
+		Map<OccupiedTileKey, List<Actor>> actorOccupancyByTile,
+		Map<Actor, BillboardTarget> actorTargets)
+	{
+		Set<OccupiedTileKey> confirmedTiles = actorStackTracker.confirmedStackedTiles(actorOccupancyByTile, client.getTickCount());
+		actorsByTile.clear();
+		for (OccupiedTileKey tile : confirmedTiles)
+		{
+			List<Actor> occupants = actorOccupancyByTile.get(tile);
+			if (occupants != null && occupants.size() > 1 && topActorsByTile.containsKey(tile))
+			{
+				actorsByTile.put(tile, occupants);
+			}
+		}
+		for (Map.Entry<OccupiedTileKey, List<Actor>> entry : actorsByTile.entrySet())
+		{
+			Actor topActor = topActorsByTile.get(entry.getKey());
+			for (Actor actor : entry.getValue())
+			{
+				if (actor != topActor)
+				{
+					actorTargets.remove(actor);
+				}
+			}
+		}
+	}
+
+	private void noteActorOccupancy(Map<OccupiedTileKey, List<Actor>> actorOccupancyByTile, Actor actor)
+	{
+		if (actor == null || actor.getLocalLocation() == null || actor.getWorldView() == null)
+		{
+			return;
+		}
+
+		OccupiedTileKey tileKey = OccupiedTileKey.of(actor.getLocalLocation(), actor.getWorldView().getPlane());
+		if (tileKey != null)
+		{
+			actorOccupancyByTile.computeIfAbsent(tileKey, ignored -> new ArrayList<>()).add(actor);
+		}
+	}
+
 	private void considerTopActorCandidate(
 		Map<OccupiedTileKey, Actor> topActorsByTile,
 		Map<OccupiedTileKey, List<Actor>> actorsByTile,
@@ -1689,11 +1749,11 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		actorsByTile.computeIfAbsent(tileKey, ignored -> new ArrayList<>()).add(actor);
+		actorTargets.put(actor, candidate);
 		Actor currentActor = topActorsByTile.get(tileKey);
 		if (currentActor == null)
 		{
 			topActorsByTile.put(tileKey, actor);
-			actorTargets.put(actor, candidate);
 			return;
 		}
 
@@ -1703,9 +1763,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
-		actorTargets.remove(currentActor);
 		topActorsByTile.put(tileKey, actor);
-		actorTargets.put(actor, candidate);
 	}
 
 	private BillboardTarget buildActiveTarget(WorldView worldView, TileObject tileObject)
