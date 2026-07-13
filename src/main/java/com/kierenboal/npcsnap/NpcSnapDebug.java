@@ -1,5 +1,7 @@
 package com.kierenboal.npcsnap;
 
+import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
@@ -21,7 +23,7 @@ import net.runelite.api.Client;
 import net.runelite.client.ui.FontManager;
 
 @Singleton
-class NpcSnapDebug
+public class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
 	private static final Color READY_TO_REDRAW_MAGENTA = new Color(255, 0, 255, 255);
@@ -38,7 +40,7 @@ class NpcSnapDebug
 	private final Map<Actor, FrameState> actorFrames = new IdentityHashMap<>();
 
 	@Inject
-	NpcSnapDebug(Client client, NpcSnapConfig config)
+	public NpcSnapDebug(Client client, NpcSnapConfig config)
 	{
 		this.client = client;
 		this.config = config;
@@ -59,7 +61,7 @@ class NpcSnapDebug
 		actorFrames.put(actor, new FrameState(animationId, animationFrame, forcedAnimationFrame, poseFrame, forcedPoseFrame));
 	}
 
-	FrameDebugInfo actorFrameDebugInfo(Actor actor)
+	public FrameDebugInfo actorFrameDebugInfo(Actor actor)
 	{
 		if (actor == null)
 		{
@@ -130,7 +132,7 @@ class NpcSnapDebug
 				drawCenteredTextBlock(graphics, stateLines, bounds.x + (bounds.width / 2), bounds.y + Math.max(12, bounds.height / 4));
 			}
 		}
-		
+
 	}
 
 	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
@@ -483,7 +485,7 @@ class NpcSnapDebug
 		}
 	}
 
-	static final class FrameDebugInfo
+	public static final class FrameDebugInfo
 	{
 		final int animationId;
 		final int animationFrame;
@@ -500,13 +502,13 @@ class NpcSnapDebug
 			this.forcedPoseFrame = forcedPoseFrame;
 		}
 
-		static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
+		public static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
 		{
 			return new FrameDebugInfo(animationId, animationFrame, forcedAnimationFrame, -1, -1);
 		}
 	}
 
-	static final class StateDebugInfo
+	public static final class StateDebugInfo
 	{
 		private final int stateHash;
 		private final int pitchDegrees;

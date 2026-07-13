@@ -1,0 +1,196 @@
+package com.kierenboal.npcsnap.rendering;
+
+import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
+import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+import java.util.Arrays;
+
+public final class BillboardFrameBuffer
+{
+	public interface DepthSurfaceFactory
+	{
+		BillboardDepthSurface create(PreparedBillboardDraw draw);
+	}
+
+	private static final int DEBUG_OCCLUDED_PIXEL = new Color(255, 32, 32, 150).getRGB();
+
+	private final BillboardOcclusionMask occlusionMask;
+	private final BillboardPerformanceMetrics performanceMetrics;
+	private final DepthSurfaceFactory depthSurfaceFactory;
+	private boolean[] rowHasDepth = new boolean[0];
+	private double[] rowDepth = new double[0];
+	private BufferedImage image;
+	private int[] pixels = new int[0];
+	private char[] paintOrder = new char[0];
+	private int width;
+	private int height;
+
+	public BillboardFrameBuffer(
+		BillboardOcclusionMask occlusionMask,
+		BillboardPerformanceMetrics performanceMetrics,
+		DepthSurfaceFactory depthSurfaceFactory)
+	{
+		this.occlusionMask = occlusionMask;
+		this.performanceMetrics = performanceMetrics;
+		this.depthSurfaceFactory = depthSurfaceFactory;
+	}
+
+	public void begin(int width, int height)
+	{
+		ensureCapacity(width, height);
+		Arrays.fill(pixels, 0, width * height, 0);
+		Arrays.fill(paintOrder, 0, width * height, (char) 0);
+	}
+
+	public BufferedImage image()
+	{
+		return image;
+	}
+
+	public void blit(
+		PreparedBillboardDraw draw,
+		int viewportX,
+		int viewportY,
+		int viewportWidth,
+		int viewportHeight,
+		boolean drawOccludedPixels)
+	{
+		if (draw == null || draw.image == null || draw.bounds == null || draw.bounds.isEmpty()
+			|| !(draw.image.getRaster().getDataBuffer() instanceof DataBufferInt))
+		{
+			return;
+		}
+
+		int clipLeft = Math.max(draw.bounds.x, viewportX);
+		int clipTop = Math.max(draw.bounds.y, viewportY);
+		int clipRight = Math.min(draw.bounds.x + draw.bounds.width, viewportX + viewportWidth);
+		int clipBottom = Math.min(draw.bounds.y + draw.bounds.height, viewportY + viewportHeight);
+		if (clipLeft >= clipRight || clipTop >= clipBottom)
+		{
+			return;
+		}
+
+		int[] sourcePixels = ((DataBufferInt) draw.image.getRaster().getDataBuffer()).getData();
+		int sourceWidth = draw.image.getWidth();
+		int sourceHeight = draw.image.getHeight();
+		int drawWidth = draw.bounds.width;
+		int drawHeight = draw.bounds.height;
+		int drawPaintOrder = draw.paintOrder;
+		boolean hasActiveOcclusion = occlusionMask.coveredCellCount() > 0;
+		BillboardDepthSurface billboardDepth = hasActiveOcclusion ? depthSurfaceFactory.create(draw) : null;
+		int clippedHeight = clipBottom - clipTop;
+		if (hasActiveOcclusion)
+		{
+			ensureRowCapacity(clippedHeight);
+			Arrays.fill(rowHasDepth, 0, clippedHeight, false);
+		}
+
+		long occlusionElapsedNanos = 0L;
+		boolean measureOcclusion = performanceMetrics.isEnabled() && hasActiveOcclusion;
+		int occlusionSampleStep = hasActiveOcclusion ? occlusionMask.sampleStep() : 0;
+		for (int y = clipTop; y < clipBottom; y++)
+		{
+			int sourceY = (int) (((long) (y - draw.bounds.y) * sourceHeight) / drawHeight);
+			int destinationRow = (y - viewportY) * viewportWidth;
+			int sourceRow = sourceY * sourceWidth;
+			long sourceXNumerator = (long) (clipLeft - draw.bounds.x) * sourceWidth;
+			int clippedRow = y - clipTop;
+			boolean rowHasOcclusion = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
+			long rowOcclusionStart = measureOcclusion && rowHasOcclusion ? System.nanoTime() : 0L;
+			boolean cachedSampleOccluded = false;
+			int cachedSampleX = Integer.MIN_VALUE;
+			for (int x = clipLeft; x < clipRight; x++)
+			{
+				int destinationIndex = destinationRow + (x - viewportX);
+				if (paintOrder[destinationIndex] > drawPaintOrder)
+				{
+					sourceXNumerator += sourceWidth;
+					continue;
+				}
+
+				int sourceX = (int) (sourceXNumerator / drawWidth);
+				sourceXNumerator += sourceWidth;
+				int sourcePixel = sourcePixels[sourceRow + sourceX];
+				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
+				if (sourceAlpha == 0)
+				{
+					continue;
+				}
+
+				if (rowHasOcclusion)
+				{
+					if (!rowHasDepth[clippedRow])
+					{
+						rowDepth[clippedRow] = billboardDepth.depthAtRow(sourceY, sourceHeight, y);
+						rowHasDepth[clippedRow] = true;
+					}
+					double pixelDepth = rowDepth[clippedRow];
+					boolean occluded;
+					if (occlusionSampleStep > 1)
+					{
+						int sampleX = occlusionMask.sampleX(x);
+						if (sampleX != cachedSampleX)
+						{
+							cachedSampleX = sampleX;
+							cachedSampleOccluded = occlusionMask.isOccludedSample(sampleX, y, pixelDepth);
+						}
+						occluded = cachedSampleOccluded;
+					}
+					else
+					{
+						occluded = occlusionMask.isOccluded(x, y, pixelDepth);
+					}
+					if (occluded)
+					{
+						if (drawOccludedPixels)
+						{
+							pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(pixels[destinationIndex], DEBUG_OCCLUDED_PIXEL);
+						}
+						continue;
+					}
+				}
+
+				pixels[destinationIndex] = sourceAlpha == 0xFF
+					? sourcePixel
+					: BillboardTriangleRasterizer.blendPixel(pixels[destinationIndex], sourcePixel);
+				if (sourceAlpha == 0xFF)
+				{
+					paintOrder[destinationIndex] = (char) drawPaintOrder;
+				}
+			}
+			if (rowOcclusionStart > 0L)
+			{
+				occlusionElapsedNanos += System.nanoTime() - rowOcclusionStart;
+			}
+		}
+		if (occlusionElapsedNanos > 0L)
+		{
+			performanceMetrics.addElapsed("Per-pixel occlusion checks", occlusionElapsedNanos);
+		}
+	}
+
+	private void ensureCapacity(int width, int height)
+	{
+		if (image != null && this.width == width && this.height == height)
+		{
+			return;
+		}
+		image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		paintOrder = new char[width * height];
+		this.width = width;
+		this.height = height;
+	}
+
+	private void ensureRowCapacity(int requiredHeight)
+	{
+		if (rowHasDepth.length < requiredHeight)
+		{
+			rowHasDepth = new boolean[requiredHeight];
+			rowDepth = new double[requiredHeight];
+		}
+	}
+}

@@ -1,5 +1,14 @@
 package com.kierenboal.npcsnap;
 
+import com.kierenboal.npcsnap.features.LoginXpDropGuard;
+import com.kierenboal.npcsnap.features.SkillingActivityTracker;
+import com.kierenboal.npcsnap.features.SkillingThoughtBubbleOverlay;
+import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
+import com.kierenboal.npcsnap.rendering.NpcSnapTextureBandingManager;
+import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
+import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
+import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
+
 import com.google.inject.Provides;
 import java.util.HashMap;
 import java.util.Map;

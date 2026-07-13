@@ -7,24 +7,24 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 
-final class TestProxies
+public final class TestProxies
 {
 	private TestProxies()
 	{
 	}
 
-	static MethodResult method(String name, Object result)
+	public static MethodResult method(String name, Object result)
 	{
 		return new MethodResult(name, result);
 	}
 
-	static MethodResult methodSupplier(String name, Supplier<?> result)
+	public static MethodResult methodSupplier(String name, Supplier<?> result)
 	{
 		return new MethodResult(name, result);
 	}
 
 	@SuppressWarnings("unchecked")
-	static <T> T proxy(Class<T> type, MethodResult... methodResults)
+	public static <T> T proxy(Class<T> type, MethodResult... methodResults)
 	{
 		Map<String, Object> methods = new HashMap<>();
 		for (MethodResult methodResult : methodResults)
@@ -39,7 +39,7 @@ final class TestProxies
 		);
 	}
 
-	static final class MethodResult
+	public static final class MethodResult
 	{
 		private final String name;
 		private final Object result;

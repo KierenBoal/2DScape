@@ -1,5 +1,9 @@
 package com.kierenboal.npcsnap;
 
+import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
+import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
+import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
+
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.List;

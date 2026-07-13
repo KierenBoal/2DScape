@@ -1,5 +1,7 @@
 package com.kierenboal.npcsnap;
 
+import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
+
 import java.awt.Color;
 import org.junit.Test;
 
