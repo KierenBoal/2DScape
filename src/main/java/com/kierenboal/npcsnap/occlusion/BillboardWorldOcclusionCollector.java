@@ -50,6 +50,8 @@ public final class BillboardWorldOcclusionCollector
 	private final Set<Tile> bridgeLinkedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final List<Tile> terrainTiles = new ArrayList<>();
+	private final IdentityHashMap<Tile, TerrainGeometry> terrainGeometryCache = new IdentityHashMap<>();
+	private Scene cachedTerrainScene;
 	private Rectangle interestBounds;
 	private int debugShapesAccepted;
 	private int debugTerrainTilesConsidered;
@@ -133,6 +135,11 @@ public final class BillboardWorldOcclusionCollector
 		if (tiles == null)
 		{
 			return;
+		}
+		if (scene != cachedTerrainScene)
+		{
+			terrainGeometryCache.clear();
+			cachedTerrainScene = scene;
 		}
 
 		visitedTileCoordinates.clear();
@@ -416,27 +423,16 @@ public final class BillboardWorldOcclusionCollector
 		if (!bridgeLinked)
 		{
 			debugTerrainTilesConsidered++;
-			SceneTileModel model = tile.getSceneTileModel();
 			int acceptedFacesBefore = debugTerrainFacesAccepted;
-			if (model != null)
+			TerrainGeometry geometry = terrainGeometry(tile, localPoint);
+			debugFlatTerrainFacesSkipped += geometry.flatTriangleCount;
+			for (WorldTriangle triangle : geometry.triangles)
 			{
-				collectTerrainModelOccluders(model, tile.getPlane());
-				if (debugTerrainFacesAccepted > acceptedFacesBefore)
-				{
-					debugTerrainTilesAccepted++;
-				}
+				addTerrainTriangleOccluder(triangle, tile.getPlane());
 			}
-			else
+			if (debugTerrainFacesAccepted > acceptedFacesBefore)
 			{
-				SceneTilePaint paint = tile.getSceneTilePaint();
-				if (paint != null)
-				{
-					collectTerrainPaintOccluder(localPoint, tile.getPlane());
-					if (debugTerrainFacesAccepted > acceptedFacesBefore)
-					{
-						debugTerrainTilesAccepted++;
-					}
-				}
+				debugTerrainTilesAccepted++;
 			}
 		}
 		else
@@ -848,8 +844,30 @@ public final class BillboardWorldOcclusionCollector
 		}
 	}
 
-	private void collectTerrainPaintOccluder(LocalPoint localPoint, int plane)
+	private TerrainGeometry terrainGeometry(Tile tile, LocalPoint localPoint)
 	{
+		SceneTileModel model = tile.getSceneTileModel();
+		SceneTilePaint paint = tile.getSceneTilePaint();
+		TerrainGeometry cached = terrainGeometryCache.get(tile);
+		if (cached != null && cached.matches(model, paint))
+		{
+			return cached;
+		}
+
+		TerrainGeometry geometry = model != null
+			? buildTerrainModelGeometry(model)
+			: buildTerrainPaintGeometry(localPoint, tile.getPlane(), paint);
+		terrainGeometryCache.put(tile, geometry);
+		return geometry;
+	}
+
+	private TerrainGeometry buildTerrainPaintGeometry(LocalPoint localPoint, int plane, SceneTilePaint paint)
+	{
+		if (paint == null)
+		{
+			return TerrainGeometry.empty(null, null);
+		}
+
 		int size = BillboardConstants.LOCAL_TILE_SIZE;
 		int halfSize = size / 2;
 		int x = localPoint.getX() - halfSize;
@@ -858,11 +876,13 @@ public final class BillboardWorldOcclusionCollector
 		int seHeight = tileHeightAt(x + size, y, plane);
 		int neHeight = tileHeightAt(x + size, y + size, plane);
 		int nwHeight = tileHeightAt(x, y + size, plane);
-		addTerrainTriangleOccluder(x, y, swHeight, x + size, y, seHeight, x + size, y + size, neHeight, plane);
-		addTerrainTriangleOccluder(x, y, swHeight, x + size, y + size, neHeight, x, y + size, nwHeight, plane);
+		List<WorldTriangle> triangles = new ArrayList<>(2);
+		int flatTriangleCount = addUnevenTriangle(triangles, x, y, swHeight, x + size, y, seHeight, x + size, y + size, neHeight);
+		flatTriangleCount += addUnevenTriangle(triangles, x, y, swHeight, x + size, y + size, neHeight, x, y + size, nwHeight);
+		return new TerrainGeometry(null, paint, triangles, flatTriangleCount);
 	}
 
-	private void collectTerrainModelOccluders(SceneTileModel model, int plane)
+	private TerrainGeometry buildTerrainModelGeometry(SceneTileModel model)
 	{
 		int[] vertexX = model.getVertexX();
 		int[] vertexY = model.getVertexY();
@@ -872,11 +892,13 @@ public final class BillboardWorldOcclusionCollector
 		int[] faceZ = model.getFaceZ();
 		if (vertexX == null || vertexY == null || vertexZ == null || faceX == null || faceY == null || faceZ == null)
 		{
-			return;
+			return TerrainGeometry.empty(model, null);
 		}
 
 		int faceCount = Math.min(faceX.length, Math.min(faceY.length, faceZ.length));
 		int vertexCount = Math.min(vertexX.length, Math.min(vertexY.length, vertexZ.length));
+		List<WorldTriangle> triangles = new ArrayList<>(faceCount);
+		int flatTriangleCount = 0;
 		for (int face = 0; face < faceCount; face++)
 		{
 			int a = faceX[face];
@@ -887,16 +909,18 @@ public final class BillboardWorldOcclusionCollector
 				continue;
 			}
 
-			addTerrainTriangleOccluder(
+			flatTriangleCount += addUnevenTriangle(
+				triangles,
 				vertexX[a], vertexZ[a], vertexY[a],
 				vertexX[b], vertexZ[b], vertexY[b],
-				vertexX[c], vertexZ[c], vertexY[c],
-				plane
+				vertexX[c], vertexZ[c], vertexY[c]
 			);
 		}
+		return new TerrainGeometry(model, null, triangles, flatTriangleCount);
 	}
 
-	private void addTerrainTriangleOccluder(
+	private static int addUnevenTriangle(
+		List<WorldTriangle> triangles,
 		int x0,
 		int y0,
 		int z0,
@@ -905,14 +929,28 @@ public final class BillboardWorldOcclusionCollector
 		int z1,
 		int x2,
 		int y2,
-		int z2,
-		int plane)
+		int z2)
 	{
 		if (!isUnevenTerrainTriangle(z0, z1, z2))
 		{
-			debugFlatTerrainFacesSkipped++;
-			return;
+			return 1;
 		}
+
+		triangles.add(new WorldTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2));
+		return 0;
+	}
+
+	private void addTerrainTriangleOccluder(WorldTriangle triangle, int plane)
+	{
+		int x0 = triangle.x0;
+		int y0 = triangle.y0;
+		int z0 = triangle.z0;
+		int x1 = triangle.x1;
+		int y1 = triangle.y1;
+		int z1 = triangle.z1;
+		int x2 = triangle.x2;
+		int y2 = triangle.y2;
+		int z2 = triangle.z2;
 
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Occluder shape creation"))
 		{
@@ -1095,6 +1133,58 @@ public final class BillboardWorldOcclusionCollector
 
 		Player localPlayer = client.getLocalPlayer();
 		return localPlayer != null && BillboardPlaneUtils.shouldRenderTargetPlane(localPlayer.getWorldView().getPlane(), targetPlane);
+	}
+
+	private static final class TerrainGeometry
+	{
+		private final SceneTileModel model;
+		private final SceneTilePaint paint;
+		private final List<WorldTriangle> triangles;
+		private final int flatTriangleCount;
+
+		private TerrainGeometry(SceneTileModel model, SceneTilePaint paint, List<WorldTriangle> triangles, int flatTriangleCount)
+		{
+			this.model = model;
+			this.paint = paint;
+			this.triangles = triangles;
+			this.flatTriangleCount = flatTriangleCount;
+		}
+
+		private static TerrainGeometry empty(SceneTileModel model, SceneTilePaint paint)
+		{
+			return new TerrainGeometry(model, paint, Collections.emptyList(), 0);
+		}
+
+		private boolean matches(SceneTileModel model, SceneTilePaint paint)
+		{
+			return this.model == model && this.paint == paint;
+		}
+	}
+
+	private static final class WorldTriangle
+	{
+		private final int x0;
+		private final int y0;
+		private final int z0;
+		private final int x1;
+		private final int y1;
+		private final int z1;
+		private final int x2;
+		private final int y2;
+		private final int z2;
+
+		private WorldTriangle(int x0, int y0, int z0, int x1, int y1, int z1, int x2, int y2, int z2)
+		{
+			this.x0 = x0;
+			this.y0 = y0;
+			this.z0 = z0;
+			this.x1 = x1;
+			this.y1 = y1;
+			this.z1 = z1;
+			this.x2 = x2;
+			this.y2 = y2;
+			this.z2 = z2;
+		}
 	}
 
 	public static final class TraceTarget

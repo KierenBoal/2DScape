@@ -301,8 +301,7 @@ public final class BillboardOcclusionMask
 				int canvasX = viewportX + (sampleX * step) + (step / 2);
 				if (canvasX < viewportX
 					|| canvasX >= viewportX + viewportWidth
-					|| !isInActiveRegion(canvasX, canvasY, activeRegions)
-					|| !occluder.contains(canvasX, canvasY))
+					|| !isInActiveRegion(canvasX, canvasY, activeRegions))
 				{
 					continue;
 				}
@@ -462,6 +461,7 @@ public final class BillboardOcclusionMask
 		private final int x2;
 		private final int y2;
 		private final float depth2;
+		private final double barycentricDenominator;
 		private final Rectangle bounds;
 		private final String source;
 
@@ -484,6 +484,7 @@ public final class BillboardOcclusionMask
 			x2 = 0;
 			y2 = 0;
 			depth2 = Float.NaN;
+			barycentricDenominator = Double.NaN;
 			bounds = shape != null ? shape.getBounds() : null;
 			this.source = source;
 		}
@@ -517,6 +518,8 @@ public final class BillboardOcclusionMask
 			this.x2 = x2;
 			this.y2 = y2;
 			this.depth2 = depth2;
+			barycentricDenominator = ((y1 - y2) * (double) (x0 - x2))
+				+ ((x2 - x1) * (double) (y0 - y2));
 			int minX = Math.min(x0, Math.min(x1, x2));
 			int minY = Math.min(y0, Math.min(y1, y2));
 			int maxX = Math.max(x0, Math.max(x1, x2));
@@ -535,31 +538,20 @@ public final class BillboardOcclusionMask
 			return source;
 		}
 
-		private boolean contains(int canvasX, int canvasY)
-		{
-			if (!triangle)
-			{
-				return shape != null && shape.contains(canvasX, canvasY);
-			}
-
-			return Float.isFinite(depthAt(canvasX, canvasY));
-		}
-
 		private float depthAt(int canvasX, int canvasY)
 		{
 			if (!triangle)
 			{
-				return depth;
+				return shape != null && shape.contains(canvasX, canvasY) ? depth : Float.NaN;
 			}
 
-			double denominator = ((y1 - y2) * (double) (x0 - x2)) + ((x2 - x1) * (double) (y0 - y2));
-			if (Math.abs(denominator) <= 1.0e-6d)
+			if (Math.abs(barycentricDenominator) <= 1.0e-6d)
 			{
 				return Float.NaN;
 			}
 
-			double a = (((y1 - y2) * (double) (canvasX - x2)) + ((x2 - x1) * (double) (canvasY - y2))) / denominator;
-			double b = (((y2 - y0) * (double) (canvasX - x2)) + ((x0 - x2) * (double) (canvasY - y2))) / denominator;
+			double a = (((y1 - y2) * (double) (canvasX - x2)) + ((x2 - x1) * (double) (canvasY - y2))) / barycentricDenominator;
+			double b = (((y2 - y0) * (double) (canvasX - x2)) + ((x0 - x2) * (double) (canvasY - y2))) / barycentricDenominator;
 			double c = 1.0d - a - b;
 			if (a < -1.0e-6d || b < -1.0e-6d || c < -1.0e-6d)
 			{
