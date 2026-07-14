@@ -7,9 +7,11 @@ import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.TestProxies;
 
 import net.runelite.api.ActorSpotAnim;
+import net.runelite.api.Animation;
 import net.runelite.api.Client;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Model;
+import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
@@ -76,6 +78,30 @@ public class BillboardRenderRequestFactoryTest
 	}
 
 	@Test
+	public void effectsAndProjectilesFollowTheMasterFrameRateSwitch()
+	{
+		Animation animation = TestProxies.proxy(Animation.class,
+			TestProxies.method("getId", 88),
+			TestProxies.method("getNumFrames", 10));
+		GraphicsObject effect = TestProxies.proxy(GraphicsObject.class,
+			TestProxies.method("getId", 88),
+			TestProxies.method("getAnimation", animation),
+			TestProxies.method("getAnimationFrame", 4),
+			TestProxies.method("getZ", 0),
+			TestProxies.method("getLevel", 0),
+			TestProxies.method("getLocation", new LocalPoint(128, 128, worldView(0))));
+		Projectile projectile = TestProxies.proxy(Projectile.class,
+			TestProxies.method("getId", 88),
+			TestProxies.method("getAnimation", animation),
+			TestProxies.method("getAnimationFrame", 4));
+
+		assertEquals(3, factory(true, animation).buildGraphicsObject(effect).animationFrame);
+		assertEquals(4, factory(false, animation).buildGraphicsObject(effect).animationFrame);
+		assertEquals(3, factory(true, animation).buildProjectile(projectile).animationFrame);
+		assertEquals(4, factory(false, animation).buildProjectile(projectile).animationFrame);
+	}
+
+	@Test
 	public void actorSpotAnimationRequiresParentAndLocation()
 	{
 		ActorSpotAnim animation = TestProxies.proxy(ActorSpotAnim.class);
@@ -85,11 +111,17 @@ public class BillboardRenderRequestFactoryTest
 
 	private static BillboardRenderRequestFactory factory()
 	{
-		Client client = TestProxies.proxy(Client.class);
+		return factory(true, null);
+	}
+
+	private static BillboardRenderRequestFactory factory(boolean frameSnappingEnabled, Animation animation)
+	{
+		Client client = TestProxies.proxy(Client.class, TestProxies.method("loadAnimation", animation));
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
 			TestProxies.method("numberOfYawRotationAngles", 4),
 			TestProxies.method("numberOfPitchRotationAngles", 1),
-			TestProxies.method("animationFrameCount", 3));
+			TestProxies.method("animationFrameCount", 3),
+			TestProxies.method("enableAnimationFrameSnapping", frameSnappingEnabled));
 		return new BillboardRenderRequestFactory(
 			client,
 			config,

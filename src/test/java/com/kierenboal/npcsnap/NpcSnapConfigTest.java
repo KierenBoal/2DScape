@@ -18,12 +18,31 @@ public class NpcSnapConfigTest
 	{
 		assertTrue(config.enable2dBillboardSprites());
 		assertTrue(config.enableAnimationFrameSnapping());
-		assertTrue(config.enableProjectileFrameSnapping());
-		assertTrue(config.enableGraphicsObjectFrameSnapping());
-		assertTrue(config.enableObjectFrameSnapping());
 		assertTrue(config.enableRotationSnapping());
 		assertTrue(config.enableSkillingBubbles());
 		assertTrue(config.enableBillboardSpriteShadows());
+	}
+
+	@Test
+	public void removedPerTargetFrameAndGroundItemColourSettingsAreNotExposed()
+	{
+		assertFalse(hasMethod("enableProjectileFrameSnapping"));
+		assertFalse(hasMethod("enableGraphicsObjectFrameSnapping"));
+		assertFalse(hasMethod("enableObjectFrameSnapping"));
+		assertFalse(hasMethod("groundItemSpriteColorBands"));
+	}
+
+	private static boolean hasMethod(String name)
+	{
+		for (java.lang.reflect.Method method : NpcSnapConfig.class.getDeclaredMethods())
+		{
+			if (name.equals(method.getName()))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	@Test

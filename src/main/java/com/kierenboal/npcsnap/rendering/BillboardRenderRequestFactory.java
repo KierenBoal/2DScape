@@ -72,7 +72,7 @@ public final class BillboardRenderRequestFactory
 		DynamicObject dynamicObject = part.renderable instanceof DynamicObject ? (DynamicObject) part.renderable : null;
 		int originalFrame = dynamicObject != null ? dynamicObject.getAnimFrame() : -1;
 		int snappedFrame = dynamicObject != null
-			? snapFrame(dynamicObject.getAnimation(), originalFrame, config.enableObjectFrameSnapping())
+			? snapFrame(dynamicObject.getAnimation(), originalFrame, config.enableAnimationFrameSnapping())
 			: -1;
 		int animationId = dynamicObject != null && dynamicObject.getAnimation() != null
 			? dynamicObject.getAnimation().getId()
@@ -127,7 +127,7 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildProjectile(Projectile projectile)
 	{
-		int snappedFrame = snapFrame(projectile.getAnimation(), projectile.getAnimationFrame(), config.enableProjectileFrameSnapping());
+		int snappedFrame = snapFrame(projectile.getAnimation(), projectile.getAnimationFrame(), config.enableAnimationFrameSnapping());
 		return request(
 			projectile, projectile.getModel(), BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor(),
 			BillboardProjectileGeometry.verticalOffset(client, projectile),
@@ -138,7 +138,7 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildGraphicsObject(GraphicsObject graphicsObject)
 	{
-		int snappedFrame = snapFrame(graphicsObject.getAnimation(), graphicsObject.getAnimationFrame(), config.enableGraphicsObjectFrameSnapping());
+		int snappedFrame = snapFrame(graphicsObject.getAnimation(), graphicsObject.getAnimationFrame(), config.enableAnimationFrameSnapping());
 		return request(
 			graphicsObject, graphicsObject.getModel(), graphicsObject.getLocation(), graphicsObject.getLevel(),
 			Math.max(0, graphicsObject.getZ()), orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),

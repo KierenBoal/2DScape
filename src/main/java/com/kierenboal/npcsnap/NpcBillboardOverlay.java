@@ -534,7 +534,7 @@ class NpcBillboardOverlay extends Overlay
 		CachedBillboard cached = billboardCache.get(item);
 		if (cached == null || !cached.key.equals(cacheKey) || !cached.bounds.equals(bounds))
 		{
-			cached = new CachedBillboard(cacheKey, bounds, bandGroundItemSprite(inventorySprite, config.groundItemSpriteColorBands()), nowMillis);
+			cached = new CachedBillboard(cacheKey, bounds, bandGroundItemSprite(inventorySprite, config.billboardColorBands()), nowMillis);
 			billboardCache.put(item, cached);
 		}
 
@@ -1954,7 +1954,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private BillboardCacheKey buildInventorySpriteCacheKey(BillboardRenderRequest request, int renderQualityKey)
 	{
-		return buildCacheKey(request, outlinePadding(), config.groundItemSpriteColorBands(), 0, renderQualityKey, 0);
+		return buildCacheKey(request, outlinePadding(), config.billboardColorBands(), 0, renderQualityKey, 0);
 	}
 
 	private Rectangle projectedModelCanvasBounds(BillboardRenderRequest request)
