@@ -65,6 +65,7 @@ public class NpcSnapConfigTest
 		assertEquals(1, config.numberOfPitchRotationAngles());
 		assertEquals(3, config.animationFrameCount());
 		assertEquals(33.0d, config.renderBillboardQuality(), 0d);
+		assertEquals(100.0d, config.globalTextureSpriteQuality(), 0d);
 		assertEquals(BillboardOcclusionQuality.MEDIUM, config.billboardOcclusionQuality());
 		assertEquals(90, config.billboardRadiusTiles());
 		assertEquals(128, config.billboardMaxEntities());

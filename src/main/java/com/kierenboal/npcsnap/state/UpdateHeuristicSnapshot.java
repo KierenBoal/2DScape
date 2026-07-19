@@ -57,6 +57,23 @@ public final class UpdateHeuristicSnapshot
 			false);
 	}
 
+	/**
+	 * A projectile keeps its current screen position while its sprite image is held
+	 * until the next animation cadence update. Its continuously changing model and
+	 * orientation therefore must not bypass that cadence.
+	 */
+	public static UpdateHeuristicSnapshot cadencedProjectile(double depth)
+	{
+		return new UpdateHeuristicSnapshot(
+			depth,
+			Long.MIN_VALUE,
+			1,
+			1,
+			1,
+			1,
+			true);
+	}
+
 	public static UpdateHeuristicSnapshot fromRequest(BillboardRenderRequest request, double depth, int animatedTextureOffsetStateHash)
 	{
 		long positionKey = positionKey(request.localPoint, request.plane);

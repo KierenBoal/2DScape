@@ -286,7 +286,14 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@Range(min = 1, max = 64)
-	@ConfigItem(keyName = "globalTextureColorBands", name = "Texture color bands", description = "How many shades world textures can use when game texture reduction is on.", section = retroSection, position = 8)
+	@ConfigItem(keyName = "globalTextureSpriteQuality", name = "Texture sprite quality", description = "How sharp world textures are. Lower values make texture pixels larger and rougher.", section = retroSection, position = 8)
+	default double globalTextureSpriteQuality()
+	{
+		return 100.0d;
+	}
+
+	@Range(min = 1, max = 64)
+	@ConfigItem(keyName = "globalTextureColorBands", name = "Texture color bands", description = "How many shades world textures can use when game texture reduction is on.", section = retroSection, position = 9)
 	default int globalTextureColorBands()
 	{
 		return 16;

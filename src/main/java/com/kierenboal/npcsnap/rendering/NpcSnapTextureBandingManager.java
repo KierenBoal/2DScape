@@ -15,6 +15,8 @@ public final class NpcSnapTextureBandingManager
 	private boolean applied;
 	private boolean pending = true;
 	private int appliedTextureBands = -1;
+	private double appliedTextureQuality = -1.0d;
+	private TextureProvider appliedTextureProvider;
 
 	public NpcSnapTextureBandingManager(Client client)
 	{
@@ -26,46 +28,62 @@ public final class NpcSnapTextureBandingManager
 		pending = true;
 	}
 
-	public void sync(boolean enabled, int bands)
+	public boolean sync(boolean enabled, int bands, double quality)
 	{
-		if (!pending && applied == enabled && (!enabled || appliedTextureBands == bands))
+		TextureProvider currentProvider = client.getTextureProvider();
+		if (appliedTextureProvider != null && currentProvider != appliedTextureProvider)
 		{
-			return;
+			pending = true;
 		}
 
-		restore();
+		if (!pending && applied == enabled && (!enabled
+			|| (appliedTextureBands == bands && Double.compare(appliedTextureQuality, quality) == 0)))
+		{
+			return false;
+		}
+
+		boolean changed = restore();
 		pending = false;
 
 		if (enabled)
 		{
-			apply(bands);
+			changed |= apply(bands, quality);
 		}
+
+		return changed;
 	}
 
-	public void restore()
+	public boolean restore()
 	{
 		if (!applied && originalTexturePixels.isEmpty())
 		{
-			return;
+			return false;
 		}
 
-		TextureProvider textureProvider = client.getTextureProvider();
-		Texture[] textures = textureProvider != null ? textureProvider.getTextures() : null;
-		for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
+		TextureProvider textureProvider = appliedTextureProvider;
+		if (textureProvider != null)
 		{
-			restoreTexturePixels(textureProvider, textures, entry.getKey(), entry.getValue());
+			Texture[] textures = textureProvider.getTextures();
+			for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
+			{
+				restoreTexturePixels(textureProvider, textures, entry.getKey(), entry.getValue());
+			}
 		}
 
+		boolean changed = applied || !originalTexturePixels.isEmpty();
 		originalTexturePixels.clear();
 		applied = false;
 		appliedTextureBands = -1;
+		appliedTextureQuality = -1.0d;
+		appliedTextureProvider = null;
 		if (textureProvider != null)
 		{
 			resetTextureProviderCache(textureProvider);
 		}
+		return changed;
 	}
 
-	private void apply(int bands)
+	private boolean apply(int bands, double quality)
 	{
 		log.debug("applyGlobalTextureQuality");
 
@@ -73,14 +91,14 @@ public final class NpcSnapTextureBandingManager
 		if (textureProvider == null)
 		{
 			pending = true;
-			return;
+			return false;
 		}
 
 		Texture[] textures = textureProvider.getTextures();
 		if (textures == null)
 		{
 			pending = true;
-			return;
+			return false;
 		}
 
 		resetTextureProviderCache(textureProvider);
@@ -94,15 +112,66 @@ public final class NpcSnapTextureBandingManager
 				continue;
 			}
 
-			originalTexturePixels.put(textureId, pixels.clone());
-			NpcSnapColorBanding.applyBandsInPlace(pixels, bands);
+			int[] original = pixels.clone();
+			int[] transformed = resampleTexturePixels(original, quality);
+			NpcSnapColorBanding.applyBandsInPlace(transformed, bands);
+			originalTexturePixels.put(textureId, original);
+			System.arraycopy(transformed, 0, pixels, 0, pixels.length);
 
 			changed++;
 		}
 
 		applied = true;
 		appliedTextureBands = bands;
-		log.debug("Applied global texture banding to {} textures with {} bands", changed, bands);
+		appliedTextureQuality = quality;
+		appliedTextureProvider = textureProvider;
+		log.debug("Applied global texture reduction to {} textures with {} bands at {}% quality", changed, bands, quality);
+		return changed > 0;
+	}
+
+	static int[] resampleTexturePixels(int[] pixels, double quality)
+	{
+		if (pixels == null || pixels.length == 0)
+		{
+			return new int[0];
+		}
+
+		int size = (int) Math.round(Math.sqrt(pixels.length));
+		if (size * size != pixels.length)
+		{
+			return pixels.clone();
+		}
+
+		double clampedQuality = Math.max(1.0d, Math.min(100.0d, quality));
+		if (clampedQuality >= 99.999d)
+		{
+			return pixels.clone();
+		}
+
+		int reducedSize = Math.max(1, Math.min(size, (int) Math.round(size * clampedQuality / 100.0d)));
+		int[] reduced = new int[reducedSize * reducedSize];
+		for (int y = 0; y < reducedSize; y++)
+		{
+			int sourceY = Math.min(size - 1, (int) Math.floor(y * (double) size / reducedSize));
+			for (int x = 0; x < reducedSize; x++)
+			{
+				int sourceX = Math.min(size - 1, (int) Math.floor(x * (double) size / reducedSize));
+				reduced[(y * reducedSize) + x] = pixels[(sourceY * size) + sourceX];
+			}
+		}
+
+		int[] resampled = new int[pixels.length];
+		for (int y = 0; y < size; y++)
+		{
+			int reducedY = Math.min(reducedSize - 1, (int) Math.floor(y * (double) reducedSize / size));
+			for (int x = 0; x < size; x++)
+			{
+				int reducedX = Math.min(reducedSize - 1, (int) Math.floor(x * (double) reducedSize / size));
+				resampled[(y * size) + x] = reduced[(reducedY * reducedSize) + reducedX];
+			}
+		}
+
+		return resampled;
 	}
 
 	private static int[] texturePixels(TextureProvider textureProvider, Texture[] textures, int textureId)

@@ -19,6 +19,29 @@ import org.junit.Test;
 public class BillboardUpdateModelsTest
 {
 	@Test
+	public void cadencedProjectileSnapshotIgnoresLiveFlightState()
+	{
+		UpdateHeuristicSnapshot snapshot = UpdateHeuristicSnapshot.cadencedProjectile(123.0d);
+
+		assertEquals(Long.MIN_VALUE, snapshot.positionKey);
+		assertEquals(1, snapshot.animationHash);
+		assertEquals(1, snapshot.modelStateHash);
+		assertEquals(1, snapshot.textureStateHash);
+		assertEquals(1, snapshot.viewHash);
+		assertTrue(snapshot.animated);
+	}
+
+	@Test
+	public void cadencedProjectileUsesTheAnimationUpdateInterval()
+	{
+		BillboardUpdateState state = new BillboardUpdateState(1.0d);
+		state.advance(100, 1, 1.0d, UpdateHeuristicSnapshot.cadencedProjectile(123.0d), 17);
+
+		assertFalse(state.isReady(116, true));
+		assertTrue(state.isReady(117, true));
+	}
+
+	@Test
 	public void detectsModelChangesIndependentlyFromAnimation()
 	{
 		BillboardUpdateState state = new BillboardUpdateState(1.0d);

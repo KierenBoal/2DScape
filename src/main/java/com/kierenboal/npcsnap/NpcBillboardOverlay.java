@@ -1303,15 +1303,20 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			boolean forceHoverInteractionRedraw = shouldForceHoverInteractionRedraw(target);
+			boolean cadenceControlledProjectile = isCadenceControlledProjectile(target);
 			UpdateHeuristicSnapshot snapshot = buildUpdateHeuristicSnapshot(target);
 			BillboardUpdateState updateState = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
 			boolean bypassCadence = forceHoverInteractionRedraw
-				|| !targetHasCachedBillboard(target)
-				|| updateState.hasPositionChangedSinceRedraw(snapshot)
-				|| updateState.hasViewChangedSinceRedraw(snapshot)
-				|| updateState.hasModelChangedSinceRedraw(snapshot)
-				|| updateState.hasAnimationChangedSinceRedraw(snapshot)
-				|| updateState.hasTextureChangedSinceRedraw(snapshot);
+				|| !targetHasCachedBillboard(target);
+			if (!cadenceControlledProjectile)
+			{
+				bypassCadence = bypassCadence
+					|| updateState.hasPositionChangedSinceRedraw(snapshot)
+					|| updateState.hasViewChangedSinceRedraw(snapshot)
+					|| updateState.hasModelChangedSinceRedraw(snapshot)
+					|| updateState.hasAnimationChangedSinceRedraw(snapshot)
+					|| updateState.hasTextureChangedSinceRedraw(snapshot);
+			}
 			if (!bypassCadence && !updateState.isReady(gameCycle, targetHasCachedBillboard(target)))
 			{
 				requeueTarget(key);
@@ -1319,7 +1324,9 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			double qualityScale = updateState.qualityScale;
-			if (!forceHoverInteractionRedraw && !needsBillboardRedraw(target, qualityScale))
+			if (!forceHoverInteractionRedraw
+				&& !cadenceControlledProjectile
+				&& !needsBillboardRedraw(target, qualityScale))
 			{
 				updateState.defer(gameCycle, baseRefreshInterval);
 				requeueTarget(key);
@@ -2082,6 +2089,11 @@ class NpcBillboardOverlay extends Overlay
 			return buildTileObjectHeuristicSnapshot(target);
 		}
 
+		if (isCadenceControlledProjectile(target))
+		{
+			return UpdateHeuristicSnapshot.cadencedProjectile(target.getDepth());
+		}
+
 		BillboardRenderRequest request = requestFactory.build(target);
 		if (request == null)
 		{
@@ -2093,6 +2105,13 @@ class NpcBillboardOverlay extends Overlay
 			target.getDepth(),
 			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, System.currentTimeMillis())
 		);
+	}
+
+	private boolean isCadenceControlledProjectile(BillboardTarget target)
+	{
+		return target != null
+			&& target.type == BillboardTargetType.PROJECTILE
+			&& config.enableAnimationFrameSnapping();
 	}
 
 	private UpdateHeuristicSnapshot buildTileObjectHeuristicSnapshot(BillboardTarget target)

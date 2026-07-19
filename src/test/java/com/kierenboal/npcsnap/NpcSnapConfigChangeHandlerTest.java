@@ -22,7 +22,7 @@ public class NpcSnapConfigChangeHandlerTest
 	@Test
 	public void globalBandingChangesDirtyManagerAndTextureCache()
 	{
-		for (String key : new String[] {"enableGlobalTextureBanding", "globalTextureColorBands"})
+		for (String key : new String[] {"enableGlobalTextureBanding", "globalTextureSpriteQuality", "globalTextureColorBands"})
 		{
 			Counters counters = new Counters();
 			counters.handler().handle("npc-snap", key);

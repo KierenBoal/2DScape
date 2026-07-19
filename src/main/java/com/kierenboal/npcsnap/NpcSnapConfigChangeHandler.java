@@ -28,7 +28,9 @@ final class NpcSnapConfigChangeHandler
 			return;
 		}
 
-		if ("enableGlobalTextureBanding".equals(key) || "globalTextureColorBands".equals(key))
+		if ("enableGlobalTextureBanding".equals(key)
+			|| "globalTextureSpriteQuality".equals(key)
+			|| "globalTextureColorBands".equals(key))
 		{
 			markTextureBandingDirty.run();
 			clearTextureCache.run();

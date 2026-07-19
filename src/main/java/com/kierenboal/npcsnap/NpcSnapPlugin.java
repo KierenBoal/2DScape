@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.features.SkillingActivityTracker;
 import com.kierenboal.npcsnap.features.SkillingThoughtBubbleOverlay;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.NpcSnapTextureBandingManager;
+import com.kierenboal.npcsnap.rendering.NpcSnapRendererRefresher;
 import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
@@ -46,6 +47,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 
@@ -63,6 +65,7 @@ public class NpcSnapPlugin extends Plugin
 	private boolean pendingSkillXpSeed;
 	private NpcSnapUiTextureManager uiTextureManager;
 	private NpcSnapTextureBandingManager textureBandingManager;
+	private NpcSnapRendererRefresher rendererRefresher;
 	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
 
@@ -96,6 +99,9 @@ public class NpcSnapPlugin extends Plugin
 	@Inject
 	private RenderCallbackManager renderCallbackManager;
 
+	@Inject
+	private PluginManager pluginManager;
+
 	@Override
 	protected void startUp()
 	{
@@ -125,7 +131,11 @@ public class NpcSnapPlugin extends Plugin
 		pendingSkillXpSeed = false;
 		animationFrameSnapper.clear();
 		debug.clearFrameStates();
-		ensureTextureBandingManager().restore();
+		if (ensureTextureBandingManager().restore())
+		{
+			billboardOverlay.clearTextureCache();
+			ensureRendererRefresher().requestRefresh();
+		}
 		ensureUiTextureManager().restore();
 		log.debug("2DScape stopped");
 	}
@@ -245,6 +255,8 @@ public class NpcSnapPlugin extends Plugin
 			pendingSkillXpSeed = true;
 			loginXpDropGuard.onLoggedIn();
 			ensureUiTextureManager().markDirty();
+			ensureTextureBandingManager().markDirty();
+			billboardOverlay.clearTextureCache();
 		}
 		else
 		{
@@ -411,7 +423,15 @@ public class NpcSnapPlugin extends Plugin
 
 	private void syncGlobalTextureQuality()
 	{
-		ensureTextureBandingManager().sync(config.enableGlobalTextureBanding(), config.globalTextureColorBands());
+		boolean changed = ensureTextureBandingManager().sync(
+			config.enableGlobalTextureBanding(),
+			config.globalTextureColorBands(),
+			config.globalTextureSpriteQuality());
+		if (changed)
+		{
+			billboardOverlay.clearTextureCache();
+			ensureRendererRefresher().requestRefresh();
+		}
 	}
 
 	private void syncUiTextureQuality()
@@ -437,6 +457,16 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		return textureBandingManager;
+	}
+
+	private NpcSnapRendererRefresher ensureRendererRefresher()
+	{
+		if (rendererRefresher == null)
+		{
+			rendererRefresher = new NpcSnapRendererRefresher(client, pluginManager);
+		}
+
+		return rendererRefresher;
 	}
 
 	private NpcSnapUiTextureManager.SpriteSnapshot loadSpriteSnapshot(int spriteId)
