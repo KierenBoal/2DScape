@@ -868,6 +868,7 @@ class NpcBillboardOverlay extends Overlay
 				target.priorityGroupSortKey(),
 				previewBounds != null ? previewBounds.y + previewBounds.height : Integer.MAX_VALUE,
 				target.getDepth(),
+				target.type == BillboardTargetType.PROJECTILE,
 				target.targetKey.stableSortOrder()
 			));
 		}

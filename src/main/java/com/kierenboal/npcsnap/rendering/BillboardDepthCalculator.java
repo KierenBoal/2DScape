@@ -52,8 +52,16 @@ public final class BillboardDepthCalculator
 	public double depth(Projectile projectile)
 	{
 		LocalPoint localPoint = BillboardProjectileGeometry.localPoint(projectile);
-		double verticalOffset = BillboardProjectileGeometry.verticalOffset(client, projectile) + (projectile.getModelHeight() / 2.0);
-		return cameraDistance(localPoint, projectile.getFloor(), verticalOffset);
+		if (localPoint == null)
+		{
+			return Double.NEGATIVE_INFINITY;
+		}
+
+		int heightOffset = BillboardProjectileGeometry.verticalOffset(client, projectile);
+		return cameraDistance(
+			localPoint,
+			projectile.getFloor(),
+			-heightOffset - (projectile.getModelHeight() / 2.0));
 	}
 
 	public double depth(GraphicsObject graphicsObject)

@@ -94,6 +94,15 @@ public final class BillboardPaintOrder
 			}
 		}
 
+		if (left.depthFirst || right.depthFirst)
+		{
+			int byDepth = Double.compare(right.depth, left.depth);
+			if (byDepth != 0)
+			{
+				return byDepth;
+			}
+		}
+
 		int byBottom = Integer.compare(left.screenBottomY, right.screenBottomY);
 		if (byBottom != 0)
 		{
@@ -145,9 +154,15 @@ public final class BillboardPaintOrder
 		private final long priorityGroup;
 		private final int screenBottomY;
 		private final double depth;
+		private final boolean depthFirst;
 		private final long stableOrder;
 
 		public Entry(T value, Rectangle bounds, int renderPriority, long priorityGroup, int screenBottomY, double depth, long stableOrder)
+		{
+			this(value, bounds, renderPriority, priorityGroup, screenBottomY, depth, false, stableOrder);
+		}
+
+		public Entry(T value, Rectangle bounds, int renderPriority, long priorityGroup, int screenBottomY, double depth, boolean depthFirst, long stableOrder)
 		{
 			this.value = value;
 			this.bounds = bounds;
@@ -155,6 +170,7 @@ public final class BillboardPaintOrder
 			this.priorityGroup = priorityGroup;
 			this.screenBottomY = screenBottomY;
 			this.depth = depth;
+			this.depthFirst = depthFirst;
 			this.stableOrder = stableOrder;
 		}
 	}

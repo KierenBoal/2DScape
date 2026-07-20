@@ -41,4 +41,15 @@ public class BillboardPaintOrderTest
 
 		Assert.assertEquals(Arrays.asList("far-right", "near-left"), ordered);
 	}
+
+	@Test
+	public void projectileUsesThreeDimensionalDepthBeforeScreenBottom()
+	{
+		List<String> ordered = BillboardPaintOrder.sort(Arrays.asList(
+			new BillboardPaintOrder.Entry<>("projectile", new Rectangle(40, 20, 24, 24), 1, BillboardPaintOrder.NO_PRIORITY_GROUP, 44, 100.0d, true, 1L),
+			new BillboardPaintOrder.Entry<>("npc", new Rectangle(42, 34, 24, 36), 1, BillboardPaintOrder.NO_PRIORITY_GROUP, 70, 140.0d, false, 2L)
+		));
+
+		Assert.assertEquals(Arrays.asList("npc", "projectile"), ordered);
+	}
 }
