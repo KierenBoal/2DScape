@@ -21,6 +21,8 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableRotationSnapping());
 		assertTrue(config.enableSkillingBubbles());
 		assertTrue(config.enableBillboardSpriteShadows());
+		assertFalse(config.deterministicAnimationLooping());
+		assertFalse(config.logBillboardAnimationData());
 	}
 
 	@Test
@@ -63,7 +65,7 @@ public class NpcSnapConfigTest
 	{
 		assertEquals(4, config.numberOfYawRotationAngles());
 		assertEquals(1, config.numberOfPitchRotationAngles());
-		assertEquals(3, config.animationFrameCount());
+		assertEquals(4, config.animationFrameCount());
 		assertEquals(33.0d, config.renderBillboardQuality(), 0d);
 		assertEquals(100.0d, config.globalTextureSpriteQuality(), 0d);
 		assertEquals(BillboardOcclusionQuality.MEDIUM, config.billboardOcclusionQuality());

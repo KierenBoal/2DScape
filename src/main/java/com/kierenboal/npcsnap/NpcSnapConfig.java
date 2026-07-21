@@ -40,7 +40,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "animationFrameCount", name = "Frame rate", description = "How many animation updates to show each second. Lower numbers look choppier.", section = snappingSection, position = 1)
 	default int animationFrameCount()
 	{
-		return 3;
+		return 4;
 	}
 
 	@ConfigItem(keyName = "enableRotationSnapping", name = "Limit rotation angles", description = "Make sprites turn through a small number of set directions.", section = snappingSection, position = 2)
@@ -299,8 +299,20 @@ public interface NpcSnapConfig extends Config
 		return 16;
 	}
 
+	@ConfigItem(keyName = "deterministicAnimationLooping", name = "Deterministic animation looping", description = "Keep the previous animation frame when an animation loops instead of following its loop metadata.", section = retroSection, position = 10)
+	default boolean deterministicAnimationLooping()
+	{
+		return false;
+	}
+
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write billboard actor animation frames and loop metadata to the developer log for troubleshooting.", section = debugSection, position = 7)
+	default boolean logBillboardAnimationData()
 	{
 		return false;
 	}

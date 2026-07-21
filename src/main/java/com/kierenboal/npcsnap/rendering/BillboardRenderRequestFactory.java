@@ -184,6 +184,11 @@ public final class BillboardRenderRequestFactory
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)
 	{
-		return animationFrameSnapper.snapFrame(animation, frame, enabled, Math.max(1, config.animationFrameCount()));
+		return animationFrameSnapper.snapFrame(
+			animation,
+			frame,
+			enabled,
+			Math.max(1, config.animationFrameCount()),
+			config.deterministicAnimationLooping());
 	}
 }

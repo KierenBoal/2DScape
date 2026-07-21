@@ -395,9 +395,13 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		int originalAnimationFrame = actor.getAnimationFrame();
-		int snappedAnimationFrame = animationFrameSnapper.snapAnimationFrame(actor.getAnimation(), originalAnimationFrame, actionFrameCount);
+		int snappedAnimationFrame = animationFrameSnapper.snapActorAnimationFrame(
+			actor, actor.getAnimation(), originalAnimationFrame, actionFrameCount,
+			config.deterministicAnimationLooping(), false, config.logBillboardAnimationData());
 		int originalPoseFrame = actor.getPoseAnimationFrame();
-		int snappedPoseFrame = animationFrameSnapper.snapAnimationFrame(actor.getPoseAnimation(), originalPoseFrame, actionFrameCount);
+		int snappedPoseFrame = animationFrameSnapper.snapActorAnimationFrame(
+			actor, actor.getPoseAnimation(), originalPoseFrame, actionFrameCount,
+			config.deterministicAnimationLooping(), true, config.logBillboardAnimationData());
 		debug.recordActorFrames(actor, actor.getAnimation(), originalAnimationFrame, snappedAnimationFrame, originalPoseFrame, snappedPoseFrame);
 
 		if (snappedAnimationFrame == originalAnimationFrame && snappedPoseFrame == originalPoseFrame)
