@@ -2684,16 +2684,23 @@ class NpcBillboardOverlay extends Overlay
 		Point basePoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
 		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
 		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
-		double distance = depthCalculator.cameraDistance(request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2.0));
-		if (!BillboardGeometryUtils.isUsableDistance(distance))
-		{
-			return null;
-		}
-
-		double perspectiveScale = client.get3dZoom() / Math.max(1.0, distance);
-		int distanceHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
 		int projectedHeight = BillboardGeometryUtils.projectedHeight(basePoint, topPoint);
-		int targetHeight = distanceHeight > 0 ? distanceHeight : projectedHeight;
+		// The canvas projection already accounts for FOV and the camera's zoom. Scaling by
+		// radial camera distance instead makes targets at the edge of the viewport appear
+		// too small, because their radial distance is greater than their projection depth.
+		int targetHeight = projectedHeight;
+		if (targetHeight <= 0)
+		{
+			double forwardDepth = depthCalculator.cameraForwardDepth(
+				request.localPoint,
+				request.plane,
+				request.verticalOffset + (renderable.getModelHeight() / 2.0));
+			if (BillboardGeometryUtils.isUsableDistance(forwardDepth))
+			{
+				double perspectiveScale = client.get3dZoom() / forwardDepth;
+				targetHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
+			}
+		}
 		if (targetHeight <= 0)
 		{
 			targetHeight = fallbackDrawHeight(projectedModelCanvasBounds(request));
