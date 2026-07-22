@@ -2684,22 +2684,22 @@ class NpcBillboardOverlay extends Overlay
 		Point basePoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
 		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
 		Point topPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + renderable.getModelHeight());
-		int projectedHeight = BillboardGeometryUtils.projectedHeight(basePoint, topPoint);
-		// The canvas projection already accounts for FOV and the camera's zoom. Scaling by
-		// radial camera distance instead makes targets at the edge of the viewport appear
-		// too small, because their radial distance is greater than their projection depth.
-		int targetHeight = projectedHeight;
+		// Scale in model space using the camera-forward depth. Radial distance makes
+		// targets at the edge of the FOV too small, while the projected endpoint height
+		// varies excessively because the endpoints have different perspective depths.
+		double forwardDepth = depthCalculator.cameraForwardDepth(
+			request.localPoint,
+			request.plane,
+			request.verticalOffset + (renderable.getModelHeight() / 2.0));
+		int targetHeight = 0;
+		if (BillboardGeometryUtils.isUsableDistance(forwardDepth))
+		{
+			double perspectiveScale = client.get3dZoom() / forwardDepth;
+			targetHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
+		}
 		if (targetHeight <= 0)
 		{
-			double forwardDepth = depthCalculator.cameraForwardDepth(
-				request.localPoint,
-				request.plane,
-				request.verticalOffset + (renderable.getModelHeight() / 2.0));
-			if (BillboardGeometryUtils.isUsableDistance(forwardDepth))
-			{
-				double perspectiveScale = client.get3dZoom() / forwardDepth;
-				targetHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
-			}
+			targetHeight = BillboardGeometryUtils.projectedHeight(basePoint, topPoint);
 		}
 		if (targetHeight <= 0)
 		{
