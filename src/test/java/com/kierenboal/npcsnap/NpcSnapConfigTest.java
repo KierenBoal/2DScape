@@ -79,9 +79,14 @@ public class NpcSnapConfigTest
 	@Test
 	public void defaultsRetainInteractionOutlineColors()
 	{
-		assertTrue(config.enableBillboardHoverOutline());
-		assertTrue(config.enableBillboardInteractionOutline());
-		assertEquals(new Color(0x90FF0000, true), config.billboardInteractionOutlineColor());
-		assertEquals(new Color(0x90FFFF00, true), config.billboardHoverOutlineColor());
+		assertTrue(config.enablePlayerInteractionOutline());
+		assertTrue(config.enableNpcInteractionOutline());
+		assertTrue(config.enableGroundItemInteractionOutline());
+		assertEquals(new Color(0x90FFFF00, true), config.playerHoverOutlineColor());
+		assertEquals(new Color(0x90FF0000, true), config.playerInteractionOutlineColor());
+		assertEquals(new Color(0x90FFFF00, true), config.npcHoverOutlineColor());
+		assertEquals(new Color(0x90FF0000, true), config.npcInteractionOutlineColor());
+		assertEquals(new Color(0x90FFFF00, true), config.groundItemHoverOutlineColor());
+		assertEquals(new Color(0x90FF0000, true), config.groundItemInteractionOutlineColor());
 	}
 }

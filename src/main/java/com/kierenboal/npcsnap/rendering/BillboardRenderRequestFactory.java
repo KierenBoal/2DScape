@@ -8,6 +8,7 @@ import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 
+import java.awt.Color;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
@@ -15,6 +16,7 @@ import net.runelite.api.DynamicObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
+import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardRenderRequestFactory
@@ -88,17 +90,21 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildActor(Actor actor)
 	{
-		boolean interactionOutline = config.enableBillboardInteractionOutline()
-			&& actor == interactionState.frameInteractionActor();
+		boolean player = actor instanceof Player;
+		boolean enabled = player ? config.enablePlayerInteractionOutline() : config.enableNpcInteractionOutline();
+		boolean interactionOutline = enabled && actor == interactionState.frameInteractionTarget();
 		boolean hoverOutline = !interactionOutline
-			&& config.enableBillboardHoverOutline()
-			&& actor == interactionState.frameHoveredActor();
+			&& enabled
+			&& actor == interactionState.frameHoveredTarget();
+		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
+		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
 		return request(
 			actor, actor.getModel(), actor.getLocalLocation(), actor.getWorldView().getPlane(),
 			Math.max(0, actor.getAnimationHeightOffset()),
 			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(actor),
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
 			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
+			hoverColor, interactionColor,
 			VerticalAnchor.BOTTOM, debug.actorFrameDebugInfo(actor));
 	}
 
@@ -155,7 +161,12 @@ public final class BillboardRenderRequestFactory
 		return request(
 			item, item.getModel(), groundItem.localPoint, groundItem.plane, 0,
 			orientationCalculator.relativeGroundItemYaw(), orientationCalculator.relativeGroundItemPitch(),
-			item.getId(), item.getQuantity(), -1, -1, item.getId(), false, false, VerticalAnchor.BOTTOM, null);
+			item.getId(), item.getQuantity(), -1, -1, item.getId(),
+			config.enableGroundItemInteractionOutline() && item == interactionState.frameHoveredTarget()
+				&& item != interactionState.frameInteractionTarget(),
+			config.enableGroundItemInteractionOutline() && item == interactionState.frameInteractionTarget(),
+			config.groundItemHoverOutlineColor(), config.groundItemInteractionOutlineColor(),
+			VerticalAnchor.BOTTOM, null);
 	}
 
 	private BillboardRenderRequest request(
@@ -176,10 +187,36 @@ public final class BillboardRenderRequestFactory
 		VerticalAnchor verticalAnchor,
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
 	{
+		return request(
+			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
+			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
+			hoverOutline, interactionOutline, null, null, verticalAnchor, frameDebugInfo);
+	}
+
+	private BillboardRenderRequest request(
+		net.runelite.api.Renderable renderable,
+		net.runelite.api.Model model,
+		LocalPoint localPoint,
+		int plane,
+		int verticalOffset,
+		int relativeYaw,
+		int relativePitch,
+		int animationId,
+		int animationFrame,
+		int poseAnimationId,
+		int poseAnimationFrame,
+		int animatedTextureId,
+		boolean hoverOutline,
+		boolean interactionOutline,
+		Color hoverOutlineColor,
+		Color interactionOutlineColor,
+		VerticalAnchor verticalAnchor,
+		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
+	{
 		return new BillboardRenderRequest(
 			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
 			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			hoverOutline, interactionOutline, verticalAnchor, frameDebugInfo);
+			hoverOutline, interactionOutline, hoverOutlineColor, interactionOutlineColor, verticalAnchor, frameDebugInfo);
 	}
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)

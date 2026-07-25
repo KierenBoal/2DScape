@@ -24,10 +24,13 @@ public interface NpcSnapConfig extends Config
 	@ConfigSection(name = "Sprite config", description = "Change the edges, shadows, and highlights on sprites.", position = 3)
 	String spriteSection = "spriteSection";
 
-	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 4)
+	@ConfigSection(name = "Sprite interaction outline", description = "Configure hover and interaction outlines for sprites.", position = 4)
+	String spriteInteractionOutlineSection = "spriteInteractionOutlineSection";
+
+	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 5)
 	String retroSection = "retroSection";
 
-	@ConfigSection(name = "Debug", description = "Extra information for finding problems with the plugin.", position = 5)
+	@ConfigSection(name = "Debug", description = "Extra information for finding problems with the plugin.", position = 6)
 	String debugSection = "debugSection";
 
 	@ConfigItem(keyName = "enableAnimationFrameSnapping", name = "Limit frame rate", description = "Make animations update in visible steps instead of every game frame.", section = snappingSection, position = 0)
@@ -165,70 +168,104 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "enableBillboardHoverOutline", name = "Outline on hover", description = "Show an outline when your mouse is over an NPC or player sprite.", section = spriteSection, position = 1)
-	default boolean enableBillboardHoverOutline()
+	@ConfigItem(keyName = "enablePlayerInteractionOutline", name = "Enable Player interaction outline", description = "Show hover and interaction outlines on player sprites.", section = spriteInteractionOutlineSection, position = 0)
+	default boolean enablePlayerInteractionOutline()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "billboardHoverOutlineColor", name = "Hover outline color", description = "Choose the colour of the outline shown when you hover a sprite.", section = spriteSection, position = 2)
+	@ConfigItem(keyName = "playerHoverOutlineColor", name = "Player hover outline color", description = "Choose the outline colour shown when hovering a player sprite.", section = spriteInteractionOutlineSection, position = 1)
 	@Alpha
-	default Color billboardHoverOutlineColor()
+	default Color playerHoverOutlineColor()
 	{
-		return new Color(0x90FFFF00, true);
+		return new Color(0x9000FFFF, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardInteractionOutline", name = "Outline on interact", description = "Show an outline while you are interacting with an NPC or player sprite.", section = spriteSection, position = 3)
-	default boolean enableBillboardInteractionOutline()
-	{
-		return true;
-	}
-
-	@ConfigItem(keyName = "billboardInteractionOutlineColor", name = "Interaction outline color", description = "Choose the colour of the outline shown while you interact with a sprite.", section = spriteSection, position = 4)
+	@ConfigItem(keyName = "playerInteractionOutlineColor", name = "Player interaction outline color", description = "Choose the outline colour shown while interacting with a player sprite.", section = spriteInteractionOutlineSection, position = 2)
 	@Alpha
-	default Color billboardInteractionOutlineColor()
+	default Color playerInteractionOutlineColor()
 	{
 		return new Color(0x90FF0000, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 5)
+	@ConfigItem(keyName = "enableNpcInteractionOutline", name = "Enable NPC interaction outline", description = "Show hover and interaction outlines on NPC sprites.", section = spriteInteractionOutlineSection, position = 3)
+	default boolean enableNpcInteractionOutline()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "npcHoverOutlineColor", name = "NPC hover outline color", description = "Choose the outline colour shown when hovering an NPC sprite.", section = spriteInteractionOutlineSection, position = 4)
+	@Alpha
+	default Color npcHoverOutlineColor()
+	{
+		return new Color(0x90FFFF00, true);
+	}
+
+	@ConfigItem(keyName = "npcInteractionOutlineColor", name = "NPC interaction outline color", description = "Choose the outline colour shown while interacting with an NPC sprite.", section = spriteInteractionOutlineSection, position = 5)
+	@Alpha
+	default Color npcInteractionOutlineColor()
+	{
+		return new Color(0x90FF0000, true);
+	}
+
+	@ConfigItem(keyName = "enableGroundItemInteractionOutline", name = "Enable Ground item interaction outline", description = "Show hover and interaction outlines on ground-item sprites.", section = spriteInteractionOutlineSection, position = 6)
+	default boolean enableGroundItemInteractionOutline()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "groundItemHoverOutlineColor", name = "Ground item hover outline color", description = "Choose the outline colour shown when hovering a ground-item sprite.", section = spriteInteractionOutlineSection, position = 7)
+	@Alpha
+	default Color groundItemHoverOutlineColor()
+	{
+		return new Color(0x9000FFFF, true);
+	}
+
+	@ConfigItem(keyName = "groundItemInteractionOutlineColor", name = "Ground item interaction outline color", description = "Choose the outline colour shown while interacting with a ground-item sprite.", section = spriteInteractionOutlineSection, position = 8)
+	@Alpha
+	default Color groundItemInteractionOutlineColor()
+	{
+		return new Color(0x90FF0000, true);
+	}
+
+	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 1)
 	default boolean enableBillboardSpriteOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 6)
+	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 2)
 	default boolean enableBillboardSpriteInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 7)
+	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 3)
 	@Alpha
 	default Color billboardSpriteOutlineColor()
 	{
 		return new Color(0x40000000, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 8)
+	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 4)
 	default boolean enableBillboardHighlightOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 9)
+	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 5)
 	default boolean enableBillboardHighlightInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 10)
+	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 6)
 	default boolean enableBillboardShadowOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 11)
+	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 7)
 	default boolean enableBillboardShadowInline()
 	{
 		return false;

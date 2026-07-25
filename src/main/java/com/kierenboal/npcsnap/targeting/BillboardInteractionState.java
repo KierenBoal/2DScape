@@ -3,20 +3,33 @@ package com.kierenboal.npcsnap.targeting;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
+import net.runelite.api.Renderable;
+import net.runelite.api.TileItem;
+import com.kierenboal.npcsnap.features.GroundItemBillboard;
+import java.util.Map;
 
 public final class BillboardInteractionState
 {
 	private Actor clickedActor;
+	private TileItem clickedGroundItem;
 	private int clickedActorTick = Integer.MIN_VALUE;
-	private Actor frameHoveredActor;
-	private Actor frameInteractionActor;
-	private Actor lastHoveredActor;
-	private Actor lastInteractionActor;
+	private Renderable frameHoveredTarget;
+	private Renderable frameInteractionTarget;
+	private Renderable lastHoveredTarget;
+	private Renderable lastInteractionTarget;
 
 	public void noteClick(Actor actor, int tickCount)
 	{
+		clickedGroundItem = null;
 		clickedActor = actor;
 		clickedActorTick = actor != null ? tickCount : Integer.MIN_VALUE;
+	}
+
+	public void noteGroundItemClick(TileItem item)
+	{
+		clickedActor = null;
+		clickedActorTick = Integer.MIN_VALUE;
+		clickedGroundItem = item;
 	}
 
 	public void clearIfStale(Player localPlayer, int tickCount)
@@ -52,41 +65,44 @@ public final class BillboardInteractionState
 	public void clear()
 	{
 		clickedActor = null;
+		clickedGroundItem = null;
 		clickedActorTick = Integer.MIN_VALUE;
-		frameInteractionActor = null;
-		lastInteractionActor = null;
+		frameInteractionTarget = null;
+		lastInteractionTarget = null;
 	}
 
-	public Change update(Client client)
+	public Change update(Client client, Iterable<Map.Entry<TileItem, GroundItemBillboard>> groundItems)
 	{
-		Actor hoveredActor = BillboardHoverInteractionResolver.hoveredActor(client);
-		Actor interactionActor = BillboardHoverInteractionResolver.interactedActor(client, clickedActor);
-		frameHoveredActor = hoveredActor;
-		frameInteractionActor = interactionActor;
-		if (hoveredActor == lastHoveredActor && interactionActor == lastInteractionActor)
+		Renderable hoveredTarget = BillboardHoverInteractionResolver.hoveredTarget(client, groundItems);
+		Renderable interactionTarget = clickedGroundItem != null
+			? clickedGroundItem
+			: BillboardHoverInteractionResolver.interactedActor(client, clickedActor);
+		frameHoveredTarget = hoveredTarget;
+		frameInteractionTarget = interactionTarget;
+		if (hoveredTarget == lastHoveredTarget && interactionTarget == lastInteractionTarget)
 		{
 			return Change.unchanged();
 		}
 
-		Change change = new Change(lastHoveredActor, hoveredActor, lastInteractionActor, interactionActor);
-		lastHoveredActor = hoveredActor;
-		lastInteractionActor = interactionActor;
+		Change change = new Change(lastHoveredTarget, hoveredTarget, lastInteractionTarget, interactionTarget);
+		lastHoveredTarget = hoveredTarget;
+		lastInteractionTarget = interactionTarget;
 		return change;
 	}
 
-	public Actor frameHoveredActor()
+	public Renderable frameHoveredTarget()
 	{
-		return frameHoveredActor;
+		return frameHoveredTarget;
 	}
 
-	public Actor frameInteractionActor()
+	public Renderable frameInteractionTarget()
 	{
-		return frameInteractionActor;
+		return frameInteractionTarget;
 	}
 
-	public Actor priorityActor()
+	public Renderable priorityTarget()
 	{
-		return frameInteractionActor != null ? frameInteractionActor : frameHoveredActor;
+		return frameInteractionTarget != null ? frameInteractionTarget : frameHoveredTarget;
 	}
 
 	public Actor clickedActor()
@@ -94,26 +110,39 @@ public final class BillboardInteractionState
 		return clickedActor;
 	}
 
+	public TileItem clickedGroundItem()
+	{
+		return clickedGroundItem;
+	}
+
+	public void clearIfMatches(TileItem item)
+	{
+		if (item == clickedGroundItem)
+		{
+			clear();
+		}
+	}
+
 	public static final class Change
 	{
 		private static final Change UNCHANGED = new Change(null, null, null, null, false);
-		public final Actor previousHoveredActor;
-		public final Actor hoveredActor;
-		public final Actor previousInteractionActor;
-		public final Actor interactionActor;
+		public final Renderable previousHoveredTarget;
+		public final Renderable hoveredTarget;
+		public final Renderable previousInteractionTarget;
+		public final Renderable interactionTarget;
 		public final boolean changed;
 
-		private Change(Actor previousHoveredActor, Actor hoveredActor, Actor previousInteractionActor, Actor interactionActor)
+		private Change(Renderable previousHoveredTarget, Renderable hoveredTarget, Renderable previousInteractionTarget, Renderable interactionTarget)
 		{
-			this(previousHoveredActor, hoveredActor, previousInteractionActor, interactionActor, true);
+			this(previousHoveredTarget, hoveredTarget, previousInteractionTarget, interactionTarget, true);
 		}
 
-		private Change(Actor previousHoveredActor, Actor hoveredActor, Actor previousInteractionActor, Actor interactionActor, boolean changed)
+		private Change(Renderable previousHoveredTarget, Renderable hoveredTarget, Renderable previousInteractionTarget, Renderable interactionTarget, boolean changed)
 		{
-			this.previousHoveredActor = previousHoveredActor;
-			this.hoveredActor = hoveredActor;
-			this.previousInteractionActor = previousInteractionActor;
-			this.interactionActor = interactionActor;
+			this.previousHoveredTarget = previousHoveredTarget;
+			this.hoveredTarget = hoveredTarget;
+			this.previousInteractionTarget = previousInteractionTarget;
+			this.interactionTarget = interactionTarget;
 			this.changed = changed;
 		}
 

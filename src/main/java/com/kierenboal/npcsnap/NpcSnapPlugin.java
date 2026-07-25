@@ -283,6 +283,11 @@ public class NpcSnapPlugin extends Plugin
 			billboardOverlay.noteActorInteraction(menuOptionClicked.getMenuEntry().getActor(), client.getTickCount());
 			return;
 		}
+		if (BillboardHoverInteractionResolver.isGroundItemAction(menuOptionClicked.getMenuAction()))
+		{
+			billboardOverlay.noteGroundItemInteraction(menuOptionClicked.getMenuEntry());
+			return;
+		}
 
 		billboardOverlay.clearInteractionState();
 	}

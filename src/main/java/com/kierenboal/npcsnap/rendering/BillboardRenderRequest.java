@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.NpcSnapDebug;
 
+import java.awt.Color;
 import net.runelite.api.Model;
 import net.runelite.api.Renderable;
 import net.runelite.api.coords.LocalPoint;
@@ -22,6 +23,8 @@ public final class BillboardRenderRequest
 	public final int animatedTextureId;
 	public final boolean shouldHoverOutline;
 	public final boolean shouldInteractOutline;
+	public final Color hoverOutlineColor;
+	public final Color interactionOutlineColor;
 	public final VerticalAnchor verticalAnchor;
 	public final NpcSnapDebug.FrameDebugInfo frameDebugInfo;
 
@@ -41,6 +44,32 @@ public final class BillboardRenderRequest
 		boolean shouldHoverOutline,
 		boolean shouldInteractOutline,
 		VerticalAnchor verticalAnchor,
+		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
+	{
+		this(
+			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
+			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
+			shouldHoverOutline, shouldInteractOutline, null, null, verticalAnchor, frameDebugInfo);
+	}
+
+	public BillboardRenderRequest(
+		Renderable renderable,
+		Model model,
+		LocalPoint localPoint,
+		int plane,
+		int verticalOffset,
+		int relativeYaw,
+		int relativePitch,
+		int animationId,
+		int animationFrame,
+		int poseAnimationId,
+		int poseAnimationFrame,
+		int animatedTextureId,
+		boolean shouldHoverOutline,
+		boolean shouldInteractOutline,
+		Color hoverOutlineColor,
+		Color interactionOutlineColor,
+		VerticalAnchor verticalAnchor,
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo
 	)
 	{
@@ -58,6 +87,8 @@ public final class BillboardRenderRequest
 		this.animatedTextureId = animatedTextureId;
 		this.shouldHoverOutline = shouldHoverOutline;
 		this.shouldInteractOutline = shouldInteractOutline;
+		this.hoverOutlineColor = hoverOutlineColor;
+		this.interactionOutlineColor = interactionOutlineColor;
 		this.verticalAnchor = verticalAnchor;
 		this.frameDebugInfo = frameDebugInfo;
 	}

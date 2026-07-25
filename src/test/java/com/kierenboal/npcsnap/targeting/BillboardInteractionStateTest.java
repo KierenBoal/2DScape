@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.TestProxies;
 
 import net.runelite.api.Actor;
 import net.runelite.api.Player;
+import net.runelite.api.TileItem;
 import org.junit.Test;
 
 import static org.junit.Assert.assertSame;
@@ -61,5 +62,18 @@ public class BillboardInteractionStateTest
 		assertSame(actor, state.clickedActor());
 		state.clearIfMatches(actor);
 		assertSame(null, state.clickedActor());
+	}
+
+	@Test
+	public void groundItemInteractionPersistsUntilMatchingItemClears()
+	{
+		TileItem item = TestProxies.proxy(TileItem.class);
+		BillboardInteractionState state = new BillboardInteractionState();
+
+		state.noteGroundItemClick(item);
+		state.clearIfMatches(TestProxies.proxy(TileItem.class));
+		assertSame(item, state.clickedGroundItem());
+		state.clearIfMatches(item);
+		assertSame(null, state.clickedGroundItem());
 	}
 }

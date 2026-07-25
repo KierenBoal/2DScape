@@ -1,13 +1,19 @@
 package com.kierenboal.npcsnap.targeting;
 
 import com.kierenboal.npcsnap.TestProxies;
+import com.kierenboal.npcsnap.features.GroundItemBillboard;
 
+import java.util.Collections;
+import java.util.AbstractMap;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.TileItem;
+import net.runelite.api.WorldView;
+import net.runelite.api.coords.LocalPoint;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -38,6 +44,30 @@ public class BillboardHoverInteractionResolverTest
 	{
 		Assert.assertTrue(BillboardHoverInteractionResolver.isActorInteractionAction(MenuAction.WORLD_ENTITY_FIRST_OPTION));
 		Assert.assertTrue(BillboardHoverInteractionResolver.isActorInteractionAction(MenuAction.NPC_FIRST_OPTION));
+	}
+
+	@Test
+	public void recognizesAndResolvesGroundItemActions()
+	{
+		Assert.assertTrue(BillboardHoverInteractionResolver.isGroundItemAction(MenuAction.GROUND_ITEM_FIRST_OPTION));
+		Assert.assertTrue(BillboardHoverInteractionResolver.isGroundItemAction(MenuAction.ITEM_USE_ON_GROUND_ITEM));
+		Assert.assertFalse(BillboardHoverInteractionResolver.isGroundItemAction(MenuAction.WALK));
+
+		WorldView worldView = proxy(WorldView.class, method("getBaseX", 0), method("getBaseY", 0));
+		LocalPoint point = new LocalPoint(10 << 7, 20 << 7, worldView);
+		TileItem item = proxy(TileItem.class, method("getId", 42));
+		MenuEntry entry = proxy(
+			MenuEntry.class,
+			method("getIdentifier", 42),
+			method("getParam0", 10),
+			method("getParam1", 20));
+
+		Assert.assertSame(
+			item,
+			BillboardHoverInteractionResolver.groundItem(
+				entry,
+				Collections.singletonList(new AbstractMap.SimpleEntry<>(
+					item, new GroundItemBillboard(0, point)))));
 	}
 
 	@Test

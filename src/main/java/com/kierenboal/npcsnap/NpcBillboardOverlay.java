@@ -50,6 +50,7 @@ import com.kierenboal.npcsnap.state.UpdateHeuristicSnapshot;
 import com.kierenboal.npcsnap.targeting.ActorStackTracker;
 import com.kierenboal.npcsnap.targeting.BillboardClassificationDebug;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
+import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetEligibility;
 import com.kierenboal.npcsnap.targeting.BillboardTargetKey;
@@ -95,6 +96,7 @@ import net.runelite.api.Point;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
@@ -273,6 +275,7 @@ class NpcBillboardOverlay extends Overlay
 
 	private void clearGroundItemRenderState(TileItem item)
 	{
+		clearInteractionIfMatches(item);
 		billboardCache.remove(item);
 		activeRenderableTargets.remove(item);
 		visibility.activeBillboards.remove(item);
@@ -402,6 +405,12 @@ class NpcBillboardOverlay extends Overlay
 		interactionState.noteClick(actor, tickCount);
 	}
 
+	void noteGroundItemInteraction(MenuEntry entry)
+	{
+		interactionState.noteGroundItemClick(
+			BillboardHoverInteractionResolver.groundItem(entry, groundItemTracker.entries()));
+	}
+
 	void clearStaleInteraction(Player localPlayer, int tickCount)
 	{
 		interactionState.clearIfStale(localPlayer, tickCount);
@@ -415,6 +424,11 @@ class NpcBillboardOverlay extends Overlay
 	void clearInteractionIfMatches(Actor actor)
 	{
 		interactionState.clearIfMatches(actor);
+	}
+
+	void clearInteractionIfMatches(TileItem item)
+	{
+		interactionState.clearIfMatches(item);
 	}
 
 	void clearInteractionState()
@@ -534,7 +548,7 @@ class NpcBillboardOverlay extends Overlay
 		CachedBillboard cached = billboardCache.get(item);
 		if (cached == null || !cached.key.equals(cacheKey) || !cached.bounds.equals(bounds))
 		{
-			cached = new CachedBillboard(cacheKey, bounds, bandGroundItemSprite(inventorySprite, config.billboardColorBands()), nowMillis);
+			cached = new CachedBillboard(cacheKey, bounds, prepareGroundItemSprite(inventorySprite, request), nowMillis);
 			billboardCache.put(item, cached);
 		}
 
@@ -567,6 +581,25 @@ class NpcBillboardOverlay extends Overlay
 		BufferedImage banded = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
 		banded.setRGB(0, 0, width, height, NpcSnapColorBanding.bandPixels(pixels, colorBands), 0, width);
 		return banded;
+	}
+
+	private BufferedImage prepareGroundItemSprite(BufferedImage image, BillboardRenderRequest request)
+	{
+		BufferedImage prepared = bandGroundItemSprite(image, config.billboardColorBands());
+		if (!request.shouldHoverOutline && !request.shouldInteractOutline)
+		{
+			return prepared;
+		}
+
+		int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(prepared, outlineScratch);
+		applyHoverInteractionOutline(
+			prepared,
+			exteriorOutlineIndices,
+			request.shouldHoverOutline,
+			request.shouldInteractOutline,
+			request.hoverOutlineColor,
+			request.interactionOutlineColor);
+		return prepared;
 	}
 
 	private void renderTileObjectTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
@@ -1149,7 +1182,7 @@ class NpcBillboardOverlay extends Overlay
 
 		int score = target.getRenderPriority() * 10;
 		Actor owner = targetOwnerActor(target);
-		Actor priorityActor = priorityHoverInteractionActor();
+		Renderable priorityActor = priorityHoverInteractionTarget();
 		Player localPlayer = client.getLocalPlayer();
 		if (owner != null)
 		{
@@ -1223,18 +1256,18 @@ class NpcBillboardOverlay extends Overlay
 
 	private void updateHoverInteractionState()
 	{
-		BillboardInteractionState.Change change = interactionState.update(client);
+		BillboardInteractionState.Change change = interactionState.update(client, groundItemTracker.entries());
 		if (!change.changed)
 		{
 			return;
 		}
 
 		Player localPlayer = client.getLocalPlayer();
-		markHoverInteractionStateDirty(change.previousHoveredActor);
-		markHoverInteractionStateDirty(change.hoveredActor);
-		markHoverInteractionStateDirty(change.previousInteractionActor);
-		markHoverInteractionStateDirty(change.interactionActor);
-		if (change.interactionActor != change.previousInteractionActor)
+		markHoverInteractionStateDirty(change.previousHoveredTarget);
+		markHoverInteractionStateDirty(change.hoveredTarget);
+		markHoverInteractionStateDirty(change.previousInteractionTarget);
+		markHoverInteractionStateDirty(change.interactionTarget);
+		if (change.interactionTarget != change.previousInteractionTarget)
 		{
 			markHoverInteractionStateDirty(localPlayer);
 		}
@@ -1391,7 +1424,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		Actor owner = targetOwnerActor(target);
 		Actor localPlayer = client.getLocalPlayer();
-		Actor priorityActor = priorityHoverInteractionActor();
+		Renderable priorityActor = priorityHoverInteractionTarget();
 		return BillboardUpdateScore.compute(
 			targetHasCachedBillboard(target),
 			shouldForceHoverInteractionRedraw(target),
@@ -1412,9 +1445,9 @@ class NpcBillboardOverlay extends Overlay
 		return Math.max(1, (int) Math.ceil(50.0d / targetFramesPerSecond));
 	}
 
-	private Actor priorityHoverInteractionActor()
+	private Renderable priorityHoverInteractionTarget()
 	{
-		return interactionState.priorityActor();
+		return interactionState.priorityTarget();
 	}
 
 	private void pruneRenderQueue(Set<BillboardTargetKey> validKeys)
@@ -2170,7 +2203,15 @@ class NpcBillboardOverlay extends Overlay
 		);
 	}
 
-	private RenderedBillboardImage renderBillboardImage(List<FaceDraw> faces, Rectangle bounds, int outlinePadding, double qualityScaleOverride, boolean shouldHoverOutline, boolean shouldInteractOutline)
+	private RenderedBillboardImage renderBillboardImage(
+		List<FaceDraw> faces,
+		Rectangle bounds,
+		int outlinePadding,
+		double qualityScaleOverride,
+		boolean shouldHoverOutline,
+		boolean shouldInteractOutline,
+		Color hoverOutlineColor,
+		Color interactionOutlineColor)
 	{
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Rasterization"))
 		{
@@ -2245,7 +2286,9 @@ class NpcBillboardOverlay extends Overlay
 
 					if (shouldHoverOutline || shouldInteractOutline)
 					{
-						applyHoverInteractionOutline(image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline);
+						applyHoverInteractionOutline(
+							image, exteriorOutlineIndices, shouldHoverOutline, shouldInteractOutline,
+							hoverOutlineColor, interactionOutlineColor);
 					}
 				}
 			}
@@ -2585,7 +2628,9 @@ class NpcBillboardOverlay extends Overlay
 							outlinePadding,
 							updatePlan.qualityScale,
 							request.shouldHoverOutline,
-							request.shouldInteractOutline
+							request.shouldInteractOutline,
+							request.hoverOutlineColor,
+							request.interactionOutlineColor
 						);
 						if (rendered != null)
 						{
@@ -2818,8 +2863,9 @@ class NpcBillboardOverlay extends Overlay
 			|| config.enableBillboardShadowOutline()
 			|| config.enableBillboardSpriteOutline()
 			|| config.enableBillboardSpriteShadows()
-			|| config.enableBillboardHoverOutline()
-			|| config.enableBillboardInteractionOutline()
+			|| config.enablePlayerInteractionOutline()
+			|| config.enableNpcInteractionOutline()
+			|| config.enableGroundItemInteractionOutline()
 			? OUTLINE_PADDING
 			: 0;
 	}
@@ -2835,7 +2881,13 @@ class NpcBillboardOverlay extends Overlay
 			|| config.enableBillboardSpriteInline();
 	}
 
-	private void applyHoverInteractionOutline(BufferedImage image, int[] exteriorOutlineIndices, boolean shouldHoverOutline, boolean shouldInteractOutline)
+	private void applyHoverInteractionOutline(
+		BufferedImage image,
+		int[] exteriorOutlineIndices,
+		boolean shouldHoverOutline,
+		boolean shouldInteractOutline,
+		Color hoverOutlineColor,
+		Color interactionOutlineColor)
 	{
 		if (image == null || exteriorOutlineIndices == null || exteriorOutlineIndices.length == 0)
 		{
@@ -2848,8 +2900,8 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		Color color = shouldInteractOutline
-			? config.billboardInteractionOutlineColor()
-			: shouldHoverOutline ? config.billboardHoverOutlineColor() : null;
+			? interactionOutlineColor
+			: shouldHoverOutline ? hoverOutlineColor : null;
 		if (color == null || color.getAlpha() == 0)
 		{
 			return;

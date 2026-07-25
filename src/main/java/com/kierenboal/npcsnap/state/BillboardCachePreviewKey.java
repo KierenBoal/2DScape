@@ -58,8 +58,8 @@ public final class BillboardCachePreviewKey
 			config.billboardSpriteOutlineColor().getRGB(),
 			request.shouldHoverOutline,
 			request.shouldInteractOutline,
-			config.billboardHoverOutlineColor().getRGB(),
-			config.billboardInteractionOutlineColor().getRGB(),
+			request.hoverOutlineColor != null ? request.hoverOutlineColor.getRGB() : 0,
+			request.interactionOutlineColor != null ? request.interactionOutlineColor.getRGB() : 0,
 			renderQuality,
 			BillboardModelStateHash.hash(request.model),
 			animatedTextureOffsetStateHash);
