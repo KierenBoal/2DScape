@@ -3,6 +3,9 @@ package com.kierenboal.npcsnap;
 import com.kierenboal.npcsnap.features.LoginXpDropGuard;
 import com.kierenboal.npcsnap.features.SkillingActivityTracker;
 import com.kierenboal.npcsnap.features.SkillingThoughtBubbleOverlay;
+import com.kierenboal.npcsnap.export.BillboardExportBatch;
+import com.kierenboal.npcsnap.export.BillboardExportPaths;
+import com.kierenboal.npcsnap.export.BillboardPngExporter;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.NpcSnapTextureBandingManager;
 import com.kierenboal.npcsnap.rendering.NpcSnapRendererRefresher;
@@ -12,13 +15,20 @@ import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
 
 import com.google.inject.Provides;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.awt.Color;
+import java.nio.file.Path;
 import javax.inject.Inject;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.KeyCode;
+import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -28,7 +38,9 @@ import net.runelite.api.Scene;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.events.BeforeRender;
+import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
@@ -36,6 +48,7 @@ import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
@@ -50,6 +63,8 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ColorUtil;
+import net.runelite.client.util.LinkBrowser;
 
 @Slf4j
 @PluginDescriptor(
@@ -68,6 +83,7 @@ public class NpcSnapPlugin extends Plugin
 	private NpcSnapRendererRefresher rendererRefresher;
 	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
+	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
 
 	@Inject
 	private Client client;
@@ -102,6 +118,9 @@ public class NpcSnapPlugin extends Plugin
 	@Inject
 	private PluginManager pluginManager;
 
+	@Inject
+	private BillboardPngExporter billboardPngExporter;
+
 	@Override
 	protected void startUp()
 	{
@@ -112,6 +131,7 @@ public class NpcSnapPlugin extends Plugin
 		overlayManager.add(billboardOverlay);
 		overlayManager.add(skillingThoughtBubbleOverlay);
 		renderCallbackManager.register(this);
+		billboardPngExporter.start();
 		log.debug("2DScape started");
 	}
 
@@ -131,6 +151,7 @@ public class NpcSnapPlugin extends Plugin
 		pendingSkillXpSeed = false;
 		animationFrameSnapper.clear();
 		debug.clearFrameStates();
+		billboardPngExporter.shutDown();
 		if (ensureTextureBandingManager().restore())
 		{
 			billboardOverlay.clearTextureCache();
@@ -273,6 +294,167 @@ public class NpcSnapPlugin extends Plugin
 	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
 	{
 		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
+	}
+
+	@Subscribe
+	public void onClientTick(ClientTick clientTick)
+	{
+		exportMenuTargetsThisTick.clear();
+	}
+
+	@Subscribe
+	public void onMenuEntryAdded(MenuEntryAdded event)
+	{
+		addExportFolderMenuEntry(event);
+
+		if (!config.enableShiftRightClickExportPng() || !client.isKeyPressed(KeyCode.KC_SHIFT))
+		{
+			return;
+		}
+
+		MenuEntry source = event.getMenuEntry();
+		if (isEquipmentTab(source))
+		{
+			addLocalPlayerExportMenuEntry();
+			return;
+		}
+		if (!isExportableMenuEntry(source))
+		{
+			return;
+		}
+
+		String key = exportMenuKey(source);
+		if (!exportMenuTargetsThisTick.add(key))
+		{
+			return;
+		}
+		client.createMenuEntry(-1)
+			.setOption("Export sprite")
+			.setTarget(source.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.onClick(ignored -> exportBillboard(source));
+	}
+
+	private void addLocalPlayerExportMenuEntry()
+	{
+		Player player = client.getLocalPlayer();
+		if (player == null || !exportMenuTargetsThisTick.add("local-player-equipment"))
+		{
+			return;
+		}
+		String target = ColorUtil.wrapWithColorTag(
+			BillboardExportPaths.sanitizeName(player.getName(), "Player").replace('_', ' '),
+			Color.WHITE);
+		client.createMenuEntry(-1)
+			.setOption("Export sprite")
+			.setTarget(target)
+			.setType(MenuAction.RUNELITE)
+			.onClick(ignored -> exportLocalPlayer());
+	}
+
+	private void exportLocalPlayer()
+	{
+		BillboardExportBatch batch = billboardOverlay.captureExport(client.getLocalPlayer());
+		if (batch == null)
+		{
+			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
+				"The local player is no longer available for export.", null);
+			return;
+		}
+		billboardPngExporter.export(batch);
+	}
+
+	private static boolean isEquipmentTab(MenuEntry entry)
+	{
+		if (entry == null || entry.getWidget() == null)
+		{
+			return false;
+		}
+		int widgetId = entry.getWidget().getId();
+		return widgetId == InterfaceID.Toplevel.STONE4
+			|| widgetId == InterfaceID.ToplevelOsrsStretch.STONE4
+			|| widgetId == InterfaceID.ToplevelPreEoc.STONE4;
+	}
+
+	private void addExportFolderMenuEntry(MenuEntryAdded event)
+	{
+		Path directory = billboardPngExporter.getLatestExportDirectory();
+		if (directory == null || event.getTarget() == null
+			|| !BillboardExportPaths.stripTags(event.getTarget()).contains(directory.toString()))
+		{
+			return;
+		}
+		client.createMenuEntry(-1)
+			.setOption("Open folder")
+			.setTarget(event.getTarget())
+			.setType(MenuAction.RUNELITE)
+			.setForceLeftClick(true)
+			.onClick(ignored -> LinkBrowser.open(directory.toString()));
+	}
+
+	private static String exportMenuKey(MenuEntry entry)
+	{
+		if (entry.getActor() != null)
+		{
+			return "actor:" + System.identityHashCode(entry.getActor());
+		}
+		return entry.getIdentifier() + ":" + entry.getParam0() + ":" + entry.getParam1()
+			+ ":" + (BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()) ? "item" : "object");
+	}
+
+	private void exportBillboard(MenuEntry source)
+	{
+		BillboardExportBatch batch = billboardOverlay.captureExport(source);
+		if (batch == null)
+		{
+			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
+				"That render target is no longer available for export.", null);
+			return;
+		}
+		billboardPngExporter.export(batch);
+	}
+
+	private static boolean isExportableMenuEntry(MenuEntry entry)
+	{
+		if (entry == null)
+		{
+			return false;
+		}
+		if (entry.getActor() != null || BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()))
+		{
+			return true;
+		}
+		switch (entry.getType())
+		{
+			case ITEM_USE_ON_GAME_OBJECT:
+			case WIDGET_TARGET_ON_GAME_OBJECT:
+			case GAME_OBJECT_FIRST_OPTION:
+			case GAME_OBJECT_SECOND_OPTION:
+			case GAME_OBJECT_THIRD_OPTION:
+			case GAME_OBJECT_FOURTH_OPTION:
+			case GAME_OBJECT_FIFTH_OPTION:
+			case EXAMINE_OBJECT:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static String exportFallback(MenuEntry entry)
+	{
+		if (entry.getActor() instanceof NPC)
+		{
+			return "NPC_" + ((NPC) entry.getActor()).getId();
+		}
+		if (entry.getActor() instanceof Player)
+		{
+			return "Player";
+		}
+		if (BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()))
+		{
+			return "Item_" + entry.getIdentifier();
+		}
+		return "Object_" + entry.getIdentifier();
 	}
 
 	@Subscribe

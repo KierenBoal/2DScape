@@ -102,6 +102,12 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 6)
+	default boolean enableShiftRightClickExportPng()
+	{
+		return false;
+	}
+
 	@ConfigItem(keyName = "enable2dBillboardSprites", name = "Enable 2D billboards", description = "Draw selected things as flat sprites instead of their usual 3D models.", section = renderingSection, position = 0)
 	default boolean enable2dBillboardSprites()
 	{

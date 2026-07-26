@@ -23,6 +23,7 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableBillboardSpriteShadows());
 		assertFalse(config.deterministicAnimationLooping());
 		assertFalse(config.logBillboardAnimationData());
+		assertFalse(config.enableShiftRightClickExportPng());
 	}
 
 	@Test

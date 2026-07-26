@@ -2,6 +2,11 @@ package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.features.GroundItemBillboardTracker;
+import com.kierenboal.npcsnap.export.BillboardExportAngles;
+import com.kierenboal.npcsnap.export.BillboardExportAnimationFrames;
+import com.kierenboal.npcsnap.export.BillboardExportBatch;
+import com.kierenboal.npcsnap.export.BillboardExportFrame;
+import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionDebugSampler;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
@@ -435,6 +440,291 @@ class NpcBillboardOverlay extends Overlay
 	void clearInteractionState()
 	{
 		interactionState.clear();
+	}
+
+	BillboardExportBatch captureExport(MenuEntry sourceEntry)
+	{
+		BillboardTarget target = resolveExportTarget(sourceEntry);
+		return captureExport(target);
+	}
+
+	BillboardExportBatch captureExport(Player player)
+	{
+		return captureExport(player == null ? null : activeRenderableTargets.get(player));
+	}
+
+	private BillboardExportBatch captureExport(BillboardTarget target)
+	{
+		if (target == null)
+		{
+			return null;
+		}
+
+		String name = exportTargetName(target);
+		if (target.renderable instanceof Actor)
+		{
+			return captureActorExport(target, (Actor) target.renderable, name);
+		}
+		return captureExportAtFrame(target, name, 0);
+	}
+
+	private BillboardExportBatch captureActorExport(BillboardTarget target, Actor actor, String name)
+	{
+		int actionAnimation = actor.getAnimation();
+		boolean poseAnimation = actionAnimation < 0;
+		int animationId = poseAnimation ? actor.getPoseAnimation() : actionAnimation;
+		net.runelite.api.Animation animation = animationId >= 0 ? client.loadAnimation(animationId) : null;
+		int totalFrames = animation != null
+			? Math.max(animation.getNumFrames(), animation.getDuration())
+			: 1;
+		int originalActionFrame = actor.getAnimationFrame();
+		int originalPoseFrame = actor.getPoseAnimationFrame();
+		List<BillboardExportFrame> frames = new ArrayList<>();
+		try
+		{
+			for (int frame : BillboardExportAnimationFrames.sampledFrames(
+				totalFrames, config.enableAnimationFrameSnapping()
+					? config.animationFrameCount()
+					: totalFrames))
+			{
+				if (poseAnimation)
+				{
+					actor.setPoseAnimationFrame(frame);
+				}
+				else
+				{
+					actor.setAnimationFrame(frame);
+				}
+				BillboardExportBatch frameBatch = captureExportAtFrame(target, name, frame);
+				if (frameBatch != null)
+				{
+					frames.addAll(frameBatch.frames);
+				}
+			}
+		}
+		finally
+		{
+			actor.setAnimationFrame(originalActionFrame);
+			actor.setPoseAnimationFrame(originalPoseFrame);
+		}
+		return frames.isEmpty() ? null : new BillboardExportBatch(name, frames);
+	}
+
+	private BillboardExportBatch captureExportAtFrame(BillboardTarget target, String name, int animationFrame)
+	{
+		List<BillboardRenderRequest> requests = new ArrayList<>();
+		if (target.type == BillboardTargetType.TILE_OBJECT)
+		{
+			for (ObjectRenderablePart part : target.observedTileObject.parts)
+			{
+				BillboardRenderRequest request = requestFactory.build(target, part);
+				if (request != null)
+				{
+					requests.add(request);
+				}
+			}
+		}
+		else
+		{
+			BillboardRenderRequest request = requestFactory.build(target);
+			if (request != null)
+			{
+				requests.add(request);
+			}
+		}
+		if (requests.isEmpty())
+		{
+			return null;
+		}
+
+		boolean groundItem = target.type == BillboardTargetType.GROUND_ITEM;
+		List<BillboardExportFrame> frames = new ArrayList<>();
+		for (int pitch : BillboardExportAngles.pitches(config.numberOfPitchRotationAngles(), groundItem))
+		{
+			for (int yaw : BillboardExportAngles.yaws(config.numberOfYawRotationAngles()))
+			{
+				List<ExportRenderedPart> partImages = new ArrayList<>(requests.size());
+				LocalPoint origin = requests.get(0).localPoint;
+				for (BillboardRenderRequest request : requests)
+				{
+					ExportRenderedPart image = renderExportRequest(request, yaw, pitch, origin);
+					if (image != null)
+					{
+						partImages.add(image);
+					}
+				}
+				BufferedImage image = compositeExportParts(partImages);
+				if (image != null)
+				{
+					frames.add(new BillboardExportFrame(animationFrame, pitch, yaw, image));
+				}
+			}
+		}
+		return frames.isEmpty() ? null : new BillboardExportBatch(name, frames);
+	}
+
+	private BillboardTarget resolveExportTarget(MenuEntry entry)
+	{
+		if (entry == null)
+		{
+			return null;
+		}
+		Actor actor = entry.getActor();
+		if (actor != null)
+		{
+			return activeRenderableTargets.get(actor);
+		}
+		if (BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()))
+		{
+			TileItem item = BillboardHoverInteractionResolver.groundItem(entry, groundItemTracker.entries());
+			return item == null ? null : activeRenderableTargets.get(item);
+		}
+
+		for (Map.Entry<TileObject, ObservedTileObject> candidate : visibleTileObjects.entrySet())
+		{
+			TileObject object = candidate.getKey();
+			if (object == null || object.getId() != entry.getIdentifier())
+			{
+				continue;
+			}
+			for (ObjectRenderablePart part : candidate.getValue().parts)
+			{
+				if (part.localPoint != null
+					&& part.localPoint.getSceneX() == entry.getParam0()
+					&& part.localPoint.getSceneY() == entry.getParam1())
+				{
+					return BillboardTarget.forTileObject(candidate.getValue(), depthCalculator.depth(candidate.getValue()));
+				}
+			}
+		}
+		return null;
+	}
+
+	private String exportTargetName(BillboardTarget target)
+	{
+		String name = null;
+		String fallback = "Sprite";
+		if (target.renderable instanceof NPC)
+		{
+			NPC npc = (NPC) target.renderable;
+			name = npc.getName();
+			fallback = "NPC_" + npc.getId();
+		}
+		else if (target.renderable instanceof Player)
+		{
+			name = ((Player) target.renderable).getName();
+			fallback = "Player";
+		}
+		else if (target.type == BillboardTargetType.GROUND_ITEM)
+		{
+			TileItem item = (TileItem) target.renderable;
+			name = itemManager.getItemComposition(item.getId()).getName();
+			fallback = "Item_" + item.getId();
+		}
+		else if (target.tileObject != null)
+		{
+			name = client.getObjectDefinition(target.tileObject.getId()).getName();
+			fallback = "Object_" + target.tileObject.getId();
+		}
+		return BillboardExportPaths.sanitizeName(name, fallback);
+	}
+
+	private ExportRenderedPart renderExportRequest(BillboardRenderRequest original, int yaw, int pitch, LocalPoint origin)
+	{
+		Model model = original.model;
+		if (model == null || model.getVerticesCount() <= 0)
+		{
+			return null;
+		}
+		int vertexCount = model.getVerticesCount();
+		float[] spriteX = new float[vertexCount];
+		float[] spriteY = new float[vertexCount];
+		float[] spriteDepth = new float[vertexCount];
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		int offsetX = origin != null && original.localPoint != null ? original.localPoint.getX() - origin.getX() : 0;
+		int offsetZ = origin != null && original.localPoint != null ? original.localPoint.getY() - origin.getY() : 0;
+		double yawSin = Perspective.SINE14[yaw] / 65536.0;
+		double yawCos = Perspective.COSINE14[yaw] / 65536.0;
+		int inversePitch = Math.floorMod(-pitch, BILLBOARD_FULL_CIRCLE);
+		double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
+		double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
+		for (int i = 0; i < vertexCount; i++)
+		{
+			double modelX = verticesX[i] + offsetX;
+			double modelZ = verticesZ[i] + offsetZ;
+			double rotatedX = (modelX * yawCos) + (modelZ * yawSin);
+			double rotatedZ = (modelZ * yawCos) - (modelX * yawSin);
+			spriteX[i] = (float) rotatedX;
+			spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
+			spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
+		}
+		BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth,
+			System.currentTimeMillis(), original.animatedTextureId, true);
+		if (builtFaces.faces.isEmpty())
+		{
+			builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth,
+				System.currentTimeMillis(), original.animatedTextureId, false);
+		}
+		if (builtFaces.faces.isEmpty())
+		{
+			return null;
+		}
+		builtFaces.faces.sort(Comparator.comparingDouble(FaceDraw::getDepth).reversed());
+		Rectangle bounds = BillboardGeometryUtils.computeBounds(builtFaces.faces);
+		if (!BillboardGeometryUtils.isUsableSourceBounds(bounds))
+		{
+			return null;
+		}
+		RenderedBillboardImage rendered = renderBillboardImage(
+			builtFaces.faces, bounds, outlinePadding(), renderQualityScale(),
+			false, false, null, null);
+		return rendered == null ? null
+			: new ExportRenderedPart(rendered.image, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding()));
+	}
+
+	private static BufferedImage compositeExportParts(List<ExportRenderedPart> images)
+	{
+		if (images.isEmpty())
+		{
+			return null;
+		}
+		if (images.size() == 1)
+		{
+			return images.get(0).image;
+		}
+		Rectangle union = null;
+		for (ExportRenderedPart image : images)
+		{
+			union = union == null ? new Rectangle(image.bounds) : union.union(image.bounds);
+		}
+		BufferedImage composite = new BufferedImage(Math.max(1, union.width), Math.max(1, union.height), BufferedImage.TYPE_INT_ARGB);
+		Graphics2D graphics = composite.createGraphics();
+		try
+		{
+			for (ExportRenderedPart image : images)
+			{
+				graphics.drawImage(image.image, image.bounds.x - union.x, image.bounds.y - union.y, null);
+			}
+		}
+		finally
+		{
+			graphics.dispose();
+		}
+		return composite;
+	}
+
+	private static final class ExportRenderedPart
+	{
+		private final BufferedImage image;
+		private final Rectangle bounds;
+
+		private ExportRenderedPart(BufferedImage image, Rectangle bounds)
+		{
+			this.image = image;
+			this.bounds = bounds;
+		}
 	}
 
 	private boolean wasSceneRenderableDrawnLastFrame(Renderable renderable)
