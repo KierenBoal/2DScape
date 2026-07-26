@@ -153,6 +153,37 @@ public final class BillboardDepthCalculator
 		return (z * pitchSin) + (cameraY * pitchCos);
 	}
 
+	public double cameraForwardDepthOnVerticalPlane(int localX, int localY, int canvasY)
+	{
+		double x = localX - client.getCameraFpX();
+		double y = localY - client.getCameraFpY();
+		int yaw = cameraYawIndex();
+		int pitch = cameraPitchIndex();
+		double yawSin = Perspective.SINE[yaw] / 65536.0d;
+		double yawCos = Perspective.COSINE[yaw] / 65536.0d;
+		double pitchSin = Perspective.SINE[pitch] / 65536.0d;
+		double pitchCos = Perspective.COSINE[pitch] / 65536.0d;
+		double cameraY = (y * yawCos) - (x * yawSin);
+		double zoom = client.get3dZoom();
+		if (!Double.isFinite(cameraY) || cameraY <= 0.0d || !Double.isFinite(zoom) || zoom <= 0.0d)
+		{
+			return Double.NaN;
+		}
+
+		double viewportCenterY = client.getViewportYOffset() + (client.getViewportHeight() / 2.0d);
+		double screenSlope = (canvasY - viewportCenterY) / zoom;
+		double denominator = pitchCos - (screenSlope * pitchSin);
+		if (!Double.isFinite(denominator) || denominator <= 0.0d)
+		{
+			return Double.NaN;
+		}
+
+		// Intersect the pixel's camera ray with the yaw-facing world-vertical
+		// plane through the target. In camera coordinates:
+		// cameraY = depth * (cos(pitch) - screenSlope * sin(pitch)).
+		return cameraY / denominator;
+	}
+
 	public double cameraRightX()
 	{
 		int yaw = cameraYawIndex();

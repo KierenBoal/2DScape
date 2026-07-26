@@ -15,9 +15,9 @@ import static org.junit.Assert.assertTrue;
 public class BillboardDepthSurfaceTest
 {
 	@Test
-	public void centerPixelMatchesCenterlineDepthClosely()
+	public void pixelsUseWorldVerticalPlaneThroughLocalAnchor()
 	{
-		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 4096));
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 2048));
 		BillboardDepthSurface surface = new BillboardDepthSurface(
 			calculator,
 			0,
@@ -31,16 +31,16 @@ public class BillboardDepthSurfaceTest
 		);
 
 		double centerPixelDepth = surface.depthAt(9, 49, 20, 100);
-		double centerlineDepth = calculator.cameraForwardDepth(0, 0, 50.0d);
+		double anchorDepth = calculator.cameraForwardDepthOnVerticalPlane(0, 0, 50);
 
-		assertTrue(Math.abs(centerPixelDepth - centerlineDepth) < 2.0d);
+		assertEquals(anchorDepth, centerPixelDepth, 0.01d);
 	}
 
 	@Test
-	public void topAndBottomPixelsDifferWithCameraPitch()
+	public void topAndBottomPixelsFollowVerticalPlaneWithCameraPitch()
 	{
 		BillboardDepthSurface surface = new BillboardDepthSurface(
-			new BillboardDepthCalculator(client(0, 4096)),
+			new BillboardDepthCalculator(client(0, 2048)),
 			0,
 			0,
 			0.0d,
@@ -51,14 +51,14 @@ public class BillboardDepthSurfaceTest
 			0
 		);
 
-		assertTrue(surface.depthAt(10, 0, 20, 100) > surface.depthAt(10, 99, 20, 100));
+		assertTrue(surface.depthAt(10, 0, 20, 100) < surface.depthAt(10, 99, 20, 100));
 	}
 
 	@Test
 	public void leftAndRightPixelsDoNotDriftAcrossCameraFacingPlane()
 	{
 		BillboardDepthSurface surface = new BillboardDepthSurface(
-			new BillboardDepthCalculator(client(4096, 0)),
+			new BillboardDepthCalculator(client(0, 2048)),
 			0,
 			0,
 			0.0d,
@@ -76,9 +76,30 @@ public class BillboardDepthSurfaceTest
 	}
 
 	@Test
+	public void fartherVerticalPlaneStaysBehindAtEveryScreenRow()
+	{
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 2048));
+		BillboardDepthSurface near = new BillboardDepthSurface(
+			calculator, 0, 0, 0.0d, 100,
+			new Rectangle(-10, -100, 20, 100),
+			new Rectangle(0, 0, 20, 100),
+			0, 0);
+		BillboardDepthSurface far = new BillboardDepthSurface(
+			calculator, 0, 256, 0.0d, 100,
+			new Rectangle(-10, -100, 20, 100),
+			new Rectangle(0, 0, 20, 100),
+			0, 0);
+
+		for (int sourceY : new int[]{0, 50, 99})
+		{
+			assertTrue(near.depthAt(10, sourceY, 20, 100) < far.depthAt(10, sourceY, 20, 100));
+		}
+	}
+
+	@Test
 	public void spriteRenderYawDoesNotChangeWorldDepthSurface()
 	{
-		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 4096));
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 2048));
 		BillboardDepthSurface forwardSprite = new BillboardDepthSurface(
 			calculator,
 			0,
@@ -106,10 +127,10 @@ public class BillboardDepthSurfaceTest
 	}
 
 	@Test
-	public void sourceRowControlsDepthWhenBillboardDrawBoundsDifferFromModelProjection()
+	public void canvasRowControlsVerticalPlaneIntersection()
 	{
 		BillboardDepthSurface surface = new BillboardDepthSurface(
-			new BillboardDepthCalculator(client(0, 4096)),
+			new BillboardDepthCalculator(client(0, 2048)),
 			0,
 			0,
 			0.0d,
@@ -120,7 +141,7 @@ public class BillboardDepthSurfaceTest
 			0
 		);
 
-		assertEquals(surface.depthAt(10, 49, 20, 100, -500), surface.depthAt(10, 49, 20, 100, 5_000), 0.01d);
+		assertTrue(surface.depthAt(10, 49, 20, 100, -50) < surface.depthAt(10, 49, 20, 100, 150));
 	}
 
 	@Test
@@ -134,10 +155,13 @@ public class BillboardDepthSurfaceTest
 		return proxy(
 			Client.class,
 			method("getCameraFpX", 0.0f),
-			method("getCameraFpY", 0.0f),
+			method("getCameraFpY", -1_000.0f),
 			method("getCameraFpZ", 0.0f),
 			method("getCameraYaw", yaw),
-			method("getCameraPitch", pitch)
+			method("getCameraPitch", pitch),
+			method("get3dZoom", 512),
+			method("getViewportYOffset", 0),
+			method("getViewportHeight", 100)
 		);
 	}
 }

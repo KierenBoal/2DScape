@@ -95,13 +95,7 @@ public final class BillboardDepthSurface
 			return Double.NaN;
 		}
 
-		double verticalOffset = verticalOffset(sourceY, sourceHeight);
-		if (!Double.isFinite(verticalOffset))
-		{
-			return Double.NaN;
-		}
-
-		return depthCalculator.cameraForwardDepth(baseLocalX, baseLocalY, baseHeight + verticalOffset);
+		return depthCalculator.cameraForwardDepthOnVerticalPlane(baseLocalX, baseLocalY, canvasY);
 	}
 
 	public DebugPoint debugPointAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight, int canvasY)
@@ -113,17 +107,15 @@ public final class BillboardDepthSurface
 
 		double spriteX = sourceBounds.x + (((sourceX + 0.5d) * sourceBounds.width) / sourceWidth);
 		double horizontalOffset = spriteX;
-		double verticalOffset = verticalOffset(sourceY, sourceHeight);
-		if (!Double.isFinite(horizontalOffset) || !Double.isFinite(verticalOffset))
+		if (!Double.isFinite(horizontalOffset))
 		{
 			return DebugPoint.invalid();
 		}
 
 		int localX = baseLocalX;
 		int localY = baseLocalY;
-		double height = baseHeight + verticalOffset;
-		double depth = depthCalculator.cameraForwardDepth(localX, localY, height);
-		return new DebugPoint(localX, localY, height, horizontalOffset, verticalOffset, depth);
+		double depth = depthCalculator.cameraForwardDepthOnVerticalPlane(localX, localY, canvasY);
+		return new DebugPoint(localX, localY, baseHeight, horizontalOffset, 0.0d, depth);
 	}
 
 	public double depthAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight)
@@ -132,12 +124,6 @@ public final class BillboardDepthSurface
 			? drawBounds.y + (int) Math.round(((sourceY + 0.5d) * drawBounds.height) / Math.max(1.0d, sourceHeight))
 			: 0;
 		return depthAt(sourceX, sourceY, sourceWidth, sourceHeight, canvasY);
-	}
-
-	private double verticalOffset(int sourceY, int sourceHeight)
-	{
-		double t = Math.max(0.0d, Math.min(1.0d, (sourceY + 0.5d) / Math.max(1.0d, sourceHeight)));
-		return modelHeight * (1.0d - t);
 	}
 
 	public static final class DebugPoint
