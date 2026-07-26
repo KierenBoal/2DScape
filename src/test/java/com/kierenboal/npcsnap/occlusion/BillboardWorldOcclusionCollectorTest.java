@@ -7,12 +7,14 @@ import com.kierenboal.npcsnap.targeting.ObservedTileObject;
 import com.kierenboal.npcsnap.TestProxies;
 
 import java.awt.Rectangle;
+import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import net.runelite.api.Renderable;
+import net.runelite.api.Model;
 import net.runelite.api.Point;
 import net.runelite.api.Tile;
 import org.junit.Test;
@@ -121,6 +123,56 @@ public class BillboardWorldOcclusionCollectorTest
 		assertFalse(BillboardWorldOcclusionCollector.hasRenderedPart(observed, rendered));
 		rendered.add(renderedPart);
 		assertTrue(BillboardWorldOcclusionCollector.hasRenderedPart(observed, rendered));
+	}
+
+	@Test
+	public void modelGeometryCachesConservativeBounds()
+	{
+		Model model = proxy(
+			Model.class,
+			method("getVerticesCount", 3),
+			method("getFaceCount", 1),
+			method("getVerticesX", new float[]{-64.0f, 32.0f, 96.0f}),
+			method("getVerticesY", new float[]{-180.0f, 12.0f, -40.0f}),
+			method("getVerticesZ", new float[]{48.0f, -80.0f, 16.0f}),
+			method("getFaceIndices1", new int[]{0}),
+			method("getFaceIndices2", new int[]{1}),
+			method("getFaceIndices3", new int[]{2}));
+
+		BillboardWorldOcclusionCollector.ModelGeometry geometry =
+			BillboardWorldOcclusionCollector.ModelGeometry.from(model);
+
+		assertTrue(geometry.hasBounds);
+		assertEquals(-64.0f, geometry.minX, 0.0f);
+		assertEquals(96.0f, geometry.maxX, 0.0f);
+		assertEquals(-180.0f, geometry.minY, 0.0f);
+		assertEquals(12.0f, geometry.maxY, 0.0f);
+		assertEquals(-80.0f, geometry.minZ, 0.0f);
+		assertEquals(48.0f, geometry.maxZ, 0.0f);
+		assertEquals(3, geometry.vertexCount);
+		assertEquals(1, geometry.faceCount);
+	}
+
+	@Test
+	public void modelGeometryRejectsNonFiniteBounds()
+	{
+		Model model = proxy(
+			Model.class,
+			method("getVerticesCount", 1),
+			method("getFaceCount", 0),
+			method("getVerticesX", new float[]{Float.NaN}),
+			method("getVerticesY", new float[]{0.0f}),
+			method("getVerticesZ", new float[]{0.0f}));
+
+		assertFalse(BillboardWorldOcclusionCollector.ModelGeometry.from(model).hasBounds);
+	}
+
+	@Test
+	public void fallbackShapeMustExistAndHaveArea()
+	{
+		assertFalse(BillboardWorldOcclusionCollector.isUsableFallbackShape(null));
+		assertFalse(BillboardWorldOcclusionCollector.isUsableFallbackShape(new Rectangle2D.Double(10, 10, 0, 20)));
+		assertTrue(BillboardWorldOcclusionCollector.isUsableFallbackShape(new Rectangle(10, 10, 20, 20)));
 	}
 
 	private static Set<Tile> identitySet()

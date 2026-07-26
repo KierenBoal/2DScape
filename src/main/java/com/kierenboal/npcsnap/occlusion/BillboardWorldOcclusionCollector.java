@@ -37,6 +37,10 @@ public final class BillboardWorldOcclusionCollector
 {
 	private static final float TERRAIN_OCCLUSION_DEPTH_BIAS = BillboardConstants.LOCAL_TILE_SIZE * 2.0f;
 	private static final int DEBUG_OCCLUSION_SAMPLE_LIMIT = 8;
+	private static final int MAX_MODEL_GEOMETRY_CACHE_SIZE = 4096;
+	private static final int MAX_FALLBACK_SHAPE_CACHE_SIZE = 4096;
+	private static final String[] TERRAIN_OCCLUDER_SOURCES =
+		{"terrain plane=0", "terrain plane=1", "terrain plane=2", "terrain plane=3"};
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -51,7 +55,10 @@ public final class BillboardWorldOcclusionCollector
 	private final Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final List<Tile> terrainTiles = new ArrayList<>();
 	private final IdentityHashMap<Tile, TerrainGeometry> terrainGeometryCache = new IdentityHashMap<>();
+	private final IdentityHashMap<Model, ModelGeometry> modelGeometryCache = new IdentityHashMap<>();
+	private final IdentityHashMap<TileObject, CachedFallbackShapes> fallbackShapeCache = new IdentityHashMap<>();
 	private Scene cachedTerrainScene;
+	private CameraProjectionState fallbackShapeCameraState;
 	private Rectangle interestBounds;
 	private int debugShapesAccepted;
 	private int debugTerrainTilesConsidered;
@@ -72,6 +79,12 @@ public final class BillboardWorldOcclusionCollector
 	private int debugSceneObjectsWithoutParts;
 	private int debugSceneObjectsAccepted;
 	private int debugSceneObjectFacesAccepted;
+	private int debugTerrainTilesRejectedByBroadPhase;
+	private int debugSceneObjectsRejectedByBroadPhase;
+	private int debugModelFacesInspected;
+	private int debugModelGeometryCacheHits;
+	private int debugModelGeometryCacheMisses;
+	private int debugFallbackShapeQueries;
 	private int debugLastLoggedCycle = Integer.MIN_VALUE;
 	private final List<String> debugAcceptedScenerySamples = new ArrayList<>();
 	private final List<String> debugRejectedScenerySamples = new ArrayList<>();
@@ -140,8 +153,12 @@ public final class BillboardWorldOcclusionCollector
 		if (scene != cachedTerrainScene)
 		{
 			terrainGeometryCache.clear();
+			modelGeometryCache.clear();
+			fallbackShapeCache.clear();
+			fallbackShapeCameraState = null;
 			cachedTerrainScene = scene;
 		}
+		refreshFallbackShapeCacheCameraState();
 
 		visitedTileCoordinates.clear();
 		visitedTiles.clear();
@@ -162,10 +179,24 @@ public final class BillboardWorldOcclusionCollector
 		}
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain face/scenery gathering"))
 		{
-			for (Tile terrainTile : terrainTiles)
+			try (BillboardPerformanceMetrics.Timer terrainTimer = performanceMetrics.time("Terrain gathering"))
 			{
-				boolean bridgeLinked = bridgeLinkedTiles.contains(terrainTile);
-				collectTerrainTileOccluder(terrainTile, quality, visitedObjects, bridgeLinked, renderedSceneRenderables);
+				for (Tile terrainTile : terrainTiles)
+				{
+					collectTerrainTileOccluder(terrainTile, bridgeLinkedTiles.contains(terrainTile));
+				}
+			}
+			try (BillboardPerformanceMetrics.Timer sceneryTimer = performanceMetrics.time("Scenery gathering"))
+			{
+				for (Tile terrainTile : terrainTiles)
+				{
+					collectSceneTileObjectOccluders(
+						terrainTile,
+						quality,
+						visitedObjects,
+						bridgeLinkedTiles.contains(terrainTile),
+						renderedSceneRenderables);
+				}
 			}
 		}
 	}
@@ -200,7 +231,7 @@ public final class BillboardWorldOcclusionCollector
 
 		debugLastLoggedCycle = gameCycle;
 		log.debug(
-			"Billboard occlusion quality={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryOutsideInterest={} sceneryWithoutParts={} sceneryFaces={} terrainTiles={} terrainTilesAccepted={} terrainFaces={} flatTerrainFacesSkipped={} bridgeTerrainTilesSkipped={} bridgeTiles={} bridgeTileSamples={} shapes={} triangleOccluders={} verticalFallbackOccluders={} flatFallbackOccluders={} bridgeFallbacksSuppressed={} bridgeSceneryNotRendered={} behindCameraRejected={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
+			"Billboard occlusion quality={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryBroadPhaseRejected={} sceneryOutsideInterest={} sceneryWithoutParts={} sceneryFaces={} modelFacesInspected={} modelCacheHits={} modelCacheMisses={} fallbackShapeQueries={} terrainTiles={} terrainTilesAccepted={} terrainBroadPhaseRejected={} terrainFaces={} flatTerrainFacesSkipped={} bridgeTerrainTilesSkipped={} bridgeTiles={} bridgeTileSamples={} shapes={} triangleOccluders={} verticalFallbackOccluders={} flatFallbackOccluders={} bridgeFallbacksSuppressed={} bridgeSceneryNotRendered={} behindCameraRejected={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
 			BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()),
 			client.getCameraYaw(),
 			client.getCameraPitch(),
@@ -212,11 +243,17 @@ public final class BillboardWorldOcclusionCollector
 			debugSceneObjectsConsidered,
 			debugSceneObjectsAccepted,
 			debugSceneObjectsRejectedByFilter,
+			debugSceneObjectsRejectedByBroadPhase,
 			debugSceneObjectsSkippedOutsideInterest,
 			debugSceneObjectsWithoutParts,
 			debugSceneObjectFacesAccepted,
+			debugModelFacesInspected,
+			debugModelGeometryCacheHits,
+			debugModelGeometryCacheMisses,
+			debugFallbackShapeQueries,
 			debugTerrainTilesConsidered,
 			debugTerrainTilesAccepted,
+			debugTerrainTilesRejectedByBroadPhase,
 			debugTerrainFacesAccepted,
 			debugFlatTerrainFacesSkipped,
 			debugBridgeTerrainTilesSkipped,
@@ -260,6 +297,12 @@ public final class BillboardWorldOcclusionCollector
 		debugSceneObjectsWithoutParts = 0;
 		debugSceneObjectsAccepted = 0;
 		debugSceneObjectFacesAccepted = 0;
+		debugTerrainTilesRejectedByBroadPhase = 0;
+		debugSceneObjectsRejectedByBroadPhase = 0;
+		debugModelFacesInspected = 0;
+		debugModelGeometryCacheHits = 0;
+		debugModelGeometryCacheMisses = 0;
+		debugFallbackShapeQueries = 0;
 		debugAcceptedScenerySamples.clear();
 		debugRejectedScenerySamples.clear();
 		debugBridgeTileSamples.clear();
@@ -407,10 +450,7 @@ public final class BillboardWorldOcclusionCollector
 
 	private void collectTerrainTileOccluder(
 		Tile tile,
-		BillboardOcclusionQuality quality,
-		Set<TileObject> visitedObjects,
-		boolean bridgeLinked,
-		Set<Renderable> renderedSceneRenderables)
+		boolean bridgeLinked)
 	{
 		if (tile == null)
 		{
@@ -427,11 +467,30 @@ public final class BillboardWorldOcclusionCollector
 		{
 			debugTerrainTilesConsidered++;
 			int acceptedFacesBefore = debugTerrainFacesAccepted;
-			TerrainGeometry geometry = terrainGeometry(tile, localPoint);
-			debugFlatTerrainFacesSkipped += geometry.flatTriangleCount;
-			for (WorldTriangle triangle : geometry.triangles)
+			TerrainGeometry geometry;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain geometry lookup/build"))
 			{
-				addTerrainTriangleOccluder(triangle, tile.getPlane());
+				geometry = terrainGeometry(tile, localPoint);
+			}
+			debugFlatTerrainFacesSkipped += geometry.flatTriangleCount;
+			boolean intersects;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain broad-phase"))
+			{
+				intersects = geometry.triangles.size() < 4 || terrainBroadPhaseIntersectsInterest(geometry);
+			}
+			if (!intersects)
+			{
+				debugTerrainTilesRejectedByBroadPhase++;
+			}
+			else
+			{
+				try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain face projection"))
+				{
+					for (WorldTriangle triangle : geometry.triangles)
+					{
+						addTerrainTriangleOccluder(triangle, tile.getPlane());
+					}
+				}
 			}
 			if (debugTerrainFacesAccepted > acceptedFacesBefore)
 			{
@@ -442,8 +501,6 @@ public final class BillboardWorldOcclusionCollector
 		{
 			debugBridgeTerrainTilesSkipped++;
 		}
-
-		collectSceneTileObjectOccluders(tile, quality, visitedObjects, bridgeLinked, renderedSceneRenderables);
 	}
 
 	private void collectSceneTileObjectOccluders(
@@ -484,39 +541,67 @@ public final class BillboardWorldOcclusionCollector
 		}
 
 		debugSceneObjectsConsidered++;
-		if (!BillboardSceneryOcclusionFilter.isOccluder(tileObject))
+		boolean isOccluder;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery filtering"))
+		{
+			isOccluder = BillboardSceneryOcclusionFilter.isOccluder(tileObject);
+		}
+		if (!isOccluder)
 		{
 			debugSceneObjectsRejectedByFilter++;
 			addDebugScenerySample(debugRejectedScenerySamples, tileObject);
 			return;
 		}
 
-		if (!sceneryIntersectsInterest(tileObject))
+		ObservedTileObject observed;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery part discovery"))
 		{
-			debugSceneObjectsSkippedOutsideInterest++;
-			return;
+			observed = ObservedTileObjectBuilder.build(tileObject);
 		}
-
-		ObservedTileObject observed = ObservedTileObjectBuilder.build(tileObject);
 		if (observed == null || observed.parts.isEmpty())
 		{
 			debugSceneObjectsWithoutParts++;
 			return;
 		}
-		if (bridgeLinked && !hasRenderedPart(observed, renderedSceneRenderables))
+		boolean bridgePartRendered;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Bridge renderable check"))
+		{
+			bridgePartRendered = !bridgeLinked || hasRenderedPart(observed, renderedSceneRenderables);
+		}
+		if (!bridgePartRendered)
 		{
 			debugBridgeSceneryNotRendered++;
 			return;
 		}
+		boolean intersects;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery bounds broad-phase"))
+		{
+			intersects = sceneryBroadPhaseIntersectsInterest(observed);
+		}
+		if (!intersects)
+		{
+			debugSceneObjectsRejectedByBroadPhase++;
+			return;
+		}
 
 		int acceptedFacesBefore = debugSceneObjectFacesAccepted;
-		for (ObjectRenderablePart part : observed.parts)
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery model faces"))
 		{
-			collectSceneObjectPartOccluders(part, quality, debugOccluderSource(tileObject, "model"));
+			for (ObjectRenderablePart part : observed.parts)
+			{
+				collectSceneObjectPartOccluders(part, quality, debugOccluderSource(tileObject, "model"));
+			}
 		}
 
 		boolean acceptedModelFaces = debugSceneObjectFacesAccepted > acceptedFacesBefore;
-		boolean acceptedFallback = !acceptedModelFaces && collectSceneObjectFallbackOccluder(tileObject, observed, quality);
+		boolean acceptedFallback = false;
+		if (!acceptedModelFaces)
+		{
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery fallback shapes"))
+			{
+				acceptedFallback = collectSceneObjectFallbackOccluder(tileObject, observed, quality);
+			}
+		}
 		if (acceptedModelFaces || acceptedFallback)
 		{
 			debugSceneObjectsAccepted++;
@@ -570,44 +655,151 @@ public final class BillboardWorldOcclusionCollector
 
 	private boolean collectSceneObjectFallbackOccluder(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
 	{
-		double fallbackDepth = tileObjectDepth(tileObject, observed, quality);
-		if (!Double.isFinite(fallbackDepth))
+		FallbackDepths depths;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback depth estimation"))
+		{
+			depths = fallbackDepths(tileObject, observed, quality);
+		}
+		if (!Double.isFinite(depths.fallbackDepth))
 		{
 			return false;
 		}
 
-		if (addSceneryShapeFallbackOccluder(tileObject, observed, fallbackDepth, quality))
+		ShapeFallbackResult shapeResult = addSceneryShapeFallbackOccluder(tileObject, observed, depths);
+		if (shapeResult.handled)
 		{
-			return true;
+			return shapeResult.added;
 		}
 
-		return addFallbackWorldOccluder(tileObject.getClickbox(), firstPart(observed), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"));
+		debugFallbackShapeQueries++;
+		Shape clickbox;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Clickbox query"))
+		{
+			clickbox = tileObject.getClickbox();
+		}
+		return addFallbackWorldOccluder(clickbox, firstPart(observed), depths.fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"));
 	}
 
-	private boolean addSceneryShapeFallbackOccluder(
+	private ShapeFallbackResult addSceneryShapeFallbackOccluder(
 		TileObject tileObject,
 		ObservedTileObject observed,
-		double fallbackDepth,
-		BillboardOcclusionQuality quality)
+		FallbackDepths depths)
 	{
 		if (tileObject instanceof GameObject)
 		{
-			return addFallbackWorldOccluder(((GameObject) tileObject).getConvexHull(), part(observed, 0), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull"));
+			Shape hull = fallbackShapes(tileObject, observed).first;
+			if (!isUsableFallbackShape(hull))
+			{
+				// The model-face path has already had the opportunity to represent this
+				// object. RuneLite's clickbox construction is dramatically more expensive
+				// than hull lookup and is not a suitable per-frame occlusion fallback.
+				return ShapeFallbackResult.handled(false);
+			}
+			return ShapeFallbackResult.handled(
+				addFallbackWorldOccluder(hull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull")));
 		}
 
 		if (tileObject instanceof WallObject)
 		{
-			WallObject wallObject = (WallObject) tileObject;
-			boolean addedFirst = addFallbackWorldOccluder(wallObject.getConvexHull(), part(observed, 0), partDepth(observed, 0, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-1"));
-			boolean addedSecond = addFallbackWorldOccluder(wallObject.getConvexHull2(), part(observed, 1), partDepth(observed, 1, fallbackDepth, quality), debugOccluderSource(tileObject, "fallback-hull-2"));
-			if (!addedFirst || !addedSecond)
+			CachedFallbackShapes shapes = fallbackShapes(tileObject, observed);
+			Shape firstHull = shapes.first;
+			Shape secondHull = shapes.second;
+			boolean hasFirstHull = isUsableFallbackShape(firstHull);
+			boolean hasSecondHull = isUsableFallbackShape(secondHull);
+			if (!hasFirstHull && !hasSecondHull)
 			{
-				return addFallbackWorldOccluder(tileObject.getClickbox(), firstPart(observed), fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox")) || addedFirst || addedSecond;
+				return ShapeFallbackResult.handled(false);
 			}
-			return true;
+			boolean addedFirst = hasFirstHull
+				&& addFallbackWorldOccluder(firstHull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull-1"));
+			boolean addedSecond = hasSecondHull
+				&& addFallbackWorldOccluder(secondHull, part(observed, 1), depths.partDepth(1), debugOccluderSource(tileObject, "fallback-hull-2"));
+			return ShapeFallbackResult.handled(addedFirst || addedSecond);
 		}
 
-		return false;
+		return ShapeFallbackResult.unhandled();
+	}
+
+	private CachedFallbackShapes fallbackShapes(TileObject tileObject, ObservedTileObject observed)
+	{
+		int modelSignature = fallbackModelSignature(observed);
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback hull cache lookup"))
+		{
+			CachedFallbackShapes cached = fallbackShapeCache.get(tileObject);
+			if (cached != null && cached.modelSignature == modelSignature)
+			{
+				return cached;
+			}
+		}
+
+		Shape first = null;
+		Shape second = null;
+		if (tileObject instanceof GameObject)
+		{
+			debugFallbackShapeQueries++;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Game object convex hull query"))
+			{
+				first = ((GameObject) tileObject).getConvexHull();
+			}
+		}
+		else if (tileObject instanceof WallObject)
+		{
+			debugFallbackShapeQueries += 2;
+			WallObject wallObject = (WallObject) tileObject;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Wall convex hull queries"))
+			{
+				first = wallObject.getConvexHull();
+				second = wallObject.getConvexHull2();
+			}
+		}
+
+		CachedFallbackShapes shapes = new CachedFallbackShapes(modelSignature, first, second);
+		if (fallbackShapeCache.size() >= MAX_FALLBACK_SHAPE_CACHE_SIZE)
+		{
+			fallbackShapeCache.clear();
+		}
+		fallbackShapeCache.put(tileObject, shapes);
+		return shapes;
+	}
+
+	private int fallbackModelSignature(ObservedTileObject observed)
+	{
+		int signature = 1;
+		if (observed == null)
+		{
+			return signature;
+		}
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			Model model = part != null && part.renderable != null ? part.renderable.getModel() : null;
+			signature = (31 * signature) + System.identityHashCode(model);
+		}
+		return signature;
+	}
+
+	private void refreshFallbackShapeCacheCameraState()
+	{
+		CameraProjectionState current = new CameraProjectionState(
+			Float.floatToIntBits(client.getCameraFpX()),
+			Float.floatToIntBits(client.getCameraFpY()),
+			Float.floatToIntBits(client.getCameraFpZ()),
+			client.getCameraPitch(),
+			client.getCameraYaw(),
+			client.get3dZoom(),
+			client.getViewportXOffset(),
+			client.getViewportYOffset(),
+			client.getViewportWidth(),
+			client.getViewportHeight());
+		if (!current.equals(fallbackShapeCameraState))
+		{
+			fallbackShapeCache.clear();
+			fallbackShapeCameraState = current;
+		}
+	}
+
+	static boolean isUsableFallbackShape(Shape shape)
+	{
+		return shape != null && !shape.getBounds().isEmpty();
 	}
 
 	private ObjectRenderablePart firstPart(ObservedTileObject observed)
@@ -620,17 +812,6 @@ public final class BillboardWorldOcclusionCollector
 		return observed != null && partIndex >= 0 && partIndex < observed.parts.size()
 			? observed.parts.get(partIndex)
 			: null;
-	}
-
-	private double partDepth(ObservedTileObject observed, int partIndex, double fallbackDepth, BillboardOcclusionQuality quality)
-	{
-		if (observed == null || partIndex < 0 || partIndex >= observed.parts.size())
-		{
-			return fallbackDepth;
-		}
-
-		double depth = conservativeModelVertexDepth(observed.parts.get(partIndex), quality.vertexStride());
-		return Double.isFinite(depth) ? depth : fallbackDepth;
 	}
 
 	private boolean addWorldOccluder(Shape shape, double depth, String source)
@@ -661,7 +842,7 @@ public final class BillboardWorldOcclusionCollector
 
 	private String debugOccluderSource(TileObject tileObject, String sourceType)
 	{
-		if (tileObject == null)
+		if (tileObject == null || !config.debugLogBillboardOcclusion())
 		{
 			return sourceType;
 		}
@@ -688,6 +869,132 @@ public final class BillboardWorldOcclusionCollector
 		}
 
 		return false;
+	}
+
+	private boolean sceneryBroadPhaseIntersectsInterest(ObservedTileObject observed)
+	{
+		boolean hadUsableBounds = false;
+		for (ObjectRenderablePart part : observed.parts)
+		{
+			if (part == null || part.renderable == null || part.localPoint == null)
+			{
+				continue;
+			}
+
+			Model model;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Renderable model retrieval"))
+			{
+				model = part.renderable.getModel();
+			}
+			ModelGeometry geometry;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model geometry cache"))
+			{
+				geometry = modelGeometry(model);
+			}
+			if (geometry == null || !geometry.hasBounds)
+			{
+				continue;
+			}
+			hadUsableBounds = true;
+			boolean intersects;
+			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model bounds projection"))
+			{
+				intersects = projectedModelBoundsIntersectsInterest(part, geometry);
+			}
+			if (intersects)
+			{
+				return true;
+			}
+		}
+
+		// Unknown or unavailable model bounds must remain eligible so fallbacks preserve
+		// the old behavior.
+		return !hadUsableBounds;
+	}
+
+	private boolean terrainBroadPhaseIntersectsInterest(TerrainGeometry geometry)
+	{
+		if (!geometry.hasBounds)
+		{
+			return true;
+		}
+
+		int minScreenX = Integer.MAX_VALUE;
+		int minScreenY = Integer.MAX_VALUE;
+		int maxScreenX = Integer.MIN_VALUE;
+		int maxScreenY = Integer.MIN_VALUE;
+		for (int xIndex = 0; xIndex < 2; xIndex++)
+		{
+			int localX = xIndex == 0 ? geometry.minX : geometry.maxX;
+			for (int yIndex = 0; yIndex < 2; yIndex++)
+			{
+				int localY = yIndex == 0 ? geometry.minY : geometry.maxY;
+				for (int zIndex = 0; zIndex < 2; zIndex++)
+				{
+					int height = zIndex == 0 ? geometry.minHeight : geometry.maxHeight;
+					double depth = depthCalculator.cameraForwardDepth(localX, localY, height);
+					if (!isForwardOccluderDepth(depth))
+					{
+						return true;
+					}
+					Point point = Perspective.localToCanvas(client, localX, localY, height);
+					if (point == null)
+					{
+						return true;
+					}
+					minScreenX = Math.min(minScreenX, point.getX());
+					minScreenY = Math.min(minScreenY, point.getY());
+					maxScreenX = Math.max(maxScreenX, point.getX());
+					maxScreenY = Math.max(maxScreenY, point.getY());
+				}
+			}
+		}
+		return intersectsInterest(new Rectangle(
+			minScreenX, minScreenY,
+			Math.max(1, maxScreenX - minScreenX + 1),
+			Math.max(1, maxScreenY - minScreenY + 1)));
+	}
+
+	private boolean projectedModelBoundsIntersectsInterest(ObjectRenderablePart part, ModelGeometry geometry)
+	{
+		int baseX = part.localPoint.getX();
+		int baseY = part.localPoint.getY();
+		int baseHeight = tileHeightAt(baseX, baseY, part.plane);
+		int minScreenX = Integer.MAX_VALUE;
+		int minScreenY = Integer.MAX_VALUE;
+		int maxScreenX = Integer.MIN_VALUE;
+		int maxScreenY = Integer.MIN_VALUE;
+
+		for (int xIndex = 0; xIndex < 2; xIndex++)
+		{
+			int localX = baseX + Math.round(xIndex == 0 ? geometry.minX : geometry.maxX);
+			for (int zIndex = 0; zIndex < 2; zIndex++)
+			{
+				int localY = baseY + Math.round(zIndex == 0 ? geometry.minZ : geometry.maxZ);
+				for (int yIndex = 0; yIndex < 2; yIndex++)
+				{
+					int height = baseHeight + Math.round(Math.max(0.0f, -(yIndex == 0 ? geometry.minY : geometry.maxY)));
+					double depth = depthCalculator.cameraForwardDepth(localX, localY, height);
+					if (!isForwardOccluderDepth(depth))
+					{
+						// A box crossing the near plane can project beyond its corner bounds.
+						return true;
+					}
+					Point point = Perspective.localToCanvas(client, localX, localY, height);
+					if (point == null)
+					{
+						return true;
+					}
+					minScreenX = Math.min(minScreenX, point.getX());
+					minScreenY = Math.min(minScreenY, point.getY());
+					maxScreenX = Math.max(maxScreenX, point.getX());
+					maxScreenY = Math.max(maxScreenY, point.getY());
+				}
+			}
+		}
+
+		return minScreenX == Integer.MAX_VALUE || intersectsInterest(
+			new Rectangle(minScreenX, minScreenY, Math.max(1, maxScreenX - minScreenX + 1), Math.max(1, maxScreenY - minScreenY + 1)));
 	}
 
 	private boolean intersectsInterest(Shape shape)
@@ -725,44 +1032,68 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		Model model = part.renderable.getModel();
-		if (model == null || model.getVerticesCount() <= 0 || model.getFaceCount() <= 0)
+		Model model;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Renderable model retrieval"))
+		{
+			model = part.renderable.getModel();
+		}
+		ModelGeometry geometry;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model geometry cache"))
+		{
+			geometry = modelGeometry(model);
+		}
+		if (geometry == null || geometry.vertexCount <= 0 || geometry.faceCount <= 0)
 		{
 			return;
 		}
 
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
-		int[] faceIndices1 = model.getFaceIndices1();
-		int[] faceIndices2 = model.getFaceIndices2();
-		int[] faceIndices3 = model.getFaceIndices3();
-		if (verticesX == null || verticesY == null || verticesZ == null || faceIndices1 == null || faceIndices2 == null || faceIndices3 == null)
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model face traversal"))
 		{
-			return;
-		}
-
-		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
-		int faceCount = Math.min(model.getFaceCount(), Math.min(faceIndices1.length, Math.min(faceIndices2.length, faceIndices3.length)));
-		int stride = objectFaceStride(quality);
-		for (int face = 0; face < faceCount; face += stride)
-		{
-			int a = faceIndices1[face];
-			int b = faceIndices2[face];
-			int c = faceIndices3[face];
-			if (a < 0 || b < 0 || c < 0 || a >= vertexCount || b >= vertexCount || c >= vertexCount)
+			int stride = objectFaceStride(quality);
+			for (int face = 0; face < geometry.faceCount; face += stride)
 			{
-				continue;
-			}
+				debugModelFacesInspected++;
+				int a = geometry.faceIndices1[face];
+				int b = geometry.faceIndices2[face];
+				int c = geometry.faceIndices3[face];
+				if (a < 0 || b < 0 || c < 0 || a >= geometry.vertexCount || b >= geometry.vertexCount || c >= geometry.vertexCount)
+				{
+					continue;
+				}
 
-			addSceneObjectTriangleOccluder(
-				part,
-				verticesX[a], verticesY[a], verticesZ[a],
-				verticesX[b], verticesY[b], verticesZ[b],
-				verticesX[c], verticesY[c], verticesZ[c],
-				source
-			);
+				addSceneObjectTriangleOccluder(
+					part,
+					geometry.verticesX[a], geometry.verticesY[a], geometry.verticesZ[a],
+					geometry.verticesX[b], geometry.verticesY[b], geometry.verticesZ[b],
+					geometry.verticesX[c], geometry.verticesY[c], geometry.verticesZ[c],
+					source
+				);
+			}
 		}
+	}
+
+	private ModelGeometry modelGeometry(Model model)
+	{
+		if (model == null)
+		{
+			return null;
+		}
+
+		ModelGeometry cached = modelGeometryCache.get(model);
+		if (cached != null && cached.matches(model))
+		{
+			debugModelGeometryCacheHits++;
+			return cached;
+		}
+
+		debugModelGeometryCacheMisses++;
+		ModelGeometry geometry = ModelGeometry.from(model);
+		if (modelGeometryCache.size() >= MAX_MODEL_GEOMETRY_CACHE_SIZE)
+		{
+			modelGeometryCache.clear();
+		}
+		modelGeometryCache.put(model, geometry);
+		return geometry;
 	}
 
 	private int objectFaceStride(BillboardOcclusionQuality quality)
@@ -998,7 +1329,7 @@ public final class BillboardWorldOcclusionCollector
 				p0.getX(), p0.getY(), (float) depth0,
 				p1.getX(), p1.getY(), (float) depth1,
 				p2.getX(), p2.getY(), (float) depth2,
-				"terrain plane=" + plane
+				terrainOccluderSource(plane)
 			);
 			if (occluder == null)
 			{
@@ -1015,6 +1346,13 @@ public final class BillboardWorldOcclusionCollector
 	public static boolean isUnevenTerrainTriangle(int height0, int height1, int height2)
 	{
 		return height0 != height1 || height1 != height2;
+	}
+
+	private static String terrainOccluderSource(int plane)
+	{
+		return plane >= 0 && plane < TERRAIN_OCCLUDER_SOURCES.length
+			? TERRAIN_OCCLUDER_SOURCES[plane]
+			: "terrain";
 	}
 
 	public static Rectangle triangleBounds(Point p0, Point p1, Point p2)
@@ -1038,20 +1376,22 @@ public final class BillboardWorldOcclusionCollector
 		return Double.isFinite(depth) && depth > BillboardConstants.MIN_FORWARD_VISIBLE_DEPTH;
 	}
 
-	private double tileObjectDepth(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
+	private FallbackDepths fallbackDepths(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
 	{
 		LocalPoint localPoint = tileObject.getLocalLocation();
 		if (localPoint == null)
 		{
-			return Double.NaN;
+			return FallbackDepths.invalid();
 		}
 
 		double furthest = Double.NEGATIVE_INFINITY;
+		double[] partDepths = observed != null ? new double[observed.parts.size()] : new double[0];
 		if (observed != null && !observed.parts.isEmpty())
 		{
-			for (ObjectRenderablePart part : observed.parts)
+			for (int partIndex = 0; partIndex < observed.parts.size(); partIndex++)
 			{
-				double depth = conservativeModelVertexDepth(part, quality.vertexStride());
+				double depth = conservativeModelVertexDepth(observed.parts.get(partIndex), quality.vertexStride());
+				partDepths[partIndex] = depth;
 				if (Double.isFinite(depth))
 				{
 					furthest = Math.max(furthest, depth);
@@ -1059,12 +1399,10 @@ public final class BillboardWorldOcclusionCollector
 			}
 		}
 
-		if (Double.isFinite(furthest))
-		{
-			return furthest;
-		}
-
-		return depthCalculator.cameraForwardDepth(localPoint, tileObject.getPlane(), 0.0d);
+		double fallbackDepth = Double.isFinite(furthest)
+			? furthest
+			: depthCalculator.cameraForwardDepth(localPoint, tileObject.getPlane(), 0.0d);
+		return new FallbackDepths(fallbackDepth, partDepths);
 	}
 
 	private double conservativeModelVertexDepth(ObjectRenderablePart part, int vertexStride)
@@ -1074,7 +1412,11 @@ public final class BillboardWorldOcclusionCollector
 			return Double.NaN;
 		}
 
-		Model model = part.renderable.getModel();
+		Model model;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback model retrieval"))
+		{
+			model = part.renderable.getModel();
+		}
 		if (model == null || model.getVerticesCount() <= 0)
 		{
 			return depthCalculator.cameraForwardDepth(part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2.0d));
@@ -1096,21 +1438,24 @@ public final class BillboardWorldOcclusionCollector
 		// furthest sampled vertex: ambiguous intersections remain visible, while objects
 		// definitely behind the complete hull are still occluded.
 		double furthest = Double.NEGATIVE_INFINITY;
-		for (int i = 0; i < vertexCount; i += stride)
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback vertex depth sampling"))
 		{
-			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[i], verticesY[i], verticesZ[i]);
-			if (Double.isFinite(depth))
+			for (int i = 0; i < vertexCount; i += stride)
 			{
-				furthest = Math.max(furthest, depth);
+				double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[i], verticesY[i], verticesZ[i]);
+				if (Double.isFinite(depth))
+				{
+					furthest = Math.max(furthest, depth);
+				}
 			}
-		}
 
-		if (stride > 1 && vertexCount > 0)
-		{
-			double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
-			if (Double.isFinite(depth))
+			if (stride > 1 && vertexCount > 0)
 			{
-				furthest = Math.max(furthest, depth);
+				double depth = modelVertexDepth(part.localPoint, part.plane, verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
+				if (Double.isFinite(depth))
+				{
+					furthest = Math.max(furthest, depth);
+				}
 			}
 		}
 
@@ -1120,6 +1465,14 @@ public final class BillboardWorldOcclusionCollector
 	}
 
 	private boolean addFallbackWorldOccluder(Shape shape, ObjectRenderablePart part, double flatDepth, String source)
+	{
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback occluder preparation"))
+		{
+			return addFallbackWorldOccluderInternal(shape, part, flatDepth, source);
+		}
+	}
+
+	private boolean addFallbackWorldOccluderInternal(Shape shape, ObjectRenderablePart part, double flatDepth, String source)
 	{
 		if (shape == null || shape.getBounds().isEmpty() || part == null || part.localPoint == null || part.renderable == null)
 		{
@@ -1200,6 +1553,13 @@ public final class BillboardWorldOcclusionCollector
 		private final SceneTilePaint paint;
 		private final List<WorldTriangle> triangles;
 		private final int flatTriangleCount;
+		private final boolean hasBounds;
+		private final int minX;
+		private final int maxX;
+		private final int minY;
+		private final int maxY;
+		private final int minHeight;
+		private final int maxHeight;
 
 		private TerrainGeometry(SceneTileModel model, SceneTilePaint paint, List<WorldTriangle> triangles, int flatTriangleCount)
 		{
@@ -1207,6 +1567,28 @@ public final class BillboardWorldOcclusionCollector
 			this.paint = paint;
 			this.triangles = triangles;
 			this.flatTriangleCount = flatTriangleCount;
+			int minX = Integer.MAX_VALUE;
+			int maxX = Integer.MIN_VALUE;
+			int minY = Integer.MAX_VALUE;
+			int maxY = Integer.MIN_VALUE;
+			int minHeight = Integer.MAX_VALUE;
+			int maxHeight = Integer.MIN_VALUE;
+			for (WorldTriangle triangle : triangles)
+			{
+				minX = Math.min(minX, Math.min(triangle.x0, Math.min(triangle.x1, triangle.x2)));
+				maxX = Math.max(maxX, Math.max(triangle.x0, Math.max(triangle.x1, triangle.x2)));
+				minY = Math.min(minY, Math.min(triangle.y0, Math.min(triangle.y1, triangle.y2)));
+				maxY = Math.max(maxY, Math.max(triangle.y0, Math.max(triangle.y1, triangle.y2)));
+				minHeight = Math.min(minHeight, Math.min(triangle.z0, Math.min(triangle.z1, triangle.z2)));
+				maxHeight = Math.max(maxHeight, Math.max(triangle.z0, Math.max(triangle.z1, triangle.z2)));
+			}
+			this.hasBounds = minX != Integer.MAX_VALUE;
+			this.minX = minX;
+			this.maxX = maxX;
+			this.minY = minY;
+			this.maxY = maxY;
+			this.minHeight = minHeight;
+			this.maxHeight = maxHeight;
 		}
 
 		private static TerrainGeometry empty(SceneTileModel model, SceneTilePaint paint)
@@ -1217,6 +1599,229 @@ public final class BillboardWorldOcclusionCollector
 		private boolean matches(SceneTileModel model, SceneTilePaint paint)
 		{
 			return this.model == model && this.paint == paint;
+		}
+	}
+
+	private static final class FallbackDepths
+	{
+		private final double fallbackDepth;
+		private final double[] partDepths;
+
+		private FallbackDepths(double fallbackDepth, double[] partDepths)
+		{
+			this.fallbackDepth = fallbackDepth;
+			this.partDepths = partDepths;
+		}
+
+		private static FallbackDepths invalid()
+		{
+			return new FallbackDepths(Double.NaN, new double[0]);
+		}
+
+		private double partDepth(int partIndex)
+		{
+			if (partIndex < 0 || partIndex >= partDepths.length || !Double.isFinite(partDepths[partIndex]))
+			{
+				return fallbackDepth;
+			}
+			return partDepths[partIndex];
+		}
+	}
+
+	private static final class ShapeFallbackResult
+	{
+		private static final ShapeFallbackResult UNHANDLED = new ShapeFallbackResult(false, false);
+		private final boolean handled;
+		private final boolean added;
+
+		private ShapeFallbackResult(boolean handled, boolean added)
+		{
+			this.handled = handled;
+			this.added = added;
+		}
+
+		private static ShapeFallbackResult unhandled()
+		{
+			return UNHANDLED;
+		}
+
+		private static ShapeFallbackResult handled(boolean added)
+		{
+			return new ShapeFallbackResult(true, added);
+		}
+	}
+
+	private static final class CachedFallbackShapes
+	{
+		private final int modelSignature;
+		private final Shape first;
+		private final Shape second;
+
+		private CachedFallbackShapes(int modelSignature, Shape first, Shape second)
+		{
+			this.modelSignature = modelSignature;
+			this.first = first;
+			this.second = second;
+		}
+	}
+
+	private static final class CameraProjectionState
+	{
+		private final int cameraX;
+		private final int cameraY;
+		private final int cameraZ;
+		private final int pitch;
+		private final int yaw;
+		private final int zoom;
+		private final int viewportX;
+		private final int viewportY;
+		private final int viewportWidth;
+		private final int viewportHeight;
+
+		private CameraProjectionState(
+			int cameraX, int cameraY, int cameraZ, int pitch, int yaw, int zoom,
+			int viewportX, int viewportY, int viewportWidth, int viewportHeight)
+		{
+			this.cameraX = cameraX;
+			this.cameraY = cameraY;
+			this.cameraZ = cameraZ;
+			this.pitch = pitch;
+			this.yaw = yaw;
+			this.zoom = zoom;
+			this.viewportX = viewportX;
+			this.viewportY = viewportY;
+			this.viewportWidth = viewportWidth;
+			this.viewportHeight = viewportHeight;
+		}
+
+		@Override
+		public boolean equals(Object other)
+		{
+			if (!(other instanceof CameraProjectionState))
+			{
+				return false;
+			}
+			CameraProjectionState state = (CameraProjectionState) other;
+			return cameraX == state.cameraX
+				&& cameraY == state.cameraY
+				&& cameraZ == state.cameraZ
+				&& pitch == state.pitch
+				&& yaw == state.yaw
+				&& zoom == state.zoom
+				&& viewportX == state.viewportX
+				&& viewportY == state.viewportY
+				&& viewportWidth == state.viewportWidth
+				&& viewportHeight == state.viewportHeight;
+		}
+
+		@Override
+		public int hashCode()
+		{
+			int result = cameraX;
+			result = (31 * result) + cameraY;
+			result = (31 * result) + cameraZ;
+			result = (31 * result) + pitch;
+			result = (31 * result) + yaw;
+			result = (31 * result) + zoom;
+			result = (31 * result) + viewportX;
+			result = (31 * result) + viewportY;
+			result = (31 * result) + viewportWidth;
+			return (31 * result) + viewportHeight;
+		}
+	}
+
+	static final class ModelGeometry
+	{
+		private final float[] verticesX;
+		private final float[] verticesY;
+		private final float[] verticesZ;
+		private final int[] faceIndices1;
+		private final int[] faceIndices2;
+		private final int[] faceIndices3;
+		final int vertexCount;
+		final int faceCount;
+		final boolean hasBounds;
+		final float minX;
+		final float maxX;
+		final float minY;
+		final float maxY;
+		final float minZ;
+		final float maxZ;
+
+		private ModelGeometry(
+			float[] verticesX, float[] verticesY, float[] verticesZ,
+			int[] faceIndices1, int[] faceIndices2, int[] faceIndices3,
+			int vertexCount, int faceCount, boolean hasBounds,
+			float minX, float maxX, float minY, float maxY, float minZ, float maxZ)
+		{
+			this.verticesX = verticesX;
+			this.verticesY = verticesY;
+			this.verticesZ = verticesZ;
+			this.faceIndices1 = faceIndices1;
+			this.faceIndices2 = faceIndices2;
+			this.faceIndices3 = faceIndices3;
+			this.vertexCount = vertexCount;
+			this.faceCount = faceCount;
+			this.hasBounds = hasBounds;
+			this.minX = minX;
+			this.maxX = maxX;
+			this.minY = minY;
+			this.maxY = maxY;
+			this.minZ = minZ;
+			this.maxZ = maxZ;
+		}
+
+		static ModelGeometry from(Model model)
+		{
+			float[] x = model.getVerticesX();
+			float[] y = model.getVerticesY();
+			float[] z = model.getVerticesZ();
+			int[] f1 = model.getFaceIndices1();
+			int[] f2 = model.getFaceIndices2();
+			int[] f3 = model.getFaceIndices3();
+			int vertexCount = x == null || y == null || z == null
+				? 0
+				: Math.min(model.getVerticesCount(), Math.min(x.length, Math.min(y.length, z.length)));
+			int faceCount = f1 == null || f2 == null || f3 == null
+				? 0
+				: Math.min(model.getFaceCount(), Math.min(f1.length, Math.min(f2.length, f3.length)));
+			float minX = Float.POSITIVE_INFINITY;
+			float maxX = Float.NEGATIVE_INFINITY;
+			float minY = Float.POSITIVE_INFINITY;
+			float maxY = Float.NEGATIVE_INFINITY;
+			float minZ = Float.POSITIVE_INFINITY;
+			float maxZ = Float.NEGATIVE_INFINITY;
+			for (int i = 0; i < vertexCount; i++)
+			{
+				if (!Float.isFinite(x[i]) || !Float.isFinite(y[i]) || !Float.isFinite(z[i]))
+				{
+					continue;
+				}
+				minX = Math.min(minX, x[i]);
+				maxX = Math.max(maxX, x[i]);
+				minY = Math.min(minY, y[i]);
+				maxY = Math.max(maxY, y[i]);
+				minZ = Math.min(minZ, z[i]);
+				maxZ = Math.max(maxZ, z[i]);
+			}
+			boolean hasBounds = Float.isFinite(minX) && Float.isFinite(maxX)
+				&& Float.isFinite(minY) && Float.isFinite(maxY)
+				&& Float.isFinite(minZ) && Float.isFinite(maxZ);
+			return new ModelGeometry(
+				x, y, z, f1, f2, f3, vertexCount, faceCount, hasBounds,
+				minX, maxX, minY, maxY, minZ, maxZ);
+		}
+
+		private boolean matches(Model model)
+		{
+			return verticesX == model.getVerticesX()
+				&& verticesY == model.getVerticesY()
+				&& verticesZ == model.getVerticesZ()
+				&& faceIndices1 == model.getFaceIndices1()
+				&& faceIndices2 == model.getFaceIndices2()
+				&& faceIndices3 == model.getFaceIndices3()
+				&& vertexCount == model.getVerticesCount()
+				&& faceCount == model.getFaceCount();
 		}
 	}
 
