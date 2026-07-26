@@ -5,6 +5,7 @@ import java.awt.image.BufferedImage;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class BillboardOutlineRendererTest
 {
@@ -132,8 +133,29 @@ public class BillboardOutlineRendererTest
 		BillboardOutlineRenderer.applyOutline(image, false, false, false, true, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFFFFFFF, image.getRGB(10, 19));
-		assertEquals(0x28000000, image.getRGB(9, 19));
+		assertEquals(0x35000000, image.getRGB(9, 19));
 		assertEquals(0x00000000, image.getRGB(10, 18));
+	}
+
+	@Test
+	public void applyOutlineUsesCustomSpriteShadowHeightRatio()
+	{
+		BufferedImage defaultShadow = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+		BufferedImage groundItemShadow = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+		defaultShadow.setRGB(10, 14, 0xFFFFFFFF);
+		groundItemShadow.setRGB(10, 14, 0xFFFFFFFF);
+
+		BillboardOutlineRenderer.applyOutline(
+			defaultShadow, new BillboardOutlineRenderer.Scratch(),
+			false, false, false, true, false, false, false, new Color(0xDDDDDD),
+			BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
+		BillboardOutlineRenderer.applyOutline(
+			groundItemShadow, new BillboardOutlineRenderer.Scratch(),
+			false, false, false, true, false, false, false, new Color(0xDDDDDD),
+			0.33d);
+
+		assertEquals(0x00000000, defaultShadow.getRGB(9, 14));
+		assertTrue((groundItemShadow.getRGB(9, 14) >>> 24) > 0);
 	}
 
 	@Test

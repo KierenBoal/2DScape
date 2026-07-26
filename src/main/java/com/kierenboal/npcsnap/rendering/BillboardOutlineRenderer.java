@@ -17,7 +17,7 @@ public final class BillboardOutlineRenderer
 	private static final double HIGHLIGHT_BRIGHTEN_FACTOR = 1.33d;
 	private static final int SPRITE_SHADOW_ALPHA = 80;
 	private static final int SPRITE_SHADOW_MIN_SPREAD = 2;
-	private static final double SPRITE_SHADOW_HEIGHT_RATIO = 0.05d;
+	public static final double DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO = 0.10d;
 
 	private BillboardOutlineRenderer()
 	{
@@ -49,6 +49,25 @@ public final class BillboardOutlineRenderer
 		boolean solidInline,
 		Color solidOutlineColor)
 	{
+		applyOutline(
+			image, scratch, highlightOutline, shadowOutline, solidOutline, spriteShadow,
+			highlightInline, shadowInline, solidInline, solidOutlineColor,
+			DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
+	}
+
+	public static void applyOutline(
+		BufferedImage image,
+		Scratch scratch,
+		boolean highlightOutline,
+		boolean shadowOutline,
+		boolean solidOutline,
+		boolean spriteShadow,
+		boolean highlightInline,
+		boolean shadowInline,
+		boolean solidInline,
+		Color solidOutlineColor,
+		double spriteShadowHeightRatio)
+	{
 		int width = image.getWidth();
 		int height = image.getHeight();
 		if (width <= 0 || height <= 0 || (!highlightOutline && !shadowOutline && !solidOutline && !spriteShadow && !highlightInline && !shadowInline && !solidInline))
@@ -75,7 +94,7 @@ public final class BillboardOutlineRenderer
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, false, false, solidOutlineColor);
 		if (spriteShadow)
 		{
-			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height);
+			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio);
 		}
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
 	}
@@ -267,9 +286,17 @@ public final class BillboardOutlineRenderer
 		}
 	}
 
-	private static void applySpriteShadow(int[] sourcePixels, int[] resultPixels, int width, int height)
+	private static void applySpriteShadow(
+		int[] sourcePixels,
+		int[] resultPixels,
+		int width,
+		int height,
+		double shadowHeightRatio)
 	{
-		int shadowBandHeight = Math.max(1, (int) Math.ceil(height * SPRITE_SHADOW_HEIGHT_RATIO));
+		double boundedHeightRatio = Double.isFinite(shadowHeightRatio)
+			? Math.max(0.0d, Math.min(1.0d, shadowHeightRatio))
+			: DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO;
+		int shadowBandHeight = Math.max(1, (int) Math.ceil(height * boundedHeightRatio));
 		int shadowBandStartY = Math.max(0, height - shadowBandHeight);
 		int minX = width;
 		int maxX = -1;

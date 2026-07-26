@@ -65,6 +65,7 @@ public class BillboardSceneDrawCallbacksTest
 
 		assertFalse(callbacks(true, true, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.contains(object));
+		assertTrue(overlay.noted.contains(part));
 	}
 
 	@Test
@@ -77,6 +78,7 @@ public class BillboardSceneDrawCallbacksTest
 
 		assertFalse(callbacks(true, true, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.contains(object));
+		assertTrue(overlay.noted.contains(part));
 	}
 
 	@Test

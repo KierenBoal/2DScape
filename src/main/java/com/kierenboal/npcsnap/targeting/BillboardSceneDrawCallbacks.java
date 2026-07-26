@@ -116,6 +116,7 @@ public final class BillboardSceneDrawCallbacks
 
 	private boolean shouldDrawObservedObject(TileObject tileObject, Renderable renderable)
 	{
+		overlay.noteSceneRenderable(renderable);
 		return !observeAndShouldHide(tileObject) && shouldDraw(renderable);
 	}
 
@@ -142,6 +143,7 @@ public final class BillboardSceneDrawCallbacks
 
 	private boolean shouldDraw(Renderable renderable)
 	{
+		overlay.noteSceneRenderable(renderable);
 		return !overlay.shouldHideRenderable(renderable);
 	}
 }

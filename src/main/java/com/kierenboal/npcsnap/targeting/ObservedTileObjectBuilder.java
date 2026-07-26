@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.targeting;
 import java.util.ArrayList;
 import java.util.List;
 import net.runelite.api.Actor;
+import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.DecorativeObject;
 import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
@@ -66,6 +67,7 @@ public final class ObservedTileObjectBuilder
 	{
 		if (renderable == null || localPoint == null
 			|| renderable instanceof Actor
+			|| renderable instanceof ActorSpotAnim
 			|| renderable instanceof Projectile
 			|| renderable instanceof GraphicsObject
 			|| renderable instanceof TileItem)

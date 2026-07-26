@@ -115,8 +115,9 @@ class NpcBillboardOverlay extends Overlay
 	private static final int BILLBOARD_FULL_CIRCLE = BillboardAngleUtils.BILLBOARD_FULL_CIRCLE;
 	private static final int OUTLINE_PADDING = 1;
 	private static final int FALLBACK_MAX_DRAW_SIZE = 8192;
-	private static final double INVENTORY_GROUND_ITEM_MIN_ZOOM_SCALE = 1.5d;
-	private static final double INVENTORY_GROUND_ITEM_MAX_ZOOM_SCALE = 3.0d;
+	private static final double INVENTORY_GROUND_ITEM_MIN_ZOOM_SCALE = 0.75d;
+	private static final double INVENTORY_GROUND_ITEM_MAX_ZOOM_SCALE = 1.5d;
+	private static final double GROUND_ITEM_SPRITE_SHADOW_HEIGHT_RATIO = 0.33d;
 	private final Client client;
 	private final ItemManager itemManager;
 	private final NpcSnapConfig config;
@@ -586,12 +587,30 @@ class NpcBillboardOverlay extends Overlay
 	private BufferedImage prepareGroundItemSprite(BufferedImage image, BillboardRenderRequest request)
 	{
 		BufferedImage prepared = bandGroundItemSprite(image, config.billboardColorBands());
-		if (!request.shouldHoverOutline && !request.shouldInteractOutline)
+		boolean spriteShadow = config.enableBillboardSpriteShadows();
+		if (!spriteShadow && !request.shouldHoverOutline && !request.shouldInteractOutline)
 		{
 			return prepared;
 		}
 
 		int[] exteriorOutlineIndices = BillboardOutlineRenderer.captureExteriorBoundaryIndices(prepared, outlineScratch);
+		if (spriteShadow)
+		{
+			BillboardOutlineRenderer.applyOutline(
+				prepared,
+				outlineScratch,
+				false,
+				false,
+				false,
+				true,
+				false,
+				false,
+				false,
+				config.billboardSpriteOutlineColor(),
+				GROUND_ITEM_SPRITE_SHADOW_HEIGHT_RATIO
+			);
+		}
+
 		applyHoverInteractionOutline(
 			prepared,
 			exteriorOutlineIndices,
@@ -1511,7 +1530,6 @@ class NpcBillboardOverlay extends Overlay
 		Map<Actor, BillboardTarget> actorTargets = new IdentityHashMap<>();
 		Map<OccupiedTileKey, List<Actor>> actorsByTile = new HashMap<>();
 		Map<OccupiedTileKey, List<Actor>> actorOccupancyByTile = new HashMap<>();
-		List<Actor> eligibleActorsForEffects = new ArrayList<>();
 		Set<EffectDedupKey> claimedActorEffects = new HashSet<>();
 		Set<OccupiedTileKey> claimedActorEffectTiles = new HashSet<>();
 
@@ -1545,7 +1563,6 @@ class NpcBillboardOverlay extends Overlay
 					)
 				);
 				classificationDebug.logDecision(npc, ObjectClassifier.classifyDecision(npc, client));
-				eligibleActorsForEffects.add(npc);
 			}
 		}
 
@@ -1579,7 +1596,6 @@ class NpcBillboardOverlay extends Overlay
 					)
 				);
 				classificationDebug.logDecision(player, ObjectClassifier.classifyDecision(player, client));
-				eligibleActorsForEffects.add(player);
 			}
 		}
 
@@ -1589,20 +1605,37 @@ class NpcBillboardOverlay extends Overlay
 			candidates.add(actorTarget);
 		}
 
-		for (Actor actor : eligibleActorsForEffects)
+		if (ObjectClassifier.isEnabled(ClassifiedObjectType.EFFECT, config))
 		{
-			if (!actorTargets.containsKey(actor))
+			List<Actor> effectActors = new ArrayList<>();
+			Map<OccupiedTileKey, List<Actor>> effectActorOccupancyByTile = new HashMap<>();
+			for (NPC npc : worldView.npcs())
 			{
-				continue;
+				if (npc != null)
+				{
+					effectActors.add(npc);
+					noteActorOccupancy(effectActorOccupancyByTile, npc);
+				}
 			}
-			addActorSpotAnimCandidates(
-				candidates,
-				actor,
-				viewport,
-				claimedActorEffects,
-				claimedActorEffectTiles,
-				!isStackedActorTile(actorsByTile, actor)
-			);
+			for (Player player : worldView.players())
+			{
+				if (player != null)
+				{
+					effectActors.add(player);
+					noteActorOccupancy(effectActorOccupancyByTile, player);
+				}
+			}
+			for (Actor actor : effectActors)
+			{
+				addActorSpotAnimCandidates(
+					candidates,
+					actor,
+					viewport,
+					claimedActorEffects,
+					claimedActorEffectTiles,
+					!isStackedActorTile(effectActorOccupancyByTile, actor)
+				);
+			}
 		}
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.PROJECTILE, config))
