@@ -49,6 +49,7 @@ import net.runelite.api.events.ItemQuantityChanged;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
@@ -307,7 +308,7 @@ public class NpcSnapPlugin extends Plugin
 	{
 		addExportFolderMenuEntry(event);
 
-		if (!config.enableShiftRightClickExportPng() || !client.isKeyPressed(KeyCode.KC_SHIFT))
+		if (!config.enableShiftRightClickExportPng())
 		{
 			return;
 		}
@@ -318,7 +319,8 @@ public class NpcSnapPlugin extends Plugin
 			addLocalPlayerExportMenuEntry();
 			return;
 		}
-		if (!isExportableMenuEntry(source))
+		if (!isExportableMenuEntry(source)
+			|| source.getActor() != null && !client.isKeyPressed(KeyCode.KC_SHIFT))
 		{
 			return;
 		}
@@ -379,8 +381,12 @@ public class NpcSnapPlugin extends Plugin
 	private void addExportFolderMenuEntry(MenuEntryAdded event)
 	{
 		Path directory = billboardPngExporter.getLatestExportDirectory();
-		if (directory == null || event.getTarget() == null
-			|| !BillboardExportPaths.stripTags(event.getTarget()).contains(directory.toString()))
+		if (directory == null)
+		{
+			return;
+		}
+		String target = BillboardExportPaths.stripTags(event.getTarget());
+		if (!target.contains(directory.toString()))
 		{
 			return;
 		}
@@ -460,18 +466,28 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked menuOptionClicked)
 	{
+		MenuEntry entry = menuOptionClicked.getMenuEntry();
 		if (BillboardHoverInteractionResolver.isActorInteractionAction(menuOptionClicked.getMenuAction()))
 		{
-			billboardOverlay.noteActorInteraction(menuOptionClicked.getMenuEntry().getActor(), client.getTickCount());
+			billboardOverlay.noteActorInteraction(entry.getActor(), client.getTickCount());
 			return;
 		}
 		if (BillboardHoverInteractionResolver.isGroundItemAction(menuOptionClicked.getMenuAction()))
 		{
-			billboardOverlay.noteGroundItemInteraction(menuOptionClicked.getMenuEntry());
+			billboardOverlay.noteGroundItemInteraction(entry);
 			return;
 		}
 
 		billboardOverlay.clearInteractionState();
+	}
+
+	@Subscribe
+	public void onMenuOpened(MenuOpened menuOpened)
+	{
+		client.setMenuEntries(java.util.Arrays.stream(menuOpened.getMenuEntries())
+			.filter(entry -> !"Copy to clipboard".equals(entry.getOption())
+				|| !"2DScape".equals(BillboardExportPaths.stripTags(entry.getTarget())))
+			.toArray(MenuEntry[]::new));
 	}
 
 	@Subscribe

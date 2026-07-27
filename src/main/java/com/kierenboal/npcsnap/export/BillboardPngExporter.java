@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.export;
 
+import java.awt.Color;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
@@ -17,6 +18,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.util.ColorUtil;
 
 @Slf4j
 @Singleton
@@ -99,8 +101,10 @@ public class BillboardPngExporter
 			latestExportDirectory = completedDirectory;
 			boolean copied = copyToClipboard(completedDirectory.toString());
 			log.debug("Exported {} billboard PNGs to {}", batch.frames.size(), completedDirectory);
-			notifyPlayer("Exported " + batch.frames.size() + " sprites to <u=ffffff>"
-				+ completedDirectory + "</u>" + (copied ? " (path copied to clipboard)" : ""));
+			String displayName = ColorUtil.wrapWithColorTag(batch.name.replace('_', ' '), Color.WHITE);
+			notifyPlayer("Exported " + batch.frames.size() + " animation frames for " + displayName
+				+ ": <u=ffffff>" + completedDirectory + "</u>"
+				+ (copied ? " (path copied to clipboard)" : ""));
 		}
 		catch (Exception ex)
 		{
