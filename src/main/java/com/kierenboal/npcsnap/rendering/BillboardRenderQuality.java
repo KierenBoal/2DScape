@@ -23,6 +23,16 @@ public final class BillboardRenderQuality
 		return (int) Math.round(clamp(qualityScale) * 10_000.0d);
 	}
 
+	public static int rasterSafePadding(int sourcePadding, double qualityScale)
+	{
+		if (sourcePadding <= 0)
+		{
+			return 0;
+		}
+
+		return Math.max(sourcePadding, (int) Math.ceil(sourcePadding / clamp(qualityScale)));
+	}
+
 	public static double seededScale(double fullQualityScale, int nearPriorityIndex, int maxUpdatesPerFrame)
 	{
 		int updatesPerFrame = Math.max(1, maxUpdatesPerFrame);

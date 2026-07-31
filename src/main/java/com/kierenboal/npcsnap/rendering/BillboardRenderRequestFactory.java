@@ -159,7 +159,7 @@ public final class BillboardRenderRequestFactory
 			return null;
 		}
 		return request(
-			item, item.getModel(), groundItem.localPoint, groundItem.plane, 0,
+			item, item.getModel(), groundItem.localPoint, groundItem.plane, groundItem.verticalOffset,
 			orientationCalculator.relativeGroundItemYaw(), orientationCalculator.relativeGroundItemPitch(),
 			item.getId(), item.getQuantity(), -1, -1, item.getId(),
 			config.enableGroundItemInteractionOutline() && item == interactionState.frameHoveredTarget()

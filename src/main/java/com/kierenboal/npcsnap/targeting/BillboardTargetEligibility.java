@@ -142,8 +142,17 @@ public final class BillboardTargetEligibility
 		}
 
 		Point canvasPoint = Perspective.localToCanvas(
-			client, groundItem.localPoint, groundItem.plane, Math.max(0, item.getModelHeight() / 2));
-		return isInside(viewport, canvasPoint);
+			client,
+			groundItem.localPoint,
+			groundItem.plane,
+			groundItem.verticalOffset + Math.max(0, item.getModelHeight() / 2));
+		if (isInside(viewport, canvasPoint))
+		{
+			return true;
+		}
+
+		BillboardRenderRequest request = requestFactory.buildGroundItem(item, groundItem);
+		return projectedOrInFront(item, request, viewport);
 	}
 
 	public boolean tileObject(LocalPoint localPlayerLocation, ObservedTileObject observed, Rectangle viewport)

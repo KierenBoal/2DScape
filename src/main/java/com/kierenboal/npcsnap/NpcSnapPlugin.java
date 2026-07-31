@@ -314,13 +314,16 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		MenuEntry source = event.getMenuEntry();
+		if (!client.isKeyPressed(KeyCode.KC_SHIFT))
+		{
+			return;
+		}
 		if (isEquipmentTab(source))
 		{
 			addLocalPlayerExportMenuEntry();
 			return;
 		}
-		if (!isExportableMenuEntry(source)
-			|| source.getActor() != null && !client.isKeyPressed(KeyCode.KC_SHIFT))
+		if (!isExportableMenuEntry(source))
 		{
 			return;
 		}

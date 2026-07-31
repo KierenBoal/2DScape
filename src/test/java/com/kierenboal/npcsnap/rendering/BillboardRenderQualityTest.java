@@ -29,6 +29,15 @@ public class BillboardRenderQualityTest
 	}
 
 	@Test
+	public void paddingAlwaysLeavesOneRasterPixelAtReducedQuality()
+	{
+		Assert.assertEquals(0, BillboardRenderQuality.rasterSafePadding(0, 0.25d));
+		Assert.assertEquals(1, BillboardRenderQuality.rasterSafePadding(1, 1.0d));
+		Assert.assertEquals(2, BillboardRenderQuality.rasterSafePadding(1, 0.5d));
+		Assert.assertEquals(4, BillboardRenderQuality.rasterSafePadding(1, 0.25d));
+	}
+
+	@Test
 	public void seededScaleDropsQualityByBootstrapTier()
 	{
 		Assert.assertEquals(0.8d, BillboardRenderQuality.seededScale(0.8d, 0, 2), 0.00001d);

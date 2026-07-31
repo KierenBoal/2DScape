@@ -35,12 +35,13 @@ public class BillboardRenderRequestFactoryTest
 			TestProxies.method("getModel", model));
 		LocalPoint point = new LocalPoint(128, 256, worldView(2));
 
-		BillboardRenderRequest request = factory.buildGroundItem(item, new GroundItemBillboard(2, point));
+		BillboardRenderRequest request = factory.buildGroundItem(item, new GroundItemBillboard(2, point, 96));
 
 		assertSame(item, request.renderable);
 		assertSame(model, request.model);
 		assertSame(point, request.localPoint);
 		assertEquals(2, request.plane);
+		assertEquals(96, request.verticalOffset);
 		assertEquals(42, request.animationId);
 		assertEquals(7, request.animationFrame);
 		assertEquals(42, request.animatedTextureId);

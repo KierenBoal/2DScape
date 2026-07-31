@@ -95,7 +95,10 @@ public final class BillboardDepthCalculator
 			return Double.NEGATIVE_INFINITY;
 		}
 
-		return cameraDistance(groundItem.localPoint, groundItem.plane, item.getModelHeight() / 2.0);
+		return cameraDistance(
+			groundItem.localPoint,
+			groundItem.plane,
+			groundItem.verticalOffset + (item.getModelHeight() / 2.0));
 	}
 
 	public double depth(ObservedTileObject observed)

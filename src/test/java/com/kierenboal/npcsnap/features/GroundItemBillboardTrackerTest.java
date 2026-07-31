@@ -9,6 +9,7 @@ import java.util.List;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Assert;
@@ -25,7 +26,7 @@ public class GroundItemBillboardTrackerTest
 		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();
 		TileItem item = proxy(TileItem.class);
 		LocalPoint localPoint = new LocalPoint(128, 256);
-		Tile tile = tile(2, localPoint, Arrays.asList(item));
+		Tile tile = tile(2, localPoint, Arrays.asList(item), 96);
 
 		tracker.track(item, tile);
 
@@ -33,6 +34,7 @@ public class GroundItemBillboardTrackerTest
 		Assert.assertNotNull(billboard);
 		Assert.assertEquals(2, billboard.plane);
 		Assert.assertEquals(localPoint, billboard.localPoint);
+		Assert.assertEquals(96, billboard.verticalOffset);
 	}
 
 	@Test
@@ -89,11 +91,18 @@ public class GroundItemBillboardTrackerTest
 
 	private static Tile tile(int plane, LocalPoint localPoint, Collection<TileItem> items)
 	{
+		return tile(plane, localPoint, items, 0);
+	}
+
+	private static Tile tile(int plane, LocalPoint localPoint, Collection<TileItem> items, int itemLayerHeight)
+	{
+		ItemLayer itemLayer = proxy(ItemLayer.class, method("getHeight", itemLayerHeight));
 		return proxy(
 			Tile.class,
 			method("getPlane", plane),
 			method("getLocalLocation", localPoint),
-			method("getGroundItems", items)
+			method("getGroundItems", items),
+			method("getItemLayer", itemLayer)
 		);
 	}
 }

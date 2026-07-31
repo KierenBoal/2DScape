@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 
@@ -29,7 +30,9 @@ public final class GroundItemBillboardTracker
 			return;
 		}
 
-		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint));
+		ItemLayer itemLayer = tile.getItemLayer();
+		int verticalOffset = itemLayer != null ? itemLayer.getHeight() : 0;
+		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint, verticalOffset));
 	}
 
 	public void untrack(TileItem item)

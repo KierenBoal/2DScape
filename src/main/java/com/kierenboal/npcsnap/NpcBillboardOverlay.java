@@ -677,11 +677,13 @@ class NpcBillboardOverlay extends Overlay
 		{
 			return null;
 		}
+		double qualityScale = renderQualityScale();
+		int outlinePadding = outlinePadding(qualityScale);
 		RenderedBillboardImage rendered = renderBillboardImage(
-			builtFaces.faces, bounds, outlinePadding(), renderQualityScale(),
+			builtFaces.faces, bounds, outlinePadding, qualityScale,
 			false, false, null, null);
 		return rendered == null ? null
-			: new ExportRenderedPart(rendered.image, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding()));
+			: new ExportRenderedPart(rendered.image, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding));
 	}
 
 	private static BufferedImage compositeExportParts(List<ExportRenderedPart> images)
@@ -2912,7 +2914,7 @@ class NpcBillboardOverlay extends Overlay
 				}
 				if (BillboardGeometryUtils.isUsableSourceBounds(sourceBounds))
 				{
-					int outlinePadding = outlinePadding();
+					int outlinePadding = outlinePadding(updatePlan.qualityScale);
 					Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(sourceBounds, outlinePadding);
 					Rectangle previewDrawRect;
 					try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Draw rect calculation"))
@@ -3028,7 +3030,7 @@ class NpcBillboardOverlay extends Overlay
 		return BillboardCachePreviewKey.create(
 			request,
 			config,
-			outlinePadding(),
+			outlinePadding(qualityScale),
 			qualityKey(qualityScale),
 			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis));
 	}
@@ -3191,6 +3193,11 @@ class NpcBillboardOverlay extends Overlay
 			|| config.enableGroundItemInteractionOutline()
 			? OUTLINE_PADDING
 			: 0;
+	}
+
+	private int outlinePadding(double qualityScale)
+	{
+		return BillboardRenderQuality.rasterSafePadding(outlinePadding(), qualityScale);
 	}
 
 	private boolean hasAnyEdgeEffect()
