@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.rendering;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
@@ -116,6 +117,38 @@ public class NpcSnapUiTextureManagerTest
 		assertEquals(0, harness.widgetOverrides.size());
 		assertEquals(0, manager.getAppliedSpriteOverrideCount());
 		assertEquals(0, manager.getAppliedWidgetOverrideCount());
+	}
+
+	@Test
+	public void restoreReinstatesDisplacedSpriteOverride()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(360, 5));
+		SpritePixels interfaceStyleOverride = spritePixels(new int[] {0x00000055}, 1, 1);
+		harness.spriteOverrides.put(5, interfaceStyleOverride);
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, spriteId ->
+			new NpcSnapUiTextureManager.SpriteSnapshot(new int[] {0x00123456}, 1, 1, 1, 1, 0, 0));
+
+		manager.sync(true, 4, 100.0d);
+		manager.restore();
+
+		assertSame(interfaceStyleOverride, harness.spriteOverrides.get(5));
+	}
+
+	@Test
+	public void restoreDoesNotClobberOverrideChangedByAnotherPlugin()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(370, 5));
+		SpritePixels originalOverride = spritePixels(new int[] {0x00000055}, 1, 1);
+		SpritePixels refreshedOverride = spritePixels(new int[] {0x00000066}, 1, 1);
+		harness.spriteOverrides.put(5, originalOverride);
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, spriteId ->
+			new NpcSnapUiTextureManager.SpriteSnapshot(new int[] {0x00123456}, 1, 1, 1, 1, 0, 0));
+
+		manager.sync(true, 4, 100.0d);
+		harness.spriteOverrides.put(5, refreshedOverride);
+		manager.restore();
+
+		assertSame(refreshedOverride, harness.spriteOverrides.get(5));
 	}
 
 	@Test

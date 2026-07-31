@@ -17,6 +17,7 @@ public final class NpcSnapUiTextureManager
 	private final IntFunction<SpriteSnapshot> spriteLoader;
 	private final Map<Integer, SpriteSnapshot> originalSprites = new HashMap<>();
 	private final Map<Integer, SpritePixels> bandedSpriteOverrides = new HashMap<>();
+	private final Map<Integer, SpritePixels> displacedSpriteOverrides = new HashMap<>();
 	private final Set<Integer> appliedSpriteOverrideIds = new HashSet<>();
 	private boolean uiBandingApplied;
 	private boolean uiBandingPending = true;
@@ -88,12 +89,27 @@ public final class NpcSnapUiTextureManager
 		{
 			for (Integer spriteId : appliedSpriteOverrideIds)
 			{
-				spriteOverrides.remove(spriteId);
+				SpritePixels bandedOverride = bandedSpriteOverrides.get(spriteId);
+				if (spriteOverrides.get(spriteId) != bandedOverride)
+				{
+					continue;
+				}
+
+				SpritePixels displacedOverride = displacedSpriteOverrides.get(spriteId);
+				if (displacedOverride == null)
+				{
+					spriteOverrides.remove(spriteId);
+				}
+				else
+				{
+					spriteOverrides.put(spriteId, displacedOverride);
+				}
 			}
 		}
 
 		appliedSpriteOverrideIds.clear();
 		bandedSpriteOverrides.clear();
+		displacedSpriteOverrides.clear();
 		originalSprites.clear();
 		uiBandingApplied = false;
 		appliedUiBands = -1;
@@ -158,6 +174,7 @@ public final class NpcSnapUiTextureManager
 
 				if (appliedSpriteOverrideIds.add(spriteId))
 				{
+					displacedSpriteOverrides.put(spriteId, spriteOverrides.get(spriteId));
 					spriteOverrides.put(spriteId, replacement);
 					changed = true;
 				}
