@@ -6,6 +6,7 @@ import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.TestProxies;
 
+import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Animation;
 import net.runelite.api.Client;
@@ -75,7 +76,31 @@ public class BillboardRenderRequestFactoryTest
 		assertEquals(0, request.verticalOffset);
 		assertEquals(88, request.animationId);
 		assertEquals(3, request.animationFrame);
-		assertEquals(VerticalAnchor.CENTER, request.verticalAnchor);
+		assertEquals(VerticalAnchor.BOTTOM, request.verticalAnchor);
+	}
+
+	@Test
+	public void actorSpotAnimationUsesEffectOriginAndOwnHeightOffset()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		LocalPoint point = new LocalPoint(300, 400, worldView(1));
+		WorldView worldView = worldView(1);
+		Actor actor = TestProxies.proxy(Actor.class,
+			TestProxies.method("getLocalLocation", point),
+			TestProxies.method("getWorldView", worldView),
+			TestProxies.method("getAnimationHeightOffset", 24));
+		ActorSpotAnim animation = TestProxies.proxy(ActorSpotAnim.class,
+			TestProxies.method("getId", 88),
+			TestProxies.method("getFrame", 3),
+			TestProxies.method("getHeight", 40),
+			TestProxies.method("getModel", model));
+
+		BillboardRenderRequest request = factory().buildActorSpotAnimation(animation, actor);
+
+		assertSame(point, request.localPoint);
+		assertSame(model, request.model);
+		assertEquals(40, request.verticalOffset);
+		assertEquals(VerticalAnchor.BOTTOM, request.verticalAnchor);
 	}
 
 	@Test

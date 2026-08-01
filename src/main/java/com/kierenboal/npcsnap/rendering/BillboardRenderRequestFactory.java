@@ -129,10 +129,10 @@ public final class BillboardRenderRequestFactory
 		}
 		return request(
 			spotAnimation, spotAnimation.getModel(), actor.getLocalLocation(), actor.getWorldView().getPlane(),
-			Math.max(0, actor.getAnimationHeightOffset() + spotAnimation.getHeight()),
+			Math.max(0, spotAnimation.getHeight()),
 			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(),
 			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1, false, false,
-			VerticalAnchor.CENTER,
+			VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(spotAnimation.getId(), spotAnimation.getFrame(), spotAnimation.getFrame()));
 	}
 
@@ -153,7 +153,7 @@ public final class BillboardRenderRequestFactory
 		return request(
 			graphicsObject, graphicsObject.getModel(), graphicsObject.getLocation(), graphicsObject.getLevel(),
 			Math.max(0, graphicsObject.getZ()), orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
-			graphicsObject.getId(), snappedFrame, -1, -1, -1, false, false, VerticalAnchor.CENTER,
+			graphicsObject.getId(), snappedFrame, -1, -1, -1, false, false, VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), snappedFrame));
 	}
 
