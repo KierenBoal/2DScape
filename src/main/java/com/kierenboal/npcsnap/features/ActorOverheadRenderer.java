@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.features;
 
+import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import java.awt.Color;
 import java.awt.Font;
@@ -19,7 +20,6 @@ import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.HeadIcon;
 import net.runelite.api.Hitsplat;
-import net.runelite.api.HitsplatID;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.SpritePixels;
@@ -31,17 +31,24 @@ public final class ActorOverheadRenderer
 	private static final int ELEMENT_GAP = 2;
 	private static final int HEALTH_WIDTH = 30;
 	private static final int HEALTH_HEIGHT = 5;
-	private static final Color CHAT_COLOR = Color.YELLOW;
 	private static final Color CHAT_SHADOW = Color.BLACK;
 	private final Client client;
+	private final NpcSnapConfig config;
+	private final RetroChatRenderer chatRenderer = new RetroChatRenderer();
 	private final Map<Actor, List<TrackedHitsplat>> hitsplats = new IdentityHashMap<>();
 	private final Map<Actor, AnchorState> anchors = new IdentityHashMap<>();
 	private final Set<Actor> drawableActors = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Map<Long, BufferedImage> sprites = new java.util.HashMap<>();
 
-	public ActorOverheadRenderer(Client client)
+	public ActorOverheadRenderer(Client client, NpcSnapConfig config)
 	{
 		this.client = client;
+		this.config = config;
+	}
+
+	ActorOverheadRenderer(Client client)
+	{
+		this(client, new NpcSnapConfig() { });
 	}
 
 	public boolean canReplace(Actor actor)
@@ -81,6 +88,11 @@ public final class ActorOverheadRenderer
 
 	public void recordHitsplat(Actor actor, Hitsplat hitsplat)
 	{
+		if (!config.useRetroHitsplats())
+		{
+			hitsplats.clear();
+			return;
+		}
 		if (actor == null || hitsplat == null)
 		{
 			return;
@@ -153,7 +165,7 @@ public final class ActorOverheadRenderer
 		int centerX = anchor.x;
 		int cursorY = anchor.y - ELEMENT_GAP;
 
-		if (actor.getHealthRatio() >= 0 && actor.getHealthScale() > 0)
+		if (config.useRetroHpBar() && actor.getHealthRatio() >= 0 && actor.getHealthScale() > 0)
 		{
 			cursorY -= HEALTH_HEIGHT;
 			drawHealthBar(graphics, centerX, cursorY, actor.getHealthRatio(), actor.getHealthScale());
@@ -170,19 +182,15 @@ public final class ActorOverheadRenderer
 		String overheadText = actor.getOverheadText();
 		if (overheadText != null && !overheadText.isEmpty() && actor.getOverheadCycle() > 0)
 		{
+			RetroChatRenderer.ParsedChat chat = config.useRetroChatEffects()
+				? RetroChatRenderer.parse(overheadText) : RetroChatRenderer.plain(overheadText);
 			Font font = FontManager.getRunescapeBoldFont();
 			graphics.setFont(font);
 			FontMetrics metrics = graphics.getFontMetrics(font);
-			int width = metrics.stringWidth(overheadText);
-			int height = metrics.getHeight();
-			Rectangle textBounds = new Rectangle(centerX - (width / 2), cursorY - height, width, height);
-			textBounds = resolveChatCollision(textBounds, occupiedChatBounds, height + ELEMENT_GAP);
+			Rectangle textBounds = chatRenderer.bounds(chat, metrics, centerX, cursorY);
+			textBounds = resolveChatCollision(textBounds, occupiedChatBounds, textBounds.height + ELEMENT_GAP);
 			occupiedChatBounds.add(textBounds);
-			int baseline = textBounds.y + metrics.getAscent();
-			graphics.setColor(CHAT_SHADOW);
-			graphics.drawString(overheadText, textBounds.x + 1, baseline + 1);
-			graphics.setColor(CHAT_COLOR);
-			graphics.drawString(overheadText, textBounds.x, baseline);
+			chatRenderer.draw(graphics, chat, textBounds, actor, System.currentTimeMillis(), CHAT_SHADOW);
 		}
 
 		drawHitsplats(graphics, actor, billboard, anchor);
@@ -230,22 +238,25 @@ public final class ActorOverheadRenderer
 	{
 		int x = centerX - (HEALTH_WIDTH / 2);
 		int filled = Math.max(0, Math.min(HEALTH_WIDTH, (int) Math.round(HEALTH_WIDTH * (ratio / (double) scale))));
-		graphics.setColor(Color.BLACK);
-		graphics.fillRect(x - 1, y - 1, HEALTH_WIDTH + 2, HEALTH_HEIGHT + 2);
-		graphics.setColor(new Color(0x8B0000));
+		graphics.setColor(new Color(255, 0, 0));
 		graphics.fillRect(x, y, HEALTH_WIDTH, HEALTH_HEIGHT);
-		graphics.setColor(new Color(0x00C000));
+		graphics.setColor(new Color(0, 255, 0));
 		graphics.fillRect(x, y, filled, HEALTH_HEIGHT);
 	}
 
 	private void drawHitsplats(Graphics2D graphics, Actor actor, Rectangle billboard, Point anchor)
 	{
+		if (!config.useRetroHitsplats())
+		{
+			hitsplats.clear();
+			return;
+		}
 		List<TrackedHitsplat> active = hitsplats.get(actor);
 		if (active == null || active.isEmpty())
 		{
 			return;
 		}
-		Font font = FontManager.getRunescapeBoldFont();
+		Font font = FontManager.getRunescapeSmallFont();
 		graphics.setFont(font);
 		FontMetrics metrics = graphics.getFontMetrics(font);
 		int centerX = anchor.x;
@@ -254,13 +265,14 @@ public final class ActorOverheadRenderer
 		{
 			TrackedHitsplat hitsplat = active.get(i);
 			String text = Integer.toString(hitsplat.amount);
-			int width = Math.max(18, metrics.stringWidth(text) + 10);
+			int width = Math.max(20, metrics.stringWidth(text) + 12);
 			int x = centerX - (width / 2) + hitsplatOffsetX(i);
 			int y = centerY + hitsplatOffsetY(i);
-			graphics.setColor(hitsplatColor(hitsplat.type));
-			graphics.fillOval(x, y - 12, width, 16);
+			graphics.setColor(hitsplatColor(hitsplat.amount));
+			java.awt.Polygon star = hitsplatStar(x, y - 15, width, 20);
+			graphics.fillPolygon(star);
 			graphics.setColor(Color.BLACK);
-			graphics.drawOval(x, y - 12, width, 16);
+			graphics.drawPolygon(star);
 			int textX = x + ((width - metrics.stringWidth(text)) / 2);
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(text, textX + 1, y + 1);
@@ -384,21 +396,34 @@ public final class ActorOverheadRenderer
 		return new int[] {0, 16, 16, 32}[index % 4];
 	}
 
-	static Color hitsplatColor(int type)
+	static Color hitsplatColor(int amount)
 	{
-		if (type == HitsplatID.HEAL || type == HitsplatID.SANITY_RESTORE)
-		{
-			return new Color(0x287A36);
-		}
-		if (type == HitsplatID.POISON || type == HitsplatID.VENOM || type == HitsplatID.DISEASE)
-		{
-			return new Color(0x397A24);
-		}
-		if (type == HitsplatID.PRAYER_DRAIN || type == HitsplatID.CYAN_UP || type == HitsplatID.CYAN_DOWN)
-		{
-			return new Color(0x25859A);
-		}
-		return new Color(0x8B1A1A);
+		return amount == 0 ? new Color(0x3155D9) : new Color(0xE51B17);
+	}
+
+	static java.awt.Polygon hitsplatStar(int x, int y, int width, int height)
+	{
+		int right = x + width;
+		int bottom = y + height;
+		int midX = x + width / 2;
+		int midY = y + height / 2;
+		int bodyHalfWidth = Math.max(6, (width * 3) / 10);
+		int bodyHalfHeight = Math.max(5, height / 4);
+		int spikeHalfWidth = Math.max(2, width / 10);
+		int spikeHalfHeight = Math.max(2, height / 10);
+		int bodyLeft = midX - bodyHalfWidth;
+		int bodyRight = midX + bodyHalfWidth;
+		int bodyTop = midY - bodyHalfHeight;
+		int bodyBottom = midY + bodyHalfHeight;
+		return new java.awt.Polygon(
+			new int[] {midX - spikeHalfWidth, midX, midX + spikeHalfWidth,
+				bodyRight, right - 2, bodyRight, right, bodyRight, right - 2,
+				bodyRight, midX + spikeHalfWidth, midX, midX - spikeHalfWidth,
+				bodyLeft, x + 2, bodyLeft, x, bodyLeft, x + 2, bodyLeft},
+			new int[] {bodyTop, y, bodyTop,
+				bodyTop, y + 2, midY - spikeHalfHeight, midY, midY + spikeHalfHeight, bottom - 2,
+				bodyBottom, bodyBottom, bottom, bodyBottom,
+				bodyBottom, bottom - 2, midY + spikeHalfHeight, midY, midY - spikeHalfHeight, y + 2, bodyTop}, 20);
 	}
 
 	private static final class TrackedHitsplat

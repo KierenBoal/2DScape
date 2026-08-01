@@ -24,6 +24,9 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableBillboardSpriteShadows());
 		assertFalse(config.applyToBoats());
 		assertFalse(config.deterministicAnimationLooping());
+		assertTrue(config.useRetroHpBar());
+		assertTrue(config.useRetroHitsplats());
+		assertTrue(config.useRetroChatEffects());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
 	}
@@ -35,6 +38,25 @@ public class NpcSnapConfigTest
 		ConfigItem item = NpcSnapConfig.class.getMethod("applyToBoats").getAnnotation(ConfigItem.class);
 		assertTrue(item.hidden());
 		assertFalse(config.applyToBoats());
+	}
+
+	@Test
+	public void retroOverheadOptionsHaveStablePublicConfiguration()
+		throws NoSuchMethodException
+	{
+		assertConfig("useRetroHpBar", "useRetroHpBar", "Use retro HP bar", 11);
+		assertConfig("useRetroHitsplats", "useRetroHitsplats", "Use retro hitsplats", 12);
+		assertConfig("useRetroChatEffects", "useRetroChatEffects", "Use retro chat effects", 13);
+	}
+
+	private static void assertConfig(String method, String key, String name, int position)
+		throws NoSuchMethodException
+	{
+		ConfigItem item = NpcSnapConfig.class.getMethod(method).getAnnotation(ConfigItem.class);
+		assertEquals(key, item.keyName());
+		assertEquals(name, item.name());
+		assertEquals(NpcSnapConfig.retroSection, item.section());
+		assertEquals(position, item.position());
 	}
 
 	@Test

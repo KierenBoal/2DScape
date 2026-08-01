@@ -193,7 +193,7 @@ class NpcBillboardOverlay extends Overlay
 			client, config, requestFactory, this::projectedModelCanvasBounds, this::isSceneRenderedInFront);
 		this.textureResolver = new BillboardTextureResolver(client, config);
 		this.classificationDebug = new BillboardClassificationDebug(client, config, log);
-		this.actorOverheadRenderer = new ActorOverheadRenderer(client);
+		this.actorOverheadRenderer = new ActorOverheadRenderer(client, config);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(PRIORITY_HIGHEST);

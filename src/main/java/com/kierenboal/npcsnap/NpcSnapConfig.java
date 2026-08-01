@@ -354,6 +354,24 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "useRetroHpBar", name = "Use retro HP bar", description = "Draw compact retro health bars above billboard sprites.", section = retroSection, position = 11)
+	default boolean useRetroHpBar()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "useRetroHitsplats", name = "Use retro hitsplats", description = "Draw red retro damage splats and blue miss splats over billboard sprites.", section = retroSection, position = 12)
+	default boolean useRetroHitsplats()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "useRetroChatEffects", name = "Use retro chat effects", description = "Use retro overhead chat colours and animated text commands.", section = retroSection, position = 13)
+	default boolean useRetroChatEffects()
+	{
+		return true;
+	}
+
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
 	{

@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.features;
 
+import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.TestProxies;
 import java.awt.Rectangle;
 import java.awt.Point;
@@ -21,6 +22,61 @@ import static org.junit.Assert.assertTrue;
 
 public class ActorOverheadRendererTest
 {
+	@Test
+	public void hitsplatColoursUseAmountOnly()
+	{
+		assertEquals(new java.awt.Color(0x3155D9), ActorOverheadRenderer.hitsplatColor(0));
+		assertEquals(new java.awt.Color(0xE51B17), ActorOverheadRenderer.hitsplatColor(1));
+		assertEquals(new java.awt.Color(0xE51B17), ActorOverheadRenderer.hitsplatColor(99));
+	}
+
+	@Test
+	public void classicHitsplatUsesCompactPixelBounds()
+	{
+		java.awt.Polygon star = ActorOverheadRenderer.hitsplatStar(10, 20, 20, 20);
+		assertEquals(new Rectangle(10, 20, 20, 20), star.getBounds());
+		assertEquals(20, star.npoints);
+		assertTrue(hasReflexVertex(star));
+		assertTrue(star.contains(new Rectangle(14, 25, 12, 10)));
+	}
+
+	private static boolean hasReflexVertex(java.awt.Polygon polygon)
+	{
+		boolean positive = false;
+		boolean negative = false;
+		for (int i = 0; i < polygon.npoints; i++)
+		{
+			int previous = (i + polygon.npoints - 1) % polygon.npoints;
+			int next = (i + 1) % polygon.npoints;
+			int cross = (polygon.xpoints[i] - polygon.xpoints[previous])
+				* (polygon.ypoints[next] - polygon.ypoints[i])
+				- (polygon.ypoints[i] - polygon.ypoints[previous])
+				* (polygon.xpoints[next] - polygon.xpoints[i]);
+			positive |= cross > 0;
+			negative |= cross < 0;
+		}
+		return positive && negative;
+	}
+
+	@Test
+	public void disabledRetroHitsplatsAreNotTracked()
+	{
+		NpcSnapConfig config = new NpcSnapConfig()
+		{
+			@Override
+			public boolean useRetroHitsplats()
+			{
+				return false;
+			}
+		};
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config);
+		NPC actor = TestProxies.proxy(NPC.class);
+		Hitsplat hitsplat = TestProxies.proxy(Hitsplat.class,
+			TestProxies.method("getDisappearsOnGameCycle", 100));
+		renderer.recordHitsplat(actor, hitsplat);
+		assertEquals(0, renderer.trackedHitsplatCount(actor, 1));
+	}
+
 	@Test
 	public void replacementRequiresEveryNpcOverheadSprite()
 	{
