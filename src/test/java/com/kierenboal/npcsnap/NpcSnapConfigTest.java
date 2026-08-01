@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
 
 import java.awt.Color;
 import org.junit.Test;
+import net.runelite.client.config.ConfigItem;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -21,9 +22,19 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableRotationSnapping());
 		assertTrue(config.enableSkillingBubbles());
 		assertTrue(config.enableBillboardSpriteShadows());
+		assertFalse(config.applyToBoats());
 		assertFalse(config.deterministicAnimationLooping());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
+	}
+
+	@Test
+	public void boatsAreHiddenAndDisabled()
+		throws NoSuchMethodException
+	{
+		ConfigItem item = NpcSnapConfig.class.getMethod("applyToBoats").getAnnotation(ConfigItem.class);
+		assertTrue(item.hidden());
+		assertFalse(config.applyToBoats());
 	}
 
 	@Test
@@ -83,11 +94,11 @@ public class NpcSnapConfigTest
 		assertTrue(config.enablePlayerInteractionOutline());
 		assertTrue(config.enableNpcInteractionOutline());
 		assertTrue(config.enableGroundItemInteractionOutline());
-		assertEquals(new Color(0x90FFFF00, true), config.playerHoverOutlineColor());
+		assertEquals(new Color(0x9000FFFF, true), config.playerHoverOutlineColor());
 		assertEquals(new Color(0x90FF0000, true), config.playerInteractionOutlineColor());
 		assertEquals(new Color(0x90FFFF00, true), config.npcHoverOutlineColor());
 		assertEquals(new Color(0x90FF0000, true), config.npcInteractionOutlineColor());
-		assertEquals(new Color(0x90FFFF00, true), config.groundItemHoverOutlineColor());
+		assertEquals(new Color(0x9000FFFF, true), config.groundItemHoverOutlineColor());
 		assertEquals(new Color(0x90FF0000, true), config.groundItemInteractionOutlineColor());
 	}
 }

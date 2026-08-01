@@ -7,6 +7,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.ItemLayer;
 import net.runelite.api.Renderable;
+import net.runelite.api.Scene;
 import net.runelite.api.TileObject;
 import net.runelite.api.WallObject;
 
@@ -19,6 +20,8 @@ public final class BillboardSceneDrawCallbacks
 		void observeTileObject(TileObject tileObject);
 
 		boolean shouldHideRenderable(Renderable renderable);
+
+		boolean shouldKeepRenderableInteraction(Renderable renderable);
 
 		boolean shouldHideActor2d(Renderable renderable);
 
@@ -46,9 +49,12 @@ public final class BillboardSceneDrawCallbacks
 		}
 
 		overlay.noteSceneRenderable(renderable);
-		// Actors must stay in this callback chain so RuneLite can build their
-		// clickboxes and menu entries. Their visual suppression happens elsewhere.
+		// Actors and nested world-entity scenes must stay in this callback chain so
+		// RuneLite can build their clickboxes and menu entries. Visual suppression
+		// happens in draw(), after interaction traversal has been retained.
 		return ObjectClassifier.keepsActorInteraction(renderable)
+			|| renderable instanceof Scene
+			|| overlay.shouldKeepRenderableInteraction(renderable)
 			|| !overlay.shouldHideRenderable(renderable);
 	}
 
@@ -127,6 +133,10 @@ public final class BillboardSceneDrawCallbacks
 	private boolean shouldDrawObservedObject(TileObject tileObject, Renderable renderable)
 	{
 		overlay.noteSceneRenderable(renderable);
+		if (overlay.shouldKeepRenderableInteraction(renderable))
+		{
+			return true;
+		}
 		return !observeAndShouldHide(tileObject) && shouldDraw(renderable);
 	}
 
@@ -154,6 +164,10 @@ public final class BillboardSceneDrawCallbacks
 	private boolean shouldDraw(Renderable renderable)
 	{
 		overlay.noteSceneRenderable(renderable);
+		if (overlay.shouldKeepRenderableInteraction(renderable))
+		{
+			return true;
+		}
 		return !overlay.shouldHideRenderable(renderable);
 	}
 }

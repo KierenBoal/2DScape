@@ -101,6 +101,7 @@ public class BillboardTargetEligibilityTest
 
 	private static WorldView worldView(int plane)
 	{
-		return TestProxies.proxy(WorldView.class, TestProxies.method("getPlane", plane));
+		return TestProxies.proxy(WorldView.class,
+			TestProxies.method("getPlane", plane), TestProxies.method("isTopLevel", true));
 	}
 }

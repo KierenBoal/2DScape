@@ -102,7 +102,13 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 6)
+	@ConfigItem(keyName = "applyToBoats", name = "Apply to boats", description = "Use sprites for your boat and other players' boats while sailing.", section = targetsSection, position = 6, hidden = true)
+	default boolean applyToBoats()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 7)
 	default boolean enableShiftRightClickExportPng()
 	{
 		return false;

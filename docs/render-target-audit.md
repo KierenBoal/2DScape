@@ -9,7 +9,10 @@ This audit is based on the RuneLite 1.12.28 public API surface used by this plug
   - Billboard rendering is supported through `RenderCallback.addEntity(...)` and overlay redraw.
 - Players
   - Live frame snapping is supported through the same `Actor` APIs as NPCs.
-  - Billboard rendering is supported through `RenderCallback.addEntity(...)` and overlay redraw.
+  - Players projected from sailing world views are resolved through their owning `WorldEntity` before billboard eligibility and placement.
+- Sailing boats (disabled experimental implementation)
+  - The configuration item is hidden and defaults off while nested-scene rendering and interaction preservation remain unreliable.
+  - The implementation is retained for future investigation, but target classification is hard-disabled so previously saved configuration values cannot activate it.
 - Projectiles
   - Billboard rendering is supported through `RenderCallback.addEntity(...)`.
   - Billboard frame snapping is supported by snapping the billboard cache key from `Projectile.getAnimation()` and `Projectile.getAnimationFrame()`.

@@ -11,6 +11,7 @@ import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
+import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardTargetKey
@@ -58,6 +59,14 @@ public final class BillboardTargetKey
 		long orderKey = composeOrderKey(BillboardTargetType.TILE_OBJECT.ordinal(), objectId, locationKey);
 		long uniqueKey = composeUniqueKey(orderKey, System.identityHashCode(tileObject));
 		return new BillboardTargetKey(orderKey, uniqueKey);
+	}
+
+	public static BillboardTargetKey forBoat(WorldEntity worldEntity)
+	{
+		LocalPoint localPoint = worldEntity != null ? worldEntity.getLocalLocation() : null;
+		int id = worldEntity != null && worldEntity.getConfig() != null ? worldEntity.getConfig().getId() : -1;
+		long orderKey = composeOrderKey(BillboardTargetType.BOAT.ordinal(), id, locationKey(localPoint, 0));
+		return new BillboardTargetKey(orderKey, composeUniqueKey(orderKey, System.identityHashCode(worldEntity)));
 	}
 
 	public static int compareForQueueOrder(BillboardTargetKey left, BillboardTargetKey right)

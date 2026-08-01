@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.NpcSnapConfig;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Projectile;
+import net.runelite.api.WorldEntity;
 
 public final class BillboardOrientationCalculator
 {
@@ -24,7 +25,12 @@ public final class BillboardOrientationCalculator
 
 	public int relativeYaw(Actor actor)
 	{
-		int rawRelativeYaw = cameraYaw() + actorYaw(actor);
+		return relativeYaw(actor, actor != null ? actor.getCurrentOrientation() : 0);
+	}
+
+	public int relativeYaw(Actor actor, int actorOrientation)
+	{
+		int rawRelativeYaw = cameraYaw() + BillboardAngleUtils.angleToBillboardUnits(actorOrientation, BillboardAngleUtils.ACTOR_FULL_CIRCLE);
 		if (shouldCombatSnap(actor))
 		{
 			return BillboardAngleUtils.combatYaw(rawRelativeYaw);
@@ -41,6 +47,13 @@ public final class BillboardOrientationCalculator
 	public int relativeGroundItemYaw()
 	{
 		return snappedYaw(cameraYaw());
+	}
+
+	public int relativeYaw(WorldEntity worldEntity)
+	{
+		int orientation = worldEntity != null ? worldEntity.getOrientation() : 0;
+		return snappedYaw(cameraYaw()
+			+ BillboardAngleUtils.angleToBillboardUnits(orientation, BillboardAngleUtils.ACTOR_FULL_CIRCLE));
 	}
 
 	public int relativePitch()
@@ -96,13 +109,6 @@ public final class BillboardOrientationCalculator
 	{
 		int pitch = BillboardAngleUtils.angleToBillboardUnits(client.getCameraPitch(), BillboardAngleUtils.CAMERA_FULL_CIRCLE);
 		return Math.max(0, Math.min(BillboardAngleUtils.MAX_PITCH, pitch));
-	}
-
-	private static int actorYaw(Actor actor)
-	{
-		return actor == null
-			? 0
-			: BillboardAngleUtils.angleToBillboardUnits(actor.getCurrentOrientation(), BillboardAngleUtils.ACTOR_FULL_CIRCLE);
 	}
 
 	private static int projectileYaw(Projectile projectile)

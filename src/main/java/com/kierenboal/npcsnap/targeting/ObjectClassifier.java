@@ -187,6 +187,10 @@ public final class ObjectClassifier
 				return config.applyToGroundItems();
 			case OBJECT:
 				return config.applyToObjects();
+			case BOAT:
+				// Boat billboards remain implemented for future investigation, but are
+				// deliberately unavailable until nested-scene rendering is reliable.
+				return false;
 			default:
 				return false;
 		}
@@ -206,6 +210,8 @@ public final class ObjectClassifier
 			case NPC:
 			case PLAYER:
 				return 1;
+			case BOAT:
+				return 0;
 			case EFFECT:
 				return 2;
 			default:

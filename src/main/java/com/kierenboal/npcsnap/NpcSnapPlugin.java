@@ -77,7 +77,7 @@ public class NpcSnapPlugin extends Plugin
 	implements Hooks.RenderableDrawListener
 {
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
-	private final Runnable restoreFrameListener = this::restoreNpcState;
+	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private boolean pendingSkillXpSeed;
 	private NpcSnapUiTextureManager uiTextureManager;
@@ -144,7 +144,7 @@ public class NpcSnapPlugin extends Plugin
 		overlayManager.remove(skillingThoughtBubbleOverlay);
 		overlayManager.remove(billboardOverlay);
 		drawManager.unregisterEveryFrameListener(restoreFrameListener);
-		restoreNpcState();
+		restoreFrameState();
 		billboardOverlay.clearGroundItems();
 		billboardOverlay.clearTileObjects();
 		billboardOverlay.clearBillboardCache();
@@ -167,7 +167,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onBeforeRender(BeforeRender beforeRender)
 	{
-		restoreNpcState();
+		restoreFrameState();
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
 		syncUiTextureQuality();
@@ -201,6 +201,23 @@ public class NpcSnapPlugin extends Plugin
 
 				applyAnimationFrameSnap(npc);
 			}
+			if (worldView.worldViews() != null)
+			{
+				for (WorldView nested : worldView.worldViews())
+				{
+					if (nested == null || nested.npcs() == null)
+					{
+						continue;
+					}
+					for (NPC npc : nested.npcs())
+					{
+						if (npc != null)
+						{
+							applyAnimationFrameSnap(npc);
+						}
+					}
+				}
+			}
 		}
 
 		if (config.applyToPlayers())
@@ -214,9 +231,27 @@ public class NpcSnapPlugin extends Plugin
 
 				applyAnimationFrameSnap(player);
 			}
+			if (worldView.worldViews() != null)
+			{
+				for (WorldView nested : worldView.worldViews())
+				{
+					if (nested == null || nested.players() == null)
+					{
+						continue;
+					}
+					for (Player player : nested.players())
+					{
+						if (player != null)
+						{
+							applyAnimationFrameSnap(player);
+						}
+					}
+				}
+			}
 		}
 
 		billboardOverlay.prepareFrame(worldView);
+		billboardOverlay.maskDrawableBoatGeometry();
 	}
 
 	@Provides
@@ -586,6 +621,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 
 				@Override
+				public boolean shouldKeepRenderableInteraction(Renderable renderable)
+				{
+					return billboardOverlay.shouldKeepRenderableInteraction(renderable);
+				}
+
+				@Override
 				public boolean shouldHideActor2d(Renderable renderable)
 				{
 					return billboardOverlay.shouldHideActor2d(renderable);
@@ -720,6 +761,12 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		mutatedActors.clear();
+	}
+
+	private void restoreFrameState()
+	{
+		restoreNpcState();
+		billboardOverlay.restoreBoatGeometry();
 	}
 
 	private void seedCurrentSkillXp()

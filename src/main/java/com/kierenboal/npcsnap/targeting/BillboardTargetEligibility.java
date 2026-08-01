@@ -21,6 +21,7 @@ import net.runelite.api.Point;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardTargetEligibility
@@ -47,7 +48,11 @@ public final class BillboardTargetEligibility
 
 	public boolean actor(LocalPoint localPlayerLocation, LocalPoint actorLocation, Actor actor, Rectangle viewport)
 	{
-		if (!hasEligibleLocation(localPlayerLocation, actorLocation, actor.getWorldView().getPlane()))
+		WorldView actorWorldView = actor.getWorldView();
+		boolean projectedNested = !actorWorldView.isTopLevel();
+		actorLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actorWorldView, actorLocation);
+		int actorPlane = projectedNested ? 0 : actorWorldView.getPlane();
+		if (!hasEligibleLocation(localPlayerLocation, actorLocation, actorPlane))
 		{
 			return false;
 		}
@@ -60,7 +65,7 @@ public final class BillboardTargetEligibility
 
 		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset());
 		Point canvasPoint = Perspective.localToCanvas(
-			client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (actor.getModelHeight() / 2));
+			client, actorLocation, actorPlane, verticalOffset + (actor.getModelHeight() / 2));
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;

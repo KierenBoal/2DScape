@@ -8,6 +8,7 @@ import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
+import net.runelite.api.WorldEntity;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardTarget
@@ -19,6 +20,7 @@ public final class BillboardTarget
 	public final TileObject tileObject;
 	public final ObservedTileObject observedTileObject;
 	public final GroundItemBillboard groundItem;
+	public final WorldEntity worldEntity;
 	public final double depth;
 	public final int renderPriority;
 	public final PriorityTileKey priorityTileKey;
@@ -32,6 +34,7 @@ public final class BillboardTarget
 		TileObject tileObject,
 		ObservedTileObject observedTileObject,
 		GroundItemBillboard groundItem,
+		WorldEntity worldEntity,
 		double depth,
 		int renderPriority,
 		PriorityTileKey priorityTileKey,
@@ -45,6 +48,7 @@ public final class BillboardTarget
 		this.tileObject = tileObject;
 		this.observedTileObject = observedTileObject;
 		this.groundItem = groundItem;
+		this.worldEntity = worldEntity;
 		this.depth = depth;
 		this.renderPriority = renderPriority;
 		this.priorityTileKey = priorityTileKey;
@@ -69,6 +73,7 @@ public final class BillboardTarget
 			null,
 			null,
 			null,
+			null,
 			depth,
 			renderPriority,
 			PriorityTileKey.of(localPoint, plane, renderPriority),
@@ -86,6 +91,7 @@ public final class BillboardTarget
 			ClassifiedObjectType.EFFECT,
 			actorSpotAnim,
 			actor,
+			null,
 			null,
 			null,
 			null,
@@ -107,6 +113,7 @@ public final class BillboardTarget
 			null,
 			null,
 			groundItem,
+			null,
 			depth,
 			renderPriority,
 			PriorityTileKey.of(groundItem.localPoint, groundItem.plane, renderPriority),
@@ -126,10 +133,31 @@ public final class BillboardTarget
 			observedTileObject.tileObject,
 			observedTileObject,
 			null,
+			null,
 			depth,
 			renderPriority,
 			PriorityTileKey.of(firstLocalPoint(observedTileObject), firstPlane(observedTileObject), renderPriority),
 			BillboardTargetKey.forTileObject(observedTileObject.tileObject, firstLocalPoint(observedTileObject), firstPlane(observedTileObject))
+		);
+	}
+
+	public static BillboardTarget forBoat(WorldEntity worldEntity, ObservedTileObject composite, double depth)
+	{
+		int renderPriority = ObjectClassifier.renderPriority(ClassifiedObjectType.BOAT);
+		LocalPoint location = worldEntity != null ? worldEntity.getLocalLocation() : null;
+		return new BillboardTarget(
+			BillboardTargetType.BOAT,
+			ClassifiedObjectType.BOAT,
+			worldEntity != null && worldEntity.getWorldView() != null ? worldEntity.getWorldView().getScene() : null,
+			null,
+			null,
+			composite,
+			null,
+			worldEntity,
+			depth,
+			renderPriority,
+			PriorityTileKey.of(location, 0, renderPriority),
+			BillboardTargetKey.forBoat(worldEntity)
 		);
 	}
 

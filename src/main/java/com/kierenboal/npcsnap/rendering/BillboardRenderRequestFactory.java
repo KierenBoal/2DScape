@@ -7,6 +7,7 @@ import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
+import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 
 import java.awt.Color;
 import net.runelite.api.Actor;
@@ -66,7 +67,7 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest build(BillboardTarget target, ObjectRenderablePart part)
 	{
-		if (target.type != BillboardTargetType.TILE_OBJECT || part == null || target.tileObject == null)
+		if ((target.type != BillboardTargetType.TILE_OBJECT && target.type != BillboardTargetType.BOAT) || part == null)
 		{
 			return null;
 		}
@@ -90,6 +91,7 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildActor(Actor actor)
 	{
+		LocalPoint mainWorldLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor);
 		boolean player = actor instanceof Player;
 		boolean enabled = player ? config.enablePlayerInteractionOutline() : config.enableNpcInteractionOutline();
 		boolean interactionOutline = enabled && actor == interactionState.frameInteractionTarget();
@@ -99,9 +101,12 @@ public final class BillboardRenderRequestFactory
 		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
 		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
 		return request(
-			actor, actor.getModel(), actor.getLocalLocation(), actor.getWorldView().getPlane(),
+			actor, actor.getModel(), mainWorldLocation,
+			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
 			Math.max(0, actor.getAnimationHeightOffset()),
-			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(actor),
+			orientationCalculator.relativeYaw(actor,
+				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor)),
+			orientationCalculator.relativePitch(actor),
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
 			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
 			hoverColor, interactionColor,

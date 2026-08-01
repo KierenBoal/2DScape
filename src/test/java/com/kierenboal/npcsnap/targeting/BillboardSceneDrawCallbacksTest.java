@@ -10,6 +10,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.ItemLayer;
 import net.runelite.api.NPC;
 import net.runelite.api.Renderable;
+import net.runelite.api.Scene;
 import net.runelite.api.TileObject;
 import org.junit.Test;
 
@@ -56,6 +57,19 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	@Test
+	public void addEntityPreservesNestedSceneInteractionWhileDrawSuppressesItsPixels()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		Scene scene = TestProxies.proxy(Scene.class);
+		overlay.hiddenRenderables.add(scene);
+		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
+
+		assertTrue(callbacks.addEntity(scene, false));
+		assertFalse(callbacks.draw(scene, false));
+		assertTrue(overlay.noted.contains(scene));
+	}
+
+	@Test
 	public void regularDrawAndNonActorEntityRespectRenderableSuppression()
 	{
 		FakeOverlay overlay = new FakeOverlay();
@@ -66,6 +80,21 @@ public class BillboardSceneDrawCallbacksTest
 		assertFalse(callbacks.addEntity(renderable, false));
 		assertFalse(callbacks.draw(renderable, false));
 		assertTrue(overlay.noted.contains(renderable));
+	}
+
+	@Test
+	public void boatPartKeepsInteractionTraversalButSuppressesFinalDraw()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		Renderable part = TestProxies.proxy(Renderable.class);
+		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
+		overlay.hiddenRenderables.add(part);
+		overlay.interactionRenderables.add(part);
+		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
+
+		assertTrue(callbacks.drawObject(object));
+		assertTrue(callbacks.addEntity(part, false));
+		assertFalse(callbacks.draw(part, false));
 	}
 
 	@Test
@@ -141,6 +170,7 @@ public class BillboardSceneDrawCallbacksTest
 		private final Set<Renderable> hiddenRenderables = identitySet();
 		private final Set<TileObject> hiddenTileObjects = identitySet();
 		private final Set<Renderable> hiddenActor2d = identitySet();
+		private final Set<Renderable> interactionRenderables = identitySet();
 
 		@Override
 		public void noteSceneRenderable(Renderable renderable)
@@ -161,6 +191,12 @@ public class BillboardSceneDrawCallbacksTest
 		public boolean shouldHideRenderable(Renderable renderable)
 		{
 			return hiddenRenderables.contains(renderable);
+		}
+
+		@Override
+		public boolean shouldKeepRenderableInteraction(Renderable renderable)
+		{
+			return interactionRenderables.contains(renderable);
 		}
 
 		@Override
