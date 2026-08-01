@@ -43,6 +43,7 @@ import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemQuantityChanged;
@@ -148,6 +149,7 @@ public class NpcSnapPlugin extends Plugin
 		billboardOverlay.clearTileObjects();
 		billboardOverlay.clearBillboardCache();
 		billboardOverlay.clearTextureCache();
+		billboardOverlay.clearInteractionState();
 		skillingActivityTracker.clear();
 		pendingSkillXpSeed = false;
 		animationFrameSnapper.clear();
@@ -541,6 +543,12 @@ public class NpcSnapPlugin extends Plugin
 		return ensureSceneDrawCallbacks().addEntity(renderable, drawingUi);
 	}
 
+	@Subscribe
+	public void onHitsplatApplied(HitsplatApplied hitsplatApplied)
+	{
+		billboardOverlay.recordHitsplat(hitsplatApplied.getActor(), hitsplatApplied.getHitsplat());
+	}
+
 	@Override
 	public boolean draw(Renderable renderable, boolean drawingUi)
 	{
@@ -575,6 +583,12 @@ public class NpcSnapPlugin extends Plugin
 				public boolean shouldHideRenderable(Renderable renderable)
 				{
 					return billboardOverlay.shouldHideRenderable(renderable);
+				}
+
+				@Override
+				public boolean shouldHideActor2d(Renderable renderable)
+				{
+					return billboardOverlay.shouldHideActor2d(renderable);
 				}
 
 				@Override

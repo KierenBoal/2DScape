@@ -15,6 +15,7 @@ public final class BillboardVisibilityState
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<Renderable> suppressedRenderableSnapshot = Collections.emptySet();
 	private volatile Set<TileObject> activeTileObjectSnapshot = Collections.emptySet();
+	private volatile Set<Renderable> drawableActor2dSnapshot = Collections.emptySet();
 
 	public void clearSelections()
 	{
@@ -28,6 +29,7 @@ public final class BillboardVisibilityState
 		activeBillboardSnapshot = Collections.emptySet();
 		suppressedRenderableSnapshot = Collections.emptySet();
 		activeTileObjectSnapshot = Collections.emptySet();
+		drawableActor2dSnapshot = Collections.emptySet();
 	}
 
 	public void publishSnapshots()
@@ -42,6 +44,21 @@ public final class BillboardVisibilityState
 		return clientThread
 			? activeBillboards.contains(renderable) || suppressedRenderables.contains(renderable)
 			: activeBillboardSnapshot.contains(renderable) || suppressedRenderableSnapshot.contains(renderable);
+	}
+
+	public boolean hasActiveBillboard(Renderable renderable, boolean clientThread)
+	{
+		return clientThread ? activeBillboards.contains(renderable) : activeBillboardSnapshot.contains(renderable);
+	}
+
+	public boolean hadDrawableActor2dBillboard(Renderable renderable)
+	{
+		return drawableActor2dSnapshot.contains(renderable);
+	}
+
+	public void publishDrawableActor2d(Set<Renderable> renderables)
+	{
+		drawableActor2dSnapshot = copy(renderables);
 	}
 
 	public boolean hasActiveTileObject(TileObject tileObject, boolean clientThread)

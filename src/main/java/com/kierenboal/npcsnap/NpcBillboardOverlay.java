@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.features.GroundItemBillboardTracker;
+import com.kierenboal.npcsnap.features.ActorOverheadRenderer;
 import com.kierenboal.npcsnap.export.BillboardExportAngles;
 import com.kierenboal.npcsnap.export.BillboardExportAnimationFrames;
 import com.kierenboal.npcsnap.export.BillboardExportBatch;
@@ -89,6 +90,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
+import net.runelite.api.Hitsplat;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.DynamicObject;
@@ -158,6 +160,7 @@ class NpcBillboardOverlay extends Overlay
 	private final ActorStackTracker actorStackTracker = new ActorStackTracker();
 	private final BillboardRenderRequestFactory requestFactory;
 	private final BillboardTargetEligibility targetEligibility;
+	private final ActorOverheadRenderer actorOverheadRenderer;
 
 	@Inject
 	private NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper)
@@ -175,6 +178,7 @@ class NpcBillboardOverlay extends Overlay
 			client, config, requestFactory, this::projectedModelCanvasBounds, this::isSceneRenderedInFront);
 		this.textureResolver = new BillboardTextureResolver(client, config);
 		this.classificationDebug = new BillboardClassificationDebug(client, config, log);
+		this.actorOverheadRenderer = new ActorOverheadRenderer(client);
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(PRIORITY_HIGHEST);
@@ -227,6 +231,8 @@ class NpcBillboardOverlay extends Overlay
 				renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
 			}
 			compositePreparedDraws(graphics, preparedDraws);
+			actorOverheadRenderer.render(graphics, preparedDraws);
+			publishDrawableActor2d(preparedDraws);
 
 			return null;
 		}
@@ -430,6 +436,12 @@ class NpcBillboardOverlay extends Overlay
 	void clearInteractionIfMatches(Actor actor)
 	{
 		interactionState.clearIfMatches(actor);
+		actorOverheadRenderer.clear(actor);
+	}
+
+	void recordHitsplat(Actor actor, Hitsplat hitsplat)
+	{
+		actorOverheadRenderer.recordHitsplat(actor, hitsplat);
 	}
 
 	void clearInteractionIfMatches(TileItem item)
@@ -440,6 +452,7 @@ class NpcBillboardOverlay extends Overlay
 	void clearInteractionState()
 	{
 		interactionState.clear();
+		actorOverheadRenderer.clear();
 	}
 
 	BillboardExportBatch captureExport(MenuEntry sourceEntry)
@@ -764,6 +777,36 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return visibility.shouldHideRenderable(renderable, client.isClientThread());
+	}
+
+	boolean shouldHideActor2d(Renderable renderable)
+	{
+		if (!(renderable instanceof Actor)
+			|| !visibility.hasActiveBillboard(renderable, client.isClientThread())
+			|| !visibility.hadDrawableActor2dBillboard(renderable))
+		{
+			return false;
+		}
+
+		return actorOverheadRenderer.canReplace((Actor) renderable);
+	}
+
+	private void publishDrawableActor2d(List<PreparedBillboardDraw> preparedDraws)
+	{
+		Set<Renderable> drawable = Collections.newSetFromMap(new IdentityHashMap<>());
+		Set<Actor> drawableActors = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (PreparedBillboardDraw draw : preparedDraws)
+		{
+			if (draw != null && draw.request != null && draw.request.renderable instanceof Actor
+				&& draw.image != null && draw.bounds != null && !draw.bounds.isEmpty()
+				&& actorOverheadRenderer.canReplace((Actor) draw.request.renderable))
+			{
+				drawable.add(draw.request.renderable);
+				drawableActors.add((Actor) draw.request.renderable);
+			}
+		}
+		actorOverheadRenderer.updateDrawableActors(drawableActors);
+		visibility.publishDrawableActor2d(drawable);
 	}
 
 	boolean shouldHideTileObject(TileObject tileObject)

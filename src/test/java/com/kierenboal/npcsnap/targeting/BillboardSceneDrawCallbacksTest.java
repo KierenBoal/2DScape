@@ -32,6 +32,19 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	@Test
+	public void uiCallbacksOnlySuppressActorsEligibleForOverheadReplacement()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		NPC npc = TestProxies.proxy(NPC.class);
+
+		assertTrue(callbacks(true, false, false, overlay).addEntity(npc, true));
+		overlay.hiddenActor2d.add(npc);
+		assertFalse(callbacks(true, false, false, overlay).addEntity(npc, true));
+		assertFalse(callbacks(true, false, false, overlay).draw(npc, true));
+		assertTrue(overlay.noted.isEmpty());
+	}
+
+	@Test
 	public void addEntityAlwaysPreservesActorInteraction()
 	{
 		FakeOverlay overlay = new FakeOverlay();
@@ -127,6 +140,7 @@ public class BillboardSceneDrawCallbacksTest
 		private final Set<TileObject> observed = identitySet();
 		private final Set<Renderable> hiddenRenderables = identitySet();
 		private final Set<TileObject> hiddenTileObjects = identitySet();
+		private final Set<Renderable> hiddenActor2d = identitySet();
 
 		@Override
 		public void noteSceneRenderable(Renderable renderable)
@@ -147,6 +161,12 @@ public class BillboardSceneDrawCallbacksTest
 		public boolean shouldHideRenderable(Renderable renderable)
 		{
 			return hiddenRenderables.contains(renderable);
+		}
+
+		@Override
+		public boolean shouldHideActor2d(Renderable renderable)
+		{
+			return hiddenActor2d.contains(renderable);
 		}
 
 		@Override

@@ -2,6 +2,10 @@ package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.TestProxies;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+
 import net.runelite.api.Renderable;
 import net.runelite.api.TileObject;
 import org.junit.Test;
@@ -21,7 +25,9 @@ public class BillboardVisibilityStateTest
 		state.suppressedRenderables.add(suppressed);
 
 		assertTrue(state.shouldHideRenderable(active, true));
+		assertTrue(state.hasActiveBillboard(active, true));
 		assertTrue(state.shouldHideRenderable(suppressed, true));
+		assertFalse(state.hasActiveBillboard(suppressed, true));
 		assertFalse(state.shouldHideRenderable(active, false));
 	}
 
@@ -33,6 +39,7 @@ public class BillboardVisibilityStateTest
 		Renderable later = TestProxies.proxy(Renderable.class);
 		state.activeBillboards.add(first);
 		state.publishSnapshots();
+		assertTrue(state.hasActiveBillboard(first, false));
 		state.activeBillboards.remove(first);
 		state.activeBillboards.add(later);
 
@@ -72,5 +79,20 @@ public class BillboardVisibilityStateTest
 		assertTrue(state.shouldHideRenderable(renderable, false));
 		state.clearSnapshots();
 		assertFalse(state.shouldHideRenderable(renderable, false));
+		assertFalse(state.hasActiveBillboard(renderable, false));
+	}
+
+	@Test
+	public void drawableActorDecisionIsPublishedAndClearedIndependently()
+	{
+		BillboardVisibilityState state = new BillboardVisibilityState();
+		Renderable actor = TestProxies.proxy(Renderable.class);
+		Set<Renderable> drawable = Collections.newSetFromMap(new IdentityHashMap<>());
+		drawable.add(actor);
+
+		state.publishDrawableActor2d(drawable);
+		assertTrue(state.hadDrawableActor2dBillboard(actor));
+		state.clearSnapshots();
+		assertFalse(state.hadDrawableActor2dBillboard(actor));
 	}
 }

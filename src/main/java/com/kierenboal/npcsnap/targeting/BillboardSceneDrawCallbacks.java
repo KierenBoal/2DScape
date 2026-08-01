@@ -20,6 +20,8 @@ public final class BillboardSceneDrawCallbacks
 
 		boolean shouldHideRenderable(Renderable renderable);
 
+		boolean shouldHideActor2d(Renderable renderable);
+
 		boolean shouldHideTileObject(TileObject tileObject);
 	}
 
@@ -34,6 +36,10 @@ public final class BillboardSceneDrawCallbacks
 
 	public boolean addEntity(Renderable renderable, boolean drawingUi)
 	{
+		if (drawingUi)
+		{
+			return !overlay.shouldHideActor2d(renderable);
+		}
 		if (!isActiveSceneDraw(drawingUi))
 		{
 			return true;
@@ -48,6 +54,10 @@ public final class BillboardSceneDrawCallbacks
 
 	public boolean draw(Renderable renderable, boolean drawingUi)
 	{
+		if (drawingUi)
+		{
+			return !overlay.shouldHideActor2d(renderable);
+		}
 		if (!isActiveSceneDraw(drawingUi))
 		{
 			return true;
