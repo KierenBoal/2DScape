@@ -1,17 +1,19 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
+import net.runelite.api.Model;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardDepthSurface
 {
-	private static final BillboardDepthSurface INVALID = new BillboardDepthSurface(null, 0, 0, Double.NaN, 0, null, null);
+	private static final BillboardDepthSurface INVALID = new BillboardDepthSurface(null, 0, 0, Double.NaN, 0, false, null, null);
 
 	private final BillboardDepthCalculator depthCalculator;
 	private final int baseLocalX;
 	private final int baseLocalY;
 	private final double baseHeight;
 	private final int modelHeight;
+	private final boolean supportsWorldOcclusion;
 	private final Rectangle sourceBounds;
 	private final Rectangle drawBounds;
 
@@ -32,6 +34,7 @@ public final class BillboardDepthSurface
 			baseLocalY,
 			baseHeight,
 			Math.max(0, modelHeight),
+			modelHeight > 0,
 			sourceBounds != null ? new Rectangle(sourceBounds) : null,
 			drawBounds != null ? new Rectangle(drawBounds) : null
 		);
@@ -43,6 +46,7 @@ public final class BillboardDepthSurface
 		int baseLocalY,
 		double baseHeight,
 		int modelHeight,
+		boolean supportsWorldOcclusion,
 		Rectangle sourceBounds,
 		Rectangle drawBounds)
 	{
@@ -51,6 +55,7 @@ public final class BillboardDepthSurface
 		this.baseLocalY = baseLocalY;
 		this.baseHeight = baseHeight;
 		this.modelHeight = modelHeight;
+		this.supportsWorldOcclusion = supportsWorldOcclusion;
 		this.sourceBounds = sourceBounds;
 		this.drawBounds = drawBounds;
 	}
@@ -75,11 +80,61 @@ public final class BillboardDepthSurface
 			localPoint.getY(),
 			baseHeight + request.verticalOffset,
 			request.renderable.getModelHeight(),
+			supportsVerticalPlaneOcclusion(request.model),
 			sourceBounds,
-			drawBounds,
-			request.relativeYaw,
-			request.relativePitch
+			drawBounds
 		);
+	}
+
+	public boolean supportsWorldOcclusion()
+	{
+		return supportsWorldOcclusion;
+	}
+
+	static boolean supportsVerticalPlaneOcclusion(Model model)
+	{
+		if (model == null || model.getVerticesCount() <= 0)
+		{
+			return false;
+		}
+
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		if (verticesX == null || verticesY == null || verticesZ == null)
+		{
+			return false;
+		}
+
+		int count = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
+		float minX = Float.POSITIVE_INFINITY;
+		float minY = Float.POSITIVE_INFINITY;
+		float minZ = Float.POSITIVE_INFINITY;
+		float maxX = Float.NEGATIVE_INFINITY;
+		float maxY = Float.NEGATIVE_INFINITY;
+		float maxZ = Float.NEGATIVE_INFINITY;
+		for (int i = 0; i < count; i++)
+		{
+			if (!Float.isFinite(verticesX[i]) || !Float.isFinite(verticesY[i]) || !Float.isFinite(verticesZ[i]))
+			{
+				continue;
+			}
+			minX = Math.min(minX, verticesX[i]);
+			minY = Math.min(minY, verticesY[i]);
+			minZ = Math.min(minZ, verticesZ[i]);
+			maxX = Math.max(maxX, verticesX[i]);
+			maxY = Math.max(maxY, verticesY[i]);
+			maxZ = Math.max(maxZ, verticesZ[i]);
+		}
+
+		if (!Float.isFinite(minX))
+		{
+			return false;
+		}
+
+		double verticalSpan = maxY - minY;
+		double horizontalSpan = Math.max(maxX - minX, maxZ - minZ);
+		return verticalSpan >= Math.max(2.0d, horizontalSpan * 0.1d);
 	}
 
 	public double depthAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight, int canvasY)

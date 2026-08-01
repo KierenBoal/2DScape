@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.TestProxies;
 
 import java.awt.Rectangle;
 import net.runelite.api.Client;
+import net.runelite.api.Model;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
@@ -148,6 +149,24 @@ public class BillboardDepthSurfaceTest
 	public void invalidSurfaceReturnsNan()
 	{
 		assertFalse(Double.isFinite(BillboardDepthSurface.invalid().depthAt(0, 0, 1, 1)));
+	}
+
+	@Test
+	public void flatModelsBypassVerticalPlaneWorldOcclusion()
+	{
+		Model flat = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-50, 50, 50, -50}),
+			method("getVerticesY", new float[] {0, 0, -1, -1}),
+			method("getVerticesZ", new float[] {-50, -50, 50, 50}));
+		Model upright = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}),
+			method("getVerticesY", new float[] {0, 0, -100, -100}),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+
+		assertFalse(BillboardDepthSurface.supportsVerticalPlaneOcclusion(flat));
+		assertTrue(BillboardDepthSurface.supportsVerticalPlaneOcclusion(upright));
 	}
 
 	private static Client client(int yaw, int pitch)

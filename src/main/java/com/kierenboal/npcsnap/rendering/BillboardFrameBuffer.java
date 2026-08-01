@@ -79,8 +79,8 @@ public final class BillboardFrameBuffer
 		int drawWidth = draw.bounds.width;
 		int drawHeight = draw.bounds.height;
 		int drawPaintOrder = draw.paintOrder;
-		boolean hasActiveOcclusion = occlusionMask.coveredCellCount() > 0;
-		BillboardDepthSurface billboardDepth = hasActiveOcclusion ? depthSurfaceFactory.create(draw) : null;
+		BillboardDepthSurface billboardDepth = occlusionMask.coveredCellCount() > 0 ? depthSurfaceFactory.create(draw) : null;
+		boolean hasActiveOcclusion = billboardDepth != null && billboardDepth.supportsWorldOcclusion();
 		int clippedHeight = clipBottom - clipTop;
 		if (hasActiveOcclusion)
 		{
