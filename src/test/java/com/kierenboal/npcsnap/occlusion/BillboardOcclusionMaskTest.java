@@ -1,5 +1,16 @@
 package com.kierenboal.npcsnap.occlusion;
 
+import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
+import com.kierenboal.npcsnap.rendering.BillboardDepthSurface;
+import com.kierenboal.npcsnap.rendering.BillboardFrameBuffer;
+import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
+import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
+import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+import java.awt.Polygon;
+import net.runelite.api.Client;
+
+import static com.kierenboal.npcsnap.TestProxies.method;
+import static com.kierenboal.npcsnap.TestProxies.proxy;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
@@ -14,6 +25,90 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardOcclusionMaskTest
 {
+	@Test
+	public void runeLiteHullRetainsItsInteriorAtHighAndLow()
+	{
+		net.runelite.api.geometry.SimplePolygon hull = new net.runelite.api.geometry.SimplePolygon(
+			new int[] {0, 64, 0}, new int[] {0, 0, 64}, 3);
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.HIGH, BillboardOcclusionQuality.LOW})
+		{
+			BillboardOcclusionMask mask = new BillboardOcclusionMask();
+			mask.prepare(Collections.singletonList(BillboardOcclusionMask.Occluder.vertical(
+				hull, 64, 100f, 0, 200f, "runelite-hull")), quality, 0, 0, 64, 64);
+			assertTrue(mask.isOccluded(20, 20, 300d));
+			assertFalse(mask.isOccluded(48, 48, 300d));
+			assertEquals(BillboardOcclusionMask.CellResult.OCCLUDED,
+				mask.classifySample(mask.sampleX(20), 20, 300d));
+		}
+	}
+	@Test
+	public void verticalFallbackDoesNotFillItsBoundingRectangle()
+	{
+		Polygon shape = new Polygon(
+			new int[] {0, 12, 0}, new int[] {0, 0, 12}, 3);
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.singletonList(BillboardOcclusionMask.Occluder.vertical(
+			shape, 12, 100f, 0, 200f, "wall")),
+			BillboardOcclusionQuality.HIGH, 0, 0, 12, 12);
+		assertTrue(mask.isOccluded(1, 1, 300d));
+		assertFalse(mask.isOccluded(10, 10, 300d));
+		assertEquals(null, mask.sourceAt(10, 10));
+	}
+
+	@Test
+	public void compositorRefinesTriangleEdgesWithinOneCoarseCell()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.singletonList(BillboardOcclusionMask.Occluder.triangle(
+			0, 0, 20f, 3, 0, 20f, 0, 3, 20f)),
+			BillboardOcclusionQuality.HIGH, 0, 0, 4, 4);
+		// The center misses this triangle, but the cell must still be considered.
+		assertEquals(BillboardOcclusionMask.CellResult.REFINE, mask.classifySample(0, 1, 1000d));
+		Client client = proxy(
+			Client.class,
+			method("getCameraFpY", -1000f),
+			method("get3dZoom", 512),
+			method("getViewportHeight", 4));
+		BillboardDepthSurface surface =
+			new BillboardDepthSurface(
+				new BillboardDepthCalculator(client),
+				0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4), 0, 0);
+		BillboardFrameBuffer buffer =
+			new BillboardFrameBuffer(mask,
+				new BillboardPerformanceMetrics(), draw -> surface);
+		BufferedImage sprite = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
+		for (int y = 0; y < 4; y++)
+		{
+			for (int x = 0; x < 4; x++) { sprite.setRGB(x, y, 0xFFFFFFFF); }
+		}
+		buffer.begin(4, 4);
+		buffer.blit(new PreparedBillboardDraw(null,
+			new BillboardRenderResult(new Rectangle(0, 0, 4, 4),
+				sprite, new Rectangle(0, 0, 4, 4)), 1), 0, 0, 4, 4, false);
+		assertEquals(0, buffer.image().getRGB(1, 1));
+		assertEquals(0xFFFFFFFF, buffer.image().getRGB(3, 1));
+		assertFalse(mask.isOccluded(-1, 1, 1000d));
+
+		// Exercise full interior cells as well as refined edges at both reported qualities.
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.HIGH, BillboardOcclusionQuality.LOW})
+		{
+			mask.prepare(Collections.singletonList(BillboardOcclusionMask.Occluder.triangle(
+				0, 0, 20f, 31, 0, 20f, 0, 31, 20f)), quality, 0, 0, 32, 32);
+			for (int y = 0; y < 32; y++)
+			{
+				for (int x = 0; x < 32; x++)
+				{
+					BillboardOcclusionMask.CellResult result = mask.classifySample(mask.sampleX(x), y, 1000d);
+					boolean hidden = result == BillboardOcclusionMask.CellResult.OCCLUDED
+						|| (result == BillboardOcclusionMask.CellResult.REFINE
+							&& (mask.refinedSampleBits(mask.sampleX(x), y, 1000d) & (1 << mask.sampleOffset(x))) != 0);
+					assertEquals(x + y <= 31, hidden);
+				}
+			}
+		}
+	}
 	@Test
 	public void qualityLevelsTradeAccuracyForSamplingCost()
 	{

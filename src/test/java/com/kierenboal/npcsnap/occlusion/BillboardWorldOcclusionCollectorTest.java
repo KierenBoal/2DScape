@@ -23,12 +23,89 @@ import static com.kierenboal.npcsnap.TestProxies.method;
 import static com.kierenboal.npcsnap.TestProxies.methodSupplier;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class BillboardWorldOcclusionCollectorTest
 {
+	@Test
+	public void hiddenFacesUseSeparateUnsignedTransparencyAndColorSentinel()
+	{
+		Model staticModel = proxy(Model.class);
+		// This proxy's inherited getModel() returns null: a static Model must be used directly.
+		assertSame(staticModel, BillboardWorldOcclusionCollector.occlusionModel(staticModel));
+		assertSame(staticModel, BillboardWorldOcclusionCollector.occlusionModel(
+			proxy(Renderable.class, method("getModel", staticModel))));
+		int[] colors = {-2, -1, 0, 1234, 1234};
+		byte[] transparencies = {0, 0, 0, (byte) 255, (byte) 128};
+		assertTrue(BillboardWorldOcclusionCollector.isInvisibleFace(0, colors, transparencies));
+		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(1, colors, transparencies));
+		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(2, colors, transparencies));
+		assertTrue(BillboardWorldOcclusionCollector.isInvisibleFace(3, colors, transparencies));
+		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(4, colors, transparencies));
+		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(0, null, null));
+	}
+	@Test
+	public void directCandidatePlanesStartAtTheCurrentPlane()
+	{
+		assertArrayEquals(new int[] {0, 1, 2, 3}, BillboardWorldOcclusionCollector.directCandidatePlanes(0, 4));
+		assertArrayEquals(new int[] {2, 3}, BillboardWorldOcclusionCollector.directCandidatePlanes(2, 4));
+		assertArrayEquals(new int[] {3}, BillboardWorldOcclusionCollector.directCandidatePlanes(3, 4));
+		assertArrayEquals(new int[0], BillboardWorldOcclusionCollector.directCandidatePlanes(4, 4));
+	}
+
+	@Test
+	public void classifiesUpperPlaneTilesWithoutRoofGroupsAsNonRoof()
+	{
+		SceneFixture fixture = sceneFixture();
+		BillboardWorldOcclusionCollector.RoofClassification classification =
+			BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, fixture.tile(1, 0, 0));
+
+		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.NON_ROOF, classification.kind);
+		assertEquals(0, classification.roofId);
+	}
+
+	@Test
+	public void classifiesVisibleBelowTilesAsNonRoof()
+	{
+		SceneFixture fixture = sceneFixture();
+		fixture.settings[1][fixture.offset][fixture.offset] = 8;
+
+		BillboardWorldOcclusionCollector.RoofClassification classification =
+			BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, fixture.tile(1, 0, 0));
+
+		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.NON_ROOF, classification.kind);
+		assertTrue(classification.visibleBelow);
+	}
+
+	@Test
+	public void classifiesRoofGroupedTilesAndRejectsGpuUploadEvidence()
+	{
+		SceneFixture fixture = sceneFixture();
+		fixture.roofs[0][fixture.offset][fixture.offset] = 42;
+
+		BillboardWorldOcclusionCollector.RoofClassification classification =
+			BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, fixture.tile(1, 0, 0));
+
+		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.ROOF, classification.kind);
+		assertEquals(42, classification.roofId);
+		assertTrue(BillboardWorldOcclusionCollector.canUseRenderedRoofEvidence(false, true));
+		assertFalse(BillboardWorldOcclusionCollector.canUseRenderedRoofEvidence(false, false));
+		assertFalse(BillboardWorldOcclusionCollector.canUseRenderedRoofEvidence(true, true));
+	}
+
+	@Test
+	public void rejectsRoofClassificationWhenMetadataIsOutOfBounds()
+	{
+		SceneFixture fixture = sceneFixture();
+		BillboardWorldOcclusionCollector.RoofClassification classification =
+			BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, fixture.tile(1, 900, 900));
+
+		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.UNKNOWN, classification.kind);
+	}
+
 	@Test
 	public void triangleBoundsIncludesAllEdgePixelsWithoutPolygonAllocation()
 	{
@@ -178,5 +255,37 @@ public class BillboardWorldOcclusionCollectorTest
 	private static Set<Tile> identitySet()
 	{
 		return Collections.newSetFromMap(new IdentityHashMap<>());
+	}
+
+	private static SceneFixture sceneFixture()
+	{
+		byte[][][] settings = new byte[4][184][184];
+		int[][][] roofs = new int[4][184][184];
+		net.runelite.api.Scene scene = proxy(
+			net.runelite.api.Scene.class,
+			method("getExtendedTileSettings", settings),
+			method("getRoofs", roofs));
+		return new SceneFixture(scene, settings, roofs, 40);
+	}
+
+	private static final class SceneFixture
+	{
+		private final net.runelite.api.Scene scene;
+		private final byte[][][] settings;
+		private final int[][][] roofs;
+		private final int offset;
+
+		private SceneFixture(net.runelite.api.Scene scene, byte[][][] settings, int[][][] roofs, int offset)
+		{
+			this.scene = scene;
+			this.settings = settings;
+			this.roofs = roofs;
+			this.offset = offset;
+		}
+
+		private Tile tile(int plane, int sceneX, int sceneY)
+		{
+			return proxy(Tile.class, method("getPlane", plane), method("getSceneLocation", new Point(sceneX, sceneY)));
+		}
 	}
 }

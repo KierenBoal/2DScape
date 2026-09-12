@@ -108,8 +108,10 @@ public final class BillboardFrameBuffer
 			int clippedRow = y - clipTop;
 			boolean rowHasOcclusion = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
 			long rowOcclusionStart = measureOcclusion && rowHasOcclusion ? System.nanoTime() : 0L;
-			boolean cachedSampleOccluded = false;
+			BillboardOcclusionMask.CellResult cachedSampleResult = BillboardOcclusionMask.CellResult.VISIBLE;
 			int cachedSampleX = Integer.MIN_VALUE;
+			int cachedSampleBits = 0;
+			int cachedSampleStartX = 0;
 			for (int x = clipLeft; x < clipRight; x++)
 			{
 				int destinationIndex = destinationRow + (x - viewportX);
@@ -146,9 +148,16 @@ public final class BillboardFrameBuffer
 						if (sampleX != cachedSampleX)
 						{
 							cachedSampleX = sampleX;
-							cachedSampleOccluded = occlusionMask.isOccludedSample(sampleX, y, pixelDepth);
+							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth);
+							if (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE)
+							{
+								cachedSampleBits = occlusionMask.refinedSampleBits(sampleX, y, pixelDepth);
+								cachedSampleStartX = x - occlusionMask.sampleOffset(x);
+							}
 						}
-						occluded = cachedSampleOccluded;
+						occluded = cachedSampleResult == BillboardOcclusionMask.CellResult.OCCLUDED
+							|| (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE
+								&& (cachedSampleBits & (1 << (x - cachedSampleStartX))) != 0);
 					}
 					else
 					{
