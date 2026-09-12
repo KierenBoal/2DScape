@@ -24,9 +24,9 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableBillboardSpriteShadows());
 		assertFalse(config.applyToBoats());
 		assertFalse(config.deterministicAnimationLooping());
-		assertTrue(config.useRetroHpBar());
-		assertTrue(config.useRetroHitsplats());
-		assertTrue(config.useRetroChatEffects());
+		assertTrue(config.useRetroOverheads());
+		assertTrue(config.alignOverheadPrayers());
+		assertFalse(config.ignoreProjectionSkewCorrection());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
 	}
@@ -44,9 +44,25 @@ public class NpcSnapConfigTest
 	public void retroOverheadOptionsHaveStablePublicConfiguration()
 		throws NoSuchMethodException
 	{
-		assertConfig("useRetroHpBar", "useRetroHpBar", "Use retro HP bar", 11);
-		assertConfig("useRetroHitsplats", "useRetroHitsplats", "Use retro hitsplats", 12);
-		assertConfig("useRetroChatEffects", "useRetroChatEffects", "Use retro chat effects", 13);
+		assertConfig("useRetroOverheads", "useRetroOverheads", "Use retro HP bar, overhead chat and hitsplats", 11);
+		assertLegacyConfigHidden("useRetroHpBar");
+		assertLegacyConfigHidden("useRetroHitsplats");
+		assertLegacyConfigHidden("useRetroChatEffects");
+		assertConfig("alignOverheadPrayers", "alignOverheadPrayers", "Align overhead prayers", 12);
+	}
+
+	@Test
+	public void retroProjectionOptionsHaveStablePublicConfiguration()
+		throws NoSuchMethodException
+	{
+		assertConfig("ignoreProjectionSkewCorrection", "ignoreProjectionSkewCorrection", "Ignore projection skew correction", 13);
+	}
+
+	private static void assertLegacyConfigHidden(String method)
+		throws NoSuchMethodException
+	{
+		ConfigItem item = NpcSnapConfig.class.getMethod(method).getAnnotation(ConfigItem.class);
+		assertTrue(item.hidden());
 	}
 
 	private static void assertConfig(String method, String key, String name, int position)
@@ -92,6 +108,7 @@ public class NpcSnapConfigTest
 		assertFalse(config.debugDrawBillboardPaintOrder());
 		assertFalse(config.debugPerformanceMetrics());
 		assertFalse(config.debugLogClassifications());
+		assertFalse(config.debugLogProjectionSkew());
 	}
 
 	@Test

@@ -11,6 +11,7 @@ public final class PreparedBillboardDraw
 	public final BufferedImage image;
 	public final Rectangle bounds;
 	public final Rectangle sourceBounds;
+	public final BillboardDrawGeometry geometry;
 
 	public PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
 	{
@@ -20,6 +21,7 @@ public final class PreparedBillboardDraw
 		this.image = result != null ? result.image : null;
 		this.bounds = result != null ? result.bounds : null;
 		this.sourceBounds = result != null ? result.sourceBounds : null;
+		this.geometry = result != null ? result.geometry : null;
 	}
 }
 

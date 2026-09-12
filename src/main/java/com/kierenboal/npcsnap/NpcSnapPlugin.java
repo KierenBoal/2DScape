@@ -76,6 +76,8 @@ import net.runelite.client.util.LinkBrowser;
 public class NpcSnapPlugin extends Plugin
 	implements Hooks.RenderableDrawListener
 {
+	private static final String CONFIG_GROUP = "npc-snap";
+	private static final String RETRO_OVERHEADS_KEY = "useRetroOverheads";
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
@@ -95,6 +97,9 @@ public class NpcSnapPlugin extends Plugin
 
 	@Inject
 	private NpcSnapConfig config;
+
+	@Inject
+	private ConfigManager configManager;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -126,6 +131,7 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		migrateLegacyRetroOverheadConfig();
 		ensureTextureBandingManager().markDirty();
 		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
@@ -135,6 +141,30 @@ public class NpcSnapPlugin extends Plugin
 		renderCallbackManager.register(this);
 		billboardPngExporter.start();
 		log.debug("2DScape started");
+	}
+
+	private void migrateLegacyRetroOverheadConfig()
+	{
+		if (configManager.getConfiguration(CONFIG_GROUP, RETRO_OVERHEADS_KEY) != null)
+		{
+			return;
+		}
+
+		String legacyHpBar = configManager.getConfiguration(CONFIG_GROUP, "useRetroHpBar");
+		String legacyHitsplats = configManager.getConfiguration(CONFIG_GROUP, "useRetroHitsplats");
+		String legacyChatEffects = configManager.getConfiguration(CONFIG_GROUP, "useRetroChatEffects");
+		if (legacyHpBar == null && legacyHitsplats == null && legacyChatEffects == null)
+		{
+			return;
+		}
+
+		boolean enabled = !isFalse(legacyHpBar) && !isFalse(legacyHitsplats) && !isFalse(legacyChatEffects);
+		configManager.setConfiguration(CONFIG_GROUP, RETRO_OVERHEADS_KEY, enabled);
+	}
+
+	private static boolean isFalse(String value)
+	{
+		return "false".equalsIgnoreCase(value);
 	}
 
 	@Override

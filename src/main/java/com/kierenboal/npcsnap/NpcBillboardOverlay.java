@@ -15,9 +15,11 @@ import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
 import com.kierenboal.npcsnap.occlusion.BillboardWorldOcclusionCollector;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.BillboardAngleUtils;
+import com.kierenboal.npcsnap.rendering.BillboardCanvasPoint;
 import com.kierenboal.npcsnap.rendering.BillboardColorUtils;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
 import com.kierenboal.npcsnap.rendering.BillboardDepthSurface;
+import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardFaceRasterizer;
 import com.kierenboal.npcsnap.rendering.BillboardFrameBuffer;
 import com.kierenboal.npcsnap.rendering.BillboardGeometryUtils;
@@ -176,6 +178,9 @@ class NpcBillboardOverlay extends Overlay
 	private final BillboardRenderRequestFactory requestFactory;
 	private final BillboardTargetEligibility targetEligibility;
 	private final ActorOverheadRenderer actorOverheadRenderer;
+	private Actor lastSkewDebugActor;
+	private int lastSkewDebugCameraPitch = Integer.MIN_VALUE;
+	private int lastSkewDebugCameraYaw = Integer.MIN_VALUE;
 
 	@Inject
 	private NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper)
@@ -311,6 +316,9 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		activeRenderableTargets.clear();
+		lastSkewDebugActor = null;
+		lastSkewDebugCameraPitch = Integer.MIN_VALUE;
+		lastSkewDebugCameraYaw = Integer.MIN_VALUE;
 		actorStackTracker.clear();
 		worldOcclusionCollector.clearInterest();
 		clearInteractionState();
@@ -916,7 +924,7 @@ class NpcBillboardOverlay extends Overlay
 			return false;
 		}
 
-		return actorOverheadRenderer.canReplace((Actor) renderable);
+		return actorOverheadRenderer.shouldReplace((Actor) renderable);
 	}
 
 	private void publishDrawableActor2d(List<PreparedBillboardDraw> preparedDraws)
@@ -927,7 +935,7 @@ class NpcBillboardOverlay extends Overlay
 		{
 			if (draw != null && draw.request != null && draw.request.renderable instanceof Actor
 				&& draw.image != null && draw.bounds != null && !draw.bounds.isEmpty()
-				&& actorOverheadRenderer.canReplace((Actor) draw.request.renderable))
+				&& actorOverheadRenderer.shouldReplace((Actor) draw.request.renderable))
 			{
 				drawable.add(draw.request.renderable);
 				drawableActors.add((Actor) draw.request.renderable);
@@ -1331,8 +1339,8 @@ class NpcBillboardOverlay extends Overlay
 	private void drawRenderDebug(Graphics2D graphics, BillboardRenderResult result, BillboardRenderRequest request, int paintOrder)
 	{
 		CachedBillboard cached = request != null ? billboardCache.get(request.renderable) : null;
-		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forBounds(
-			result.bounds,
+		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forGeometry(
+			result.geometry,
 			paintOrder,
 			cached != null && cached.consumeDebugFrameRedrawn(),
 			cached != null && cached.consumeDebugFrameInvalidated(),
@@ -1625,7 +1633,11 @@ class NpcBillboardOverlay extends Overlay
 
 		CachedBillboard cached = billboardCache.get(request.renderable);
 		Rectangle bounds = cached != null ? cached.bounds : estimateBillboardImageBounds(request);
-		return bounds != null ? buildDrawRect(request, request.renderable, bounds) : null;
+		Rectangle contentBounds = cached != null ? cached.contentBounds : bounds;
+		BillboardDrawGeometry geometry = bounds != null
+			? buildDrawGeometry(request, request.renderable, bounds, contentBounds)
+			: null;
+		return geometry != null ? geometry.bounds : null;
 	}
 
 	private Rectangle estimateBillboardImageBounds(BillboardRenderRequest request)
@@ -3453,12 +3465,12 @@ class NpcBillboardOverlay extends Overlay
 				{
 					int outlinePadding = outlinePadding(updatePlan.qualityScale);
 					Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(sourceBounds, outlinePadding);
-					Rectangle previewDrawRect;
+					BillboardDrawGeometry previewGeometry;
 					try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Draw rect calculation"))
 					{
-						previewDrawRect = buildDrawRect(request, renderable, imageBounds);
+						previewGeometry = buildDrawGeometry(request, renderable, imageBounds, sourceBounds);
 					}
-					if (previewDrawRect == null)
+					if (previewGeometry == null)
 					{
 						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis, queuePosition);
 					}
@@ -3496,7 +3508,7 @@ class NpcBillboardOverlay extends Overlay
 						);
 						if (rendered != null)
 						{
-							cached = new CachedBillboard(cacheKey, imageBounds, rendered.image, nowMillis);
+							cached = new CachedBillboard(cacheKey, imageBounds, sourceBounds, rendered.image, nowMillis);
 							cached.markDebugFrameRedrawn();
 							billboardCache.put(renderable, cached);
 							spriteRedrawn = true;
@@ -3540,8 +3552,8 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		cached.stateDebugInfo(buildStateDebugInfo(request, queuePosition));
-		Rectangle drawRect = buildDrawRect(request, renderable, cached.bounds);
-		return drawRect != null ? new BillboardRenderResult(drawRect, cached.image, cached.bounds) : null;
+		BillboardDrawGeometry geometry = buildDrawGeometry(request, renderable, cached.bounds, cached.contentBounds);
+		return geometry != null ? new BillboardRenderResult(geometry, cached.image, cached.bounds) : null;
 	}
 
 	private BillboardCacheKey buildCacheKey(
@@ -3586,7 +3598,41 @@ class NpcBillboardOverlay extends Overlay
 		return new Rectangle(drawX, drawY, targetWidth, targetHeight);
 	}
 
-	private Rectangle buildDrawRect(BillboardRenderRequest request, Renderable renderable, Rectangle billboardBounds)
+	private BillboardDrawGeometry buildDrawGeometry(
+		BillboardRenderRequest request,
+		Renderable renderable,
+		Rectangle billboardBounds,
+		Rectangle contentBounds)
+	{
+		boolean actor = renderable instanceof Actor;
+		BillboardCanvasPoint base = actor
+			? depthCalculator.projectCanvasPoint(request.localPoint, request.plane, request.verticalOffset)
+			: null;
+		Rectangle drawRect = base != null
+			? BillboardGeometryUtils.projectedDrawBounds(billboardBounds, base, client.getScale())
+			: buildLegacyDrawRect(request, renderable, billboardBounds);
+		if (drawRect == null)
+		{
+			return null;
+		}
+
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.rectangular(drawRect);
+		if (actor && base != null && !config.ignoreProjectionSkewCorrection())
+		{
+			double slope = BillboardGeometryUtils.projectionShearSlope(base.verticalRight, base.verticalUp);
+			geometry = BillboardDrawGeometry.actorSkew(drawRect, billboardBounds, contentBounds, slope);
+			logProjectionSkew((Actor) renderable, request, geometry, base, slope);
+		}
+		Rectangle visibleBounds = geometry.bounds;
+		return !isOutsideViewport(visibleBounds.x, visibleBounds.y, visibleBounds.width, visibleBounds.height)
+			? geometry
+			: null;
+	}
+
+	private Rectangle buildLegacyDrawRect(
+		BillboardRenderRequest request,
+		Renderable renderable,
+		Rectangle billboardBounds)
 	{
 		Point basePoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
 		Point centerPoint = Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset + (renderable.getModelHeight() / 2));
@@ -3642,6 +3688,48 @@ class NpcBillboardOverlay extends Overlay
 		return buildDrawRect(billboardBounds, anchorX, anchorY, targetWidth, targetHeight);
 	}
 
+	private void logProjectionSkew(
+		Actor actor,
+		BillboardRenderRequest request,
+		BillboardDrawGeometry geometry,
+		BillboardCanvasPoint base,
+		double slope)
+	{
+		if (!config.debugLogProjectionSkew() || !log.isDebugEnabled()
+			|| !isProjectionSkewDebugTarget(actor, geometry.bounds))
+		{
+			return;
+		}
+
+		int cameraPitch = client.getCameraPitch();
+		int cameraYaw = client.getCameraYaw();
+		if (actor == lastSkewDebugActor
+			&& cameraPitch == lastSkewDebugCameraPitch
+			&& cameraYaw == lastSkewDebugCameraYaw)
+		{
+			return;
+		}
+		lastSkewDebugActor = actor;
+		lastSkewDebugCameraPitch = cameraPitch;
+		lastSkewDebugCameraYaw = cameraYaw;
+
+		log.debug(String.format(Locale.ROOT,
+			"Projection skew: actor='%s' cameraPitch=%d cameraYaw=%d relativePitch=%d "
+				+ "base=(%.3f, %.3f) vertical=(%.5f, %.5f) slope=%.5f draw=%s",
+			actor.getName(), cameraPitch, cameraYaw, request.relativePitch,
+			base.x, base.y, base.verticalRight, base.verticalUp, slope, geometry.bounds));
+	}
+
+	private boolean isProjectionSkewDebugTarget(Actor actor, Rectangle drawRect)
+	{
+		if (interactionState.priorityTarget() == actor || interactionState.clickedActor() == actor)
+		{
+			return true;
+		}
+
+		Point mouse = client.getMouseCanvasPosition();
+		return mouse != null && drawRect != null && drawRect.contains(mouse.getX(), mouse.getY());
+	}
 	private double inventoryGroundItemZoomScale()
 	{
 		int zoom = client.getVarcIntValue(VarClientID.CAMERA_ZOOM_BIG);
@@ -3838,4 +3926,3 @@ class NpcBillboardOverlay extends Overlay
 	}
 
 }
-

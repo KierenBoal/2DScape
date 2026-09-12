@@ -67,14 +67,18 @@ public class BillboardCacheModelsTest
 	public void cachedBillboardStateIsConsumableAndBoundsAreDefensivelyCopied()
 	{
 		Rectangle sourceBounds = new Rectangle(1, 2, 3, 4);
+		Rectangle contentBounds = new Rectangle(2, 3, 1, 2);
 		CachedBillboard cached = new CachedBillboard(
 			BillboardCacheKey.create(request(false, false), config(), 1, 8, 50, 0, 0),
 			sourceBounds,
+			contentBounds,
 			new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB),
 			10L);
 		sourceBounds.x = 100;
+		contentBounds.x = 100;
 
 		assertEquals(1, cached.bounds.x);
+		assertEquals(2, cached.contentBounds.x);
 		assertTrue(cached.consumeDirty());
 		assertFalse(cached.consumeDirty());
 		assertTrue(cached.consumeDebugFrameRedrawn());

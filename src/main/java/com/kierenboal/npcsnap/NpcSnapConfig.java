@@ -354,22 +354,43 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "useRetroHpBar", name = "Use retro HP bar", description = "Draw compact retro health bars above billboard sprites.", section = retroSection, position = 11)
+	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat and hitsplats", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, and hitsplats.", section = retroSection, position = 11)
+	default boolean useRetroOverheads()
+	{
+		return true;
+	}
+
+	/**
+	 * Legacy settings retained only so existing saved values can be migrated to useRetroOverheads.
+	 */
+	@ConfigItem(keyName = "useRetroHpBar", name = "Use retro HP bar", description = "Legacy setting migrated to useRetroOverheads.", section = retroSection, position = 90, hidden = true)
 	default boolean useRetroHpBar()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "useRetroHitsplats", name = "Use retro hitsplats", description = "Draw red retro damage splats and blue miss splats over billboard sprites.", section = retroSection, position = 12)
+	@ConfigItem(keyName = "useRetroHitsplats", name = "Use retro hitsplats", description = "Legacy setting migrated to useRetroOverheads.", section = retroSection, position = 91, hidden = true)
 	default boolean useRetroHitsplats()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "useRetroChatEffects", name = "Use retro chat effects", description = "Use retro overhead chat colours and animated text commands.", section = retroSection, position = 13)
+	@ConfigItem(keyName = "useRetroChatEffects", name = "Use retro chat effects", description = "Legacy setting migrated to useRetroOverheads.", section = retroSection, position = 92, hidden = true)
 	default boolean useRetroChatEffects()
 	{
 		return true;
+	}
+
+	@ConfigItem(keyName = "alignOverheadPrayers", name = "Align overhead prayers", description = "Move player overhead prayer icons to align with their billboard sprites.", section = retroSection, position = 12)
+	default boolean alignOverheadPrayers()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "ignoreProjectionSkewCorrection", name = "Ignore projection skew correction", description = "Disable the gentle perspective lean on actor sprites. Their proportions are preserved and the lean fades near overhead views.", section = retroSection, position = 13)
+	default boolean ignoreProjectionSkewCorrection()
+	{
+		return false;
 	}
 
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
@@ -434,6 +455,12 @@ public interface NpcSnapConfig extends Config
 
 	@ConfigItem(keyName = "debugLogBillboardColors", name = "Log sprite colours", description = "Write the colours picked for sprites to the RuneLite log.", section = debugSection, position = 9)
 	default boolean debugLogBillboardColors()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "debugLogProjectionSkew", name = "Log projection skew", description = "Write projection and shear calculations for the hovered or interacted actor to the developer log.", section = debugSection, position = 10)
+	default boolean debugLogProjectionSkew()
 	{
 		return false;
 	}

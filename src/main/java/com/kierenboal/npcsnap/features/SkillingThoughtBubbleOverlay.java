@@ -25,6 +25,7 @@ import net.runelite.api.Skill;
 import net.runelite.api.SpriteID;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.SpriteID.IconStat50x50;
+import net.runelite.api.gameval.SpriteID.Staticons2;
 import net.runelite.client.game.SkillIconManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -358,7 +359,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		return skillIconManager.getSkillImage(skill);
 	}
 
-	private static int skillSpriteId(Skill skill)
+	static int skillSpriteId(Skill skill)
 	{
 		switch (skill)
 		{
@@ -393,7 +394,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 			case CONSTRUCTION:
 				return SpriteID.SKILL_CONSTRUCTION;
 			case SAILING:
-				return IconStat50x50._23;
+				return Staticons2.SAILING;
 			default:
 				return IconStat50x50._0 + skill.ordinal();
 		}

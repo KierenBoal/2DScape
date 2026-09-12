@@ -9,6 +9,7 @@ public final class CachedBillboard implements TimedCacheEntry
 {
 	public final BillboardCacheKey key;
 	public final Rectangle bounds;
+	public final Rectangle contentBounds;
 	public final BufferedImage image;
 	private long lastUsedMillis;
 	private long lastRedrawMillis;
@@ -20,8 +21,19 @@ public final class CachedBillboard implements TimedCacheEntry
 
 	public CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image, long lastUsedMillis)
 	{
+		this(key, bounds, bounds, image, lastUsedMillis);
+	}
+
+	public CachedBillboard(
+		BillboardCacheKey key,
+		Rectangle bounds,
+		Rectangle contentBounds,
+		BufferedImage image,
+		long lastUsedMillis)
+	{
 		this.key = key;
 		this.bounds = new Rectangle(bounds);
+		this.contentBounds = new Rectangle(contentBounds);
 		this.image = image;
 		this.lastUsedMillis = lastUsedMillis;
 		this.lastRedrawMillis = lastUsedMillis;

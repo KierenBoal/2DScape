@@ -10,6 +10,9 @@ public final class BillboardGeometryUtils
 	private static final int MAX_SOURCE_BILLBOARD_COORDINATE = 32768;
 	private static final int MAX_DRAW_BILLBOARD_SIZE = 8192;
 	private static final int MAX_CANVAS_COORDINATE = 1_000_000;
+	private static final double MAX_PROJECTION_SHEAR_SLOPE = 0.20d;
+	private static final double MIN_VERTICAL_PROJECTION = 0.15d;
+	private static final double FULL_VERTICAL_PROJECTION = 0.50d;
 
 	private BillboardGeometryUtils()
 	{
@@ -89,6 +92,54 @@ public final class BillboardGeometryUtils
 		return Math.max(1, (int) Math.round(width));
 	}
 
+	/**
+	 * Place an orthographic sprite at its model origin using RuneLite's canvas
+	 * scale and depth at that same origin. Using an animated model's height to
+	 * choose the scale makes even a cached frame breathe as the animation runs.
+	 */
+	public static Rectangle projectedDrawBounds(Rectangle imageBounds, BillboardCanvasPoint origin, double canvasScale)
+	{
+		if (imageBounds == null || imageBounds.isEmpty() || origin == null
+			|| !isUsableDistance(origin.depth) || !Double.isFinite(origin.x) || !Double.isFinite(origin.y))
+		{
+			return null;
+		}
+		double scale = canvasScale / origin.depth;
+		int width = scaledSize(imageBounds.width, scale);
+		int height = scaledSize(imageBounds.height, scale);
+		if (!isUsableDrawSize(width, height))
+		{
+			return null;
+		}
+		int x = (int) Math.round(origin.x + imageBounds.x * (width / (double) imageBounds.width));
+		int y = (int) Math.round(origin.y + imageBounds.y * (height / (double) imageBounds.height));
+		return isUsableCanvasCoordinate(x) && isUsableCanvasCoordinate(y)
+			? new Rectangle(x, y, width, height)
+			: null;
+	}
+
+	/**
+	 * Follow the projected world-up direction without fitting the animated model.
+	 * Inputs are the screen derivative divided by scale / depth, so zoom, model
+	 * height and sprite padding cannot change the lean. Near an overhead view the
+	 * projected up direction degenerates; smoothly fade it out before dividing.
+	 */
+	public static double projectionShearSlope(double verticalRight, double verticalUp)
+	{
+		if (!Double.isFinite(verticalRight) || !Double.isFinite(verticalUp)
+			|| verticalUp <= MIN_VERTICAL_PROJECTION)
+		{
+			return 0.0d;
+		}
+
+		double fraction = Math.min(1.0d,
+			(verticalUp - MIN_VERTICAL_PROJECTION) / (FULL_VERTICAL_PROJECTION - MIN_VERTICAL_PROJECTION));
+		double fade = fraction * fraction * (3.0d - 2.0d * fraction);
+		double slope = verticalRight / verticalUp;
+		// A soft limit avoids a sudden change in speed as the camera pans.
+		return fade * MAX_PROJECTION_SHEAR_SLOPE * Math.tanh(slope / MAX_PROJECTION_SHEAR_SLOPE);
+	}
+
 	public static boolean isUsableDrawSize(int width, int height)
 	{
 		return isUsableDrawDimension(width) && isUsableDrawDimension(height);
@@ -150,4 +201,5 @@ public final class BillboardGeometryUtils
 	{
 		return dimension > 0 && dimension <= MAX_DRAW_BILLBOARD_SIZE;
 	}
+
 }

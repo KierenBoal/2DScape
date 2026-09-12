@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap.features;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.TestProxies;
+import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import java.awt.Rectangle;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
@@ -59,12 +60,12 @@ public class ActorOverheadRendererTest
 	}
 
 	@Test
-	public void disabledRetroHitsplatsAreNotTracked()
+	public void disabledRetroOverheadsAreNotTracked()
 	{
 		NpcSnapConfig config = new NpcSnapConfig()
 		{
 			@Override
-			public boolean useRetroHitsplats()
+			public boolean useRetroOverheads()
 			{
 				return false;
 			}
@@ -75,6 +76,54 @@ public class ActorOverheadRendererTest
 			TestProxies.method("getDisappearsOnGameCycle", 100));
 		renderer.recordHitsplat(actor, hitsplat);
 		assertEquals(0, renderer.trackedHitsplatCount(actor, 1));
+	}
+
+	@Test
+	public void disabledRetroOverheadsLeavesNativeOverheadsVisible()
+	{
+		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(false, true))
+			.shouldReplace(TestProxies.proxy(NPC.class)));
+	}
+
+	@Test
+	public void disabledPrayerAlignmentLeavesNativeOverheadVisibleForPrayingPlayer()
+	{
+		Player player = TestProxies.proxy(Player.class,
+			TestProxies.method("getSkullIcon", -1),
+			TestProxies.method("getOverheadIcon", HeadIcon.MAGIC));
+
+		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, false))
+			.shouldReplace(player));
+	}
+
+	@Test
+	public void disabledPrayerAlignmentDoesNotAffectPlayersWithoutPrayer()
+	{
+		Player player = TestProxies.proxy(Player.class,
+			TestProxies.method("getSkullIcon", -1),
+			TestProxies.method("getOverheadIcon", null));
+
+		assertTrue(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, false))
+			.shouldReplace(player));
+	}
+
+	@Test
+	public void replacementPolicyDoesNotChangeAssetEligibility()
+	{
+		BufferedImage image = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
+		SpritePixels sprite = TestProxies.proxy(SpritePixels.class,
+			TestProxies.method("toBufferedImage", image));
+		SpritePixels[] npcSprites = new SpritePixels[4];
+		npcSprites[3] = sprite;
+		Client client = TestProxies.proxy(Client.class,
+			TestProxies.method("getSprites", npcSprites));
+		NPC npc = TestProxies.proxy(NPC.class,
+			TestProxies.method("getOverheadArchiveIds", new int[] {42}),
+			TestProxies.method("getOverheadSpriteIds", new short[] {3}));
+
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(client, config(false, true));
+		assertTrue(renderer.canReplace(npc));
+		assertFalse(renderer.shouldReplace(npc));
 	}
 
 	@Test
@@ -135,6 +184,17 @@ public class ActorOverheadRendererTest
 	}
 
 	@Test
+	public void skewedBillboardAnchorsOverheadsToVisibleTopCenter()
+	{
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class));
+		NPC actor = TestProxies.proxy(NPC.class);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.sheared(
+			new Rectangle(100, 50, 40, 100), 120.0d, 60.0d, 140.0d, -20.0d, 0.0d);
+
+		assertEquals(new Point(100, 60), renderer.resolveAnchor(actor, geometry));
+	}
+
+	@Test
 	public void billboardRemovalResetsAnchorAndHitsplats()
 	{
 		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class));
@@ -178,5 +238,23 @@ public class ActorOverheadRendererTest
 
 		assertEquals(3, resolved.y);
 		assertFalse(resolved.intersects(occupied));
+	}
+
+	private static NpcSnapConfig config(boolean retroOverheads, boolean alignPrayers)
+	{
+		return new NpcSnapConfig()
+		{
+			@Override
+			public boolean useRetroOverheads()
+			{
+				return retroOverheads;
+			}
+
+			@Override
+			public boolean alignOverheadPrayers()
+			{
+				return alignPrayers;
+			}
+		};
 	}
 }

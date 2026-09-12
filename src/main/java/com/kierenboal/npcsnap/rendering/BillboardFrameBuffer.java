@@ -76,8 +76,10 @@ public final class BillboardFrameBuffer
 		int[] sourcePixels = ((DataBufferInt) draw.image.getRaster().getDataBuffer()).getData();
 		int sourceWidth = draw.image.getWidth();
 		int sourceHeight = draw.image.getHeight();
-		int drawWidth = draw.bounds.width;
-		int drawHeight = draw.bounds.height;
+		BillboardDrawGeometry geometry = draw.geometry != null
+			? draw.geometry
+			: BillboardDrawGeometry.rectangular(draw.bounds);
+		int drawWidth = geometry.unskewedBounds.width;
 		int drawPaintOrder = draw.paintOrder;
 		BillboardDepthSurface billboardDepth = occlusionMask.coveredCellCount() > 0 ? depthSurfaceFactory.create(draw) : null;
 		boolean hasActiveOcclusion = billboardDepth != null && billboardDepth.supportsWorldOcclusion();
@@ -93,10 +95,16 @@ public final class BillboardFrameBuffer
 		int occlusionSampleStep = hasActiveOcclusion ? occlusionMask.sampleStep() : 0;
 		for (int y = clipTop; y < clipBottom; y++)
 		{
-			int sourceY = (int) (((long) (y - draw.bounds.y) * sourceHeight) / drawHeight);
+			int sourceY = geometry.sourceYAt(y, sourceHeight);
+			if (sourceY < 0 || sourceY >= sourceHeight)
+			{
+				continue;
+			}
 			int destinationRow = (y - viewportY) * viewportWidth;
 			int sourceRow = sourceY * sourceWidth;
-			long sourceXNumerator = (long) (clipLeft - draw.bounds.x) * sourceWidth;
+			// Translate whole pixel rows, preserving the same nearest-neighbour
+			// sampling at every slope, including zero. Compute the shear once per row.
+			int rowLeft = geometry.rowLeftAt(y);
 			int clippedRow = y - clipTop;
 			boolean rowHasOcclusion = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
 			long rowOcclusionStart = measureOcclusion && rowHasOcclusion ? System.nanoTime() : 0L;
@@ -107,12 +115,15 @@ public final class BillboardFrameBuffer
 				int destinationIndex = destinationRow + (x - viewportX);
 				if (paintOrder[destinationIndex] > drawPaintOrder)
 				{
-					sourceXNumerator += sourceWidth;
 					continue;
 				}
 
-				int sourceX = (int) (sourceXNumerator / drawWidth);
-				sourceXNumerator += sourceWidth;
+				int rowX = x - rowLeft;
+				if (rowX < 0 || rowX >= drawWidth)
+				{
+					continue;
+				}
+				int sourceX = (int) (((long) rowX * sourceWidth) / drawWidth);
 				int sourcePixel = sourcePixels[sourceRow + sourceX];
 				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
 				if (sourceAlpha == 0)

@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.features;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
+import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import java.awt.Color;
 import java.awt.Font;
@@ -53,6 +54,11 @@ public final class ActorOverheadRenderer
 
 	public boolean canReplace(Actor actor)
 	{
+		if (actor == null)
+		{
+			return false;
+		}
+
 		if (actor instanceof Player)
 		{
 			Player player = (Player) actor;
@@ -86,11 +92,32 @@ public final class ActorOverheadRenderer
 		return !isHintTarget(actor) || groupedSprite(SpriteID.HEADICONS_HINT, 0) != null;
 	}
 
+	/**
+	 * Returns whether this actor's complete native overhead pass can be replaced.
+	 * RuneLite exposes actor-wide suppression for 2D overheads, so all custom
+	 * replacements must be enabled before the native pass is hidden.
+	 */
+	public boolean shouldReplace(Actor actor)
+	{
+		if (!retroOverheadReplacementEnabled())
+		{
+			return false;
+		}
+
+		if (!config.alignOverheadPrayers() && actor instanceof Player
+			&& ((Player) actor).getOverheadIcon() != null)
+		{
+			return false;
+		}
+
+		return canReplace(actor);
+	}
+
 	public void recordHitsplat(Actor actor, Hitsplat hitsplat)
 	{
-		if (!config.useRetroHitsplats())
+		if (!retroOverheadReplacementEnabled())
 		{
-			hitsplats.clear();
+			clearTrackedOverheadState();
 			return;
 		}
 		if (actor == null || hitsplat == null)
@@ -110,10 +137,15 @@ public final class ActorOverheadRenderer
 
 	public void clear()
 	{
+		clearTrackedOverheadState();
+		sprites.clear();
+	}
+
+	private void clearTrackedOverheadState()
+	{
 		hitsplats.clear();
 		anchors.clear();
 		drawableActors.clear();
-		sprites.clear();
 	}
 
 	public void updateDrawableActors(Set<Actor> current)
@@ -135,6 +167,11 @@ public final class ActorOverheadRenderer
 
 	public void render(Graphics2D graphics, List<PreparedBillboardDraw> draws)
 	{
+		if (!retroOverheadReplacementEnabled())
+		{
+			clearTrackedOverheadState();
+			return;
+		}
 		if (graphics == null || draws == null || draws.isEmpty())
 		{
 			return;
@@ -150,13 +187,21 @@ public final class ActorOverheadRenderer
 				continue;
 			}
 			Actor actor = (Actor) draw.request.renderable;
-			if (!canReplace(actor))
+			if (!shouldReplace(actor))
 			{
+				clear(actor);
 				continue;
 			}
-			Point anchor = resolveAnchor(actor, draw.bounds);
+			Point anchor = draw.geometry != null
+				? resolveAnchor(actor, draw.geometry)
+				: resolveAnchor(actor, draw.bounds);
 			renderActor(graphics, actor, draw.bounds, anchor, occupiedChatBounds);
 		}
+	}
+
+	private boolean retroOverheadReplacementEnabled()
+	{
+		return config.useRetroOverheads();
 	}
 
 	private void renderActor(Graphics2D graphics, Actor actor, Rectangle billboard, Point anchor,
@@ -165,7 +210,7 @@ public final class ActorOverheadRenderer
 		int centerX = anchor.x;
 		int cursorY = anchor.y - ELEMENT_GAP;
 
-		if (config.useRetroHpBar() && actor.getHealthRatio() >= 0 && actor.getHealthScale() > 0)
+		if (actor.getHealthRatio() >= 0 && actor.getHealthScale() > 0)
 		{
 			cursorY -= HEALTH_HEIGHT;
 			drawHealthBar(graphics, centerX, cursorY, actor.getHealthRatio(), actor.getHealthScale());
@@ -182,8 +227,7 @@ public final class ActorOverheadRenderer
 		String overheadText = actor.getOverheadText();
 		if (overheadText != null && !overheadText.isEmpty() && actor.getOverheadCycle() > 0)
 		{
-			RetroChatRenderer.ParsedChat chat = config.useRetroChatEffects()
-				? RetroChatRenderer.parse(overheadText) : RetroChatRenderer.plain(overheadText);
+			RetroChatRenderer.ParsedChat chat = RetroChatRenderer.parse(overheadText);
 			Font font = FontManager.getRunescapeBoldFont();
 			graphics.setFont(font);
 			FontMetrics metrics = graphics.getFontMetrics(font);
@@ -246,11 +290,6 @@ public final class ActorOverheadRenderer
 
 	private void drawHitsplats(Graphics2D graphics, Actor actor, Rectangle billboard, Point anchor)
 	{
-		if (!config.useRetroHitsplats())
-		{
-			hitsplats.clear();
-			return;
-		}
 		List<TrackedHitsplat> active = hitsplats.get(actor);
 		if (active == null || active.isEmpty())
 		{
@@ -332,7 +371,16 @@ public final class ActorOverheadRenderer
 
 	Point resolveAnchor(Actor actor, Rectangle billboard)
 	{
-		Point target = new Point(billboard.x + (billboard.width / 2), billboard.y);
+		return resolveAnchor(actor, billboard, new Point(billboard.x + (billboard.width / 2), billboard.y));
+	}
+
+	Point resolveAnchor(Actor actor, BillboardDrawGeometry geometry)
+	{
+		return resolveAnchor(actor, geometry.bounds, awtPoint(geometry.contentTopCenter()));
+	}
+
+	private Point resolveAnchor(Actor actor, Rectangle billboard, Point target)
+	{
 		AnchorState state = anchors.get(actor);
 		if (state == null)
 		{
@@ -354,6 +402,11 @@ public final class ActorOverheadRenderer
 		state.lastBounds = new Rectangle(billboard);
 		state.displayed = resolved;
 		return resolved;
+	}
+
+	private static Point awtPoint(net.runelite.api.Point point)
+	{
+		return new Point(point.getX(), point.getY());
 	}
 
 	static Rectangle resolveChatCollision(Rectangle desired, List<Rectangle> occupied, int verticalStep)

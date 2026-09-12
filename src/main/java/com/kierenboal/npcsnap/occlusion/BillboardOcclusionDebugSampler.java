@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
+import net.runelite.api.Point;
 
 public final class BillboardOcclusionDebugSampler
 {
@@ -75,10 +76,15 @@ public final class BillboardOcclusionDebugSampler
 					return;
 				}
 
-				int canvasX = draw.bounds.x + clampSample(draw.bounds.width, xFraction);
-				int canvasY = draw.bounds.y + clampSample(draw.bounds.height, yFraction);
-				int sourceX = Math.max(0, Math.min(sourceWidth - 1, ((canvasX - draw.bounds.x) * sourceWidth) / draw.bounds.width));
-				int sourceY = Math.max(0, Math.min(sourceHeight - 1, ((canvasY - draw.bounds.y) * sourceHeight) / draw.bounds.height));
+				int sourceX = clampSample(sourceWidth, xFraction);
+				int sourceY = clampSample(sourceHeight, yFraction);
+				Point canvasPoint = draw.geometry != null
+					? draw.geometry.canvasPoint(xFraction, yFraction)
+					: new Point(
+						draw.bounds.x + clampSample(draw.bounds.width, xFraction),
+						draw.bounds.y + clampSample(draw.bounds.height, yFraction));
+				int canvasX = canvasPoint.getX();
+				int canvasY = canvasPoint.getY();
 				int sourceAlpha = (sourcePixels[(sourceY * sourceWidth) + sourceX] >>> 24) & 0xFF;
 				if (sourceAlpha == 0)
 				{

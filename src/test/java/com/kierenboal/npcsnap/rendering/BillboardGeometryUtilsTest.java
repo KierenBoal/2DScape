@@ -61,6 +61,55 @@ public class BillboardGeometryUtilsTest
 	}
 
 	@Test
+	public void projectionShearIsSymmetricBoundedAndContinuousAcrossTheCameraAxis()
+	{
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(0.0d, 1.0d), 0.0d);
+		double previous = -0.20d;
+		for (int i = -1000; i <= 1000; i++)
+		{
+			double right = i / 1000.0d;
+			double slope = BillboardGeometryUtils.projectionShearSlope(right, 1.0d);
+			Assert.assertEquals(slope, -BillboardGeometryUtils.projectionShearSlope(-right, 1.0d), 1e-12d);
+			Assert.assertTrue(Math.abs(slope) <= 0.20d);
+			Assert.assertTrue(slope >= previous && slope - previous < 0.0011d);
+			previous = slope;
+		}
+		Assert.assertTrue(BillboardGeometryUtils.projectionShearSlope(0.10d, 1.0d) > 0.09d);
+	}
+
+	@Test
+	public void projectionShearFadesBeforeWorldUpBecomesHorizontalOrInverted()
+	{
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(0.4d, 0.15d), 0.0d);
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(0.4d, 0.0d), 0.0d);
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(0.4d, -0.5d), 0.0d);
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(Double.NaN, 1.0d), 0.0d);
+		Assert.assertEquals(0.0d, BillboardGeometryUtils.projectionShearSlope(1.0d, Double.POSITIVE_INFINITY), 0.0d);
+		double previous = 0.0d;
+		for (int i = 150; i <= 500; i++)
+		{
+			double up = i / 1000.0d;
+			double slope = BillboardGeometryUtils.projectionShearSlope(up * 0.2d, up);
+			Assert.assertTrue(slope >= previous && slope - previous < 0.001d);
+			previous = slope;
+		}
+	}
+
+	@Test
+	public void projectedBoundsKeepModelOriginAndUniformScaleForPitchedFrames()
+	{
+		Rectangle source = new Rectangle(-50, -100, 100, 120);
+		BillboardCanvasPoint base = new BillboardCanvasPoint(300.25d, 500.25d, 1000.0d, 0.0d, 1.0d);
+		Rectangle bounds = BillboardGeometryUtils.projectedDrawBounds(source, base, 500.0d);
+
+		Assert.assertEquals(new Rectangle(275, 450, 50, 60), bounds);
+		// The visible content is allowed below the origin; it is not pulled up to it.
+		Assert.assertEquals(500.0d, bounds.y - source.y * 0.5d, 0.001d);
+		Assert.assertNull(BillboardGeometryUtils.projectedDrawBounds(source, base, Double.NaN));
+		Assert.assertNull(BillboardGeometryUtils.projectedDrawBounds(source, null, 500.0d));
+	}
+
+	@Test
 	public void backFaceCheckHandlesWindingAndInvalidIndices()
 	{
 		float[] x = {0, 2, 0};

@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap;
 
+import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 
 import java.awt.BasicStroke;
@@ -95,7 +96,14 @@ public class NpcSnapDebug
 			Stroke stroke = graphics.getStroke();
 			graphics.setStroke(new BasicStroke(size));
 			graphics.setColor(BILLBOARD_RED);
-			graphics.drawRect(bounds.x - (size / 2), bounds.y - (size / 2), bounds.width + size, bounds.height + size);
+			if (renderDebug.geometry != null && renderDebug.geometry.isSheared())
+			{
+				graphics.drawPolygon(renderDebug.geometry.polygon());
+			}
+			else
+			{
+				graphics.drawRect(bounds.x - (size / 2), bounds.y - (size / 2), bounds.width + size, bounds.height + size);
+			}
 			graphics.setStroke(stroke);
 		}
 		
@@ -450,6 +458,7 @@ public class NpcSnapDebug
 	static final class RenderDebug
 	{
 		private final Rectangle bounds;
+		private final BillboardDrawGeometry geometry;
 		private final int paintOrder;
 		private final boolean frameRedrawn;
 		private final boolean readyToRedraw;
@@ -457,7 +466,7 @@ public class NpcSnapDebug
 		private final StateDebugInfo stateDebugInfo;
 
 		private RenderDebug(
-			Rectangle bounds,
+			BillboardDrawGeometry geometry,
 			int paintOrder,
 			boolean frameRedrawn,
 			boolean readyToRedraw,
@@ -465,7 +474,8 @@ public class NpcSnapDebug
 			StateDebugInfo stateDebugInfo
 		)
 		{
-			this.bounds = bounds;
+			this.geometry = geometry;
+			this.bounds = geometry != null ? geometry.bounds : null;
 			this.paintOrder = paintOrder;
 			this.frameRedrawn = frameRedrawn;
 			this.readyToRedraw = readyToRedraw;
@@ -473,15 +483,15 @@ public class NpcSnapDebug
 			this.stateDebugInfo = stateDebugInfo;
 		}
 
-		static RenderDebug forBounds(
-			Rectangle bounds,
+		static RenderDebug forGeometry(
+			BillboardDrawGeometry geometry,
 			int paintOrder,
 			boolean spriteRedrawn,
 			boolean readyToRedraw,
 			Color readyToRedrawColor,
 			StateDebugInfo stateDebugInfo)
 		{
-			return new RenderDebug(bounds, paintOrder, spriteRedrawn, readyToRedraw, readyToRedrawColor, stateDebugInfo);
+			return new RenderDebug(geometry, paintOrder, spriteRedrawn, readyToRedraw, readyToRedrawColor, stateDebugInfo);
 		}
 	}
 
