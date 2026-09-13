@@ -55,4 +55,28 @@ public class BillboardOrientationCalculatorTest
 
 		Assert.assertEquals(-1024, calculator.relativeGroundItemPitch());
 	}
+
+	@Test
+	public void lowProfilePitchUsesGroundMinimumWhenSnapping()
+	{
+		Client client = proxy(Client.class, method("getCameraPitch", 0));
+		NpcSnapConfig config = proxy(NpcSnapConfig.class,
+			method("enableRotationSnapping", true),
+			method("numberOfPitchRotationAngles", 1));
+		BillboardOrientationCalculator calculator = new BillboardOrientationCalculator(client, config);
+
+		Assert.assertEquals(0, calculator.relativePitch());
+		Assert.assertEquals(-BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, calculator.relativePitch(true));
+	}
+
+	@Test
+	public void unsnappedLowProfilePitchRemainsRaw()
+	{
+		Client client = proxy(Client.class, method("getCameraPitch", 512));
+		NpcSnapConfig config = proxy(NpcSnapConfig.class, method("enableRotationSnapping", false));
+		BillboardOrientationCalculator calculator = new BillboardOrientationCalculator(client, config);
+
+		Assert.assertEquals(-512, calculator.relativePitch());
+		Assert.assertEquals(-512, calculator.relativePitch(true));
+	}
 }

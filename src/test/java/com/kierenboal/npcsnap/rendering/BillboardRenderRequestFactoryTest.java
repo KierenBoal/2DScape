@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 public class BillboardRenderRequestFactoryTest
 {
@@ -77,6 +78,68 @@ public class BillboardRenderRequestFactoryTest
 		assertEquals(88, request.animationId);
 		assertEquals(3, request.animationFrame);
 		assertEquals(VerticalAnchor.BOTTOM, request.verticalAnchor);
+	}
+
+	@Test
+	public void lowProfileProjectileAndGraphicsCarryProfileAndGroundPitch()
+	{
+		Model model = TestProxies.proxy(Model.class,
+			TestProxies.method("getVerticesCount", 4),
+			TestProxies.method("getVerticesX", new float[] {-100, 100, 100, -100}),
+			TestProxies.method("getVerticesY", new float[] {0, 0, -1, -1}),
+			TestProxies.method("getVerticesZ", new float[] {-100, -100, 100, 100}));
+		GraphicsObject graphicsObject = TestProxies.proxy(GraphicsObject.class,
+			TestProxies.method("getModelHeight", 32),
+			TestProxies.method("getModel", model),
+			TestProxies.method("getLocation", new LocalPoint(128, 128, worldView(0))));
+		Projectile projectile = TestProxies.proxy(Projectile.class,
+			TestProxies.method("getModelHeight", 32),
+			TestProxies.method("getModel", model));
+
+		BillboardRenderRequest graphicsRequest = factory().buildGraphicsObject(graphicsObject);
+		BillboardRenderRequest projectileRequest = factory().buildProjectile(projectile);
+
+		assertTrue(graphicsRequest.lowProfile);
+		assertEquals(-BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, graphicsRequest.relativePitch);
+		assertTrue(projectileRequest.lowProfile);
+		assertEquals(-BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, projectileRequest.relativePitch);
+	}
+
+	@Test
+	public void baseActorsDoNotUseLowProfileExemption()
+	{
+		Model model = TestProxies.proxy(Model.class,
+			TestProxies.method("getVerticesCount", 4),
+			TestProxies.method("getVerticesX", new float[] {-20, 20, 20, -20, 0}),
+			TestProxies.method("getVerticesY", new float[] {0, 0, -100, -100, 0}),
+			TestProxies.method("getVerticesZ", new float[] {-20, -20, 20, 20, 0}));
+		WorldView topLevel = TestProxies.proxy(WorldView.class,
+			TestProxies.method("isTopLevel", true),
+			TestProxies.method("getPlane", 0));
+		Client client = TestProxies.proxy(Client.class,
+			TestProxies.method("getTopLevelWorldView", topLevel));
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enableRotationSnapping", true),
+			TestProxies.method("numberOfYawRotationAngles", 4),
+			TestProxies.method("numberOfPitchRotationAngles", 1));
+		Actor actor = TestProxies.proxy(Actor.class,
+			TestProxies.method("getModel", model),
+			TestProxies.method("getModelHeight", 16),
+			TestProxies.method("getWorldView", topLevel),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128, topLevel)));
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(
+			client,
+			config,
+			new NpcSnapDebug(client, config),
+			new AnimationFrameSnapper(client),
+			new BillboardOrientationCalculator(client, config),
+			new BillboardInteractionState());
+
+		BillboardRenderRequest request = factory.buildActor(actor);
+
+		assertFalse(request.lowProfile);
+		assertEquals(0, request.relativePitch);
+		assertTrue(BillboardDepthSurface.supportsVerticalPlaneOcclusion(request.model));
 	}
 
 	@Test
@@ -144,6 +207,7 @@ public class BillboardRenderRequestFactoryTest
 	{
 		Client client = TestProxies.proxy(Client.class, TestProxies.method("loadAnimation", animation));
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enableRotationSnapping", true),
 			TestProxies.method("numberOfYawRotationAngles", 4),
 			TestProxies.method("numberOfPitchRotationAngles", 1),
 			TestProxies.method("animationFrameCount", 3),

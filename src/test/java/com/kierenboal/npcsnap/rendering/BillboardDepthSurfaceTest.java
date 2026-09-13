@@ -5,6 +5,8 @@ import com.kierenboal.npcsnap.TestProxies;
 import java.awt.Rectangle;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
+import net.runelite.api.Renderable;
+import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
@@ -167,6 +169,40 @@ public class BillboardDepthSurfaceTest
 
 		assertFalse(BillboardDepthSurface.supportsVerticalPlaneOcclusion(flat));
 		assertTrue(BillboardDepthSurface.supportsVerticalPlaneOcclusion(upright));
+	}
+
+	@Test
+	public void requestProfileControlsWorldOcclusionIndependentlyOfGeometry()
+	{
+		Model flat = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-50, 50, 50, -50}),
+			method("getVerticesY", new float[] {0, 0, -1, -1}),
+			method("getVerticesZ", new float[] {-50, -50, 50, 50}));
+		Model upright = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}),
+			method("getVerticesY", new float[] {0, 0, -100, -100}),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+		Renderable renderable = proxy(Renderable.class, method("getModelHeight", 100));
+		Rectangle sourceBounds = new Rectangle(0, 0, 10, 10);
+		Rectangle drawBounds = new Rectangle(0, 0, 10, 10);
+
+		BillboardRenderRequest lowProfileRequest = new BillboardRenderRequest(
+			renderable, flat, new LocalPoint(0, 0), 0, 0, 0, 0,
+			-1, -1, -1, -1, -1, false, false, null, null,
+			VerticalAnchor.BOTTOM, null, true);
+		BillboardRenderRequest uprightRequest = new BillboardRenderRequest(
+			renderable, upright, new LocalPoint(0, 0), 0, 0, 0, 0,
+			-1, -1, -1, -1, -1, false, false, null, null,
+			VerticalAnchor.BOTTOM, null, false);
+
+		assertFalse(BillboardDepthSurface.from(
+			new BillboardDepthCalculator(client(0, 2048)), lowProfileRequest,
+			sourceBounds, drawBounds, 0.0d).supportsWorldOcclusion());
+		assertTrue(BillboardDepthSurface.from(
+			new BillboardDepthCalculator(client(0, 2048)), uprightRequest,
+			sourceBounds, drawBounds, 0.0d).supportsWorldOcclusion());
 	}
 
 	private static Client client(int yaw, int pitch)

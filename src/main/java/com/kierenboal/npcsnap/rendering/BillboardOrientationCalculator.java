@@ -58,36 +58,41 @@ public final class BillboardOrientationCalculator
 
 	public int relativePitch()
 	{
+		return relativePitch(false);
+	}
+
+	public int relativePitch(boolean lowProfile)
+	{
 		int rawPitch = cameraPitch();
 		if (!config.enableRotationSnapping())
 		{
 			return -rawPitch;
 		}
 
-		int snappedPitch = BillboardAngleUtils.snapPitchByAngles(rawPitch, 0, config.numberOfPitchRotationAngles());
+		int minimumPitch = lowProfile ? BillboardAngleUtils.GROUND_ITEM_MIN_PITCH : 0;
+		int snappedPitch = BillboardAngleUtils.snapPitchByAngles(rawPitch, minimumPitch, config.numberOfPitchRotationAngles());
 		// Invert because model pitch is applied opposite to camera pitch.
 		return -snappedPitch;
 	}
 
 	public int relativePitch(Actor actor)
 	{
+		return relativePitch(actor, false);
+	}
+
+	public int relativePitch(Actor actor, boolean lowProfile)
+	{
 		if (shouldCombatSnap(actor))
 		{
 			return 0;
 		}
 
-		return relativePitch();
+		return relativePitch(lowProfile);
 	}
 
 	public int relativeGroundItemPitch()
 	{
-		int rawPitch = cameraPitch();
-		if (!config.enableRotationSnapping())
-		{
-			return -rawPitch;
-		}
-
-		return -BillboardAngleUtils.snapPitchByAngles(rawPitch, BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, config.numberOfPitchRotationAngles());
+		return relativePitch(true);
 	}
 
 	private int snappedYaw(int rawRelativeYaw)

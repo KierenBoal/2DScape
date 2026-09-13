@@ -26,6 +26,93 @@ import static org.junit.Assert.assertTrue;
 public class BillboardOcclusionMaskTest
 {
 	@Test
+	public void transparentSceneryAttenuatesInsteadOfHardCuttingOut()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		BillboardOcclusionMask.Occluder translucent = new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 8, 8), 20f, "canopy", 128);
+		mask.prepare(Collections.singletonList(translucent), BillboardOcclusionQuality.HIGH,
+			BillboardOcclusionComposition.TRANSPARENCY_AWARE, 0, 0, 8, 8, null, null);
+
+		assertEquals(BillboardOcclusionMask.CellResult.REFINE, mask.classifySample(0, 2, 40d));
+		assertEquals(128, mask.transmittanceAt(2, 2, 40d));
+		assertEquals(0xFFFF7F7F, mask.tintPixel(2, 2, 40d, 0xFFFF0000));
+		assertFalse(mask.isOccluded(2, 2, 40d));
+
+		mask.prepare(Collections.singletonList(translucent), BillboardOcclusionQuality.HIGH,
+			BillboardOcclusionComposition.HARD_CUTOUT, 0, 0, 8, 8, null, null);
+		assertEquals(BillboardOcclusionMask.CellResult.OCCLUDED, mask.classifySample(0, 2, 40d));
+		assertEquals(0, mask.transmittanceAt(2, 2, 40d));
+	}
+
+	@Test
+	public void overlappingTransparentFacesMultiplyTheirTransmission()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Arrays.asList(
+			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 20f, "front", 128),
+			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 10f, "back", 128)),
+			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
+			0, 0, 8, 8, null, null);
+
+		assertEquals(64, mask.transmittanceAt(2, 2, 40d));
+	}
+
+	@Test
+	public void screenTintDoesNotDarkenOpaqueBillboardColours()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 8, 8), 20f, "glass", 128, 0x102030)),
+			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
+			0, 0, 8, 8, null, null);
+
+		int source = 0xFF804020;
+		int tinted = mask.tintPixel(2, 2, 40d, source);
+		assertEquals(0xFF, tinted >>> 24);
+		assertTrue(((tinted >>> 16) & 0xFF) >= ((source >>> 16) & 0xFF));
+		assertTrue(((tinted >>> 8) & 0xFF) >= ((source >>> 8) & 0xFF));
+		assertTrue((tinted & 0xFF) >= (source & 0xFF));
+	}
+
+	@Test
+	public void tintedOpaqueBillboardStillOwnsItsPixelOverFartherBillboards()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 4, 4), 20f, "canopy", 128)),
+			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
+			0, 0, 4, 4, null, null);
+		Client client = proxy(
+			Client.class,
+			method("getCameraFpY", -1000f),
+			method("get3dZoom", 512),
+			method("getViewportHeight", 4));
+		BillboardDepthSurface surface = new BillboardDepthSurface(
+			new BillboardDepthCalculator(client),
+			0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4), 0, 0);
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(), draw -> surface);
+		BufferedImage near = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
+		BufferedImage far = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
+		for (int y = 0; y < 4; y++)
+		{
+			for (int x = 0; x < 4; x++)
+			{
+				near.setRGB(x, y, 0xFFFFFFFF);
+				far.setRGB(x, y, 0xFF0000FF);
+			}
+		}
+
+		buffer.begin(4, 4);
+		buffer.blit(new PreparedBillboardDraw(null,
+			new BillboardRenderResult(new Rectangle(0, 0, 4, 4), near, new Rectangle(0, 0, 4, 4)), 10), 0, 0, 4, 4, false);
+		buffer.blit(new PreparedBillboardDraw(null,
+			new BillboardRenderResult(new Rectangle(0, 0, 4, 4), far, new Rectangle(0, 0, 4, 4)), 5), 0, 0, 4, 4, false);
+
+		assertEquals(0xFFFFFFFF, buffer.image().getRGB(1, 1));
+	}
+
+	@Test
 	public void runeLiteHullRetainsItsInteriorAtHighAndLow()
 	{
 		net.runelite.api.geometry.SimplePolygon hull = new net.runelite.api.geometry.SimplePolygon(

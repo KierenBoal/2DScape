@@ -31,17 +31,17 @@ public final class ObservedTileObjectBuilder
 		List<ObjectRenderablePart> parts = new ArrayList<>(2);
 		if (tileObject instanceof GameObject)
 		{
-			addObjectRenderablePart(parts, ((GameObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
+			addObjectRenderablePart(parts, ((GameObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane(), tileObject.getZ());
 		}
 		else if (tileObject instanceof GroundObject)
 		{
-			addObjectRenderablePart(parts, ((GroundObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane());
+			addObjectRenderablePart(parts, ((GroundObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane(), tileObject.getZ());
 		}
 		else if (tileObject instanceof WallObject)
 		{
 			WallObject wallObject = (WallObject) tileObject;
-			addObjectRenderablePart(parts, wallObject.getRenderable1(), tileObject.getLocalLocation(), tileObject.getPlane());
-			addObjectRenderablePart(parts, wallObject.getRenderable2(), tileObject.getLocalLocation(), tileObject.getPlane());
+			addObjectRenderablePart(parts, wallObject.getRenderable1(), tileObject.getLocalLocation(), tileObject.getPlane(), tileObject.getZ());
+			addObjectRenderablePart(parts, wallObject.getRenderable2(), tileObject.getLocalLocation(), tileObject.getPlane(), tileObject.getZ());
 		}
 		else if (tileObject instanceof DecorativeObject)
 		{
@@ -50,20 +50,20 @@ public final class ObservedTileObjectBuilder
 				parts,
 				decorativeObject.getRenderable(),
 				offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset(), decorativeObject.getYOffset()),
-				tileObject.getPlane()
+				tileObject.getPlane(), tileObject.getZ()
 			);
 			addObjectRenderablePart(
 				parts,
 				decorativeObject.getRenderable2(),
 				offsetLocalPoint(tileObject.getLocalLocation(), decorativeObject.getXOffset2(), decorativeObject.getYOffset2()),
-				tileObject.getPlane()
+				tileObject.getPlane(), tileObject.getZ()
 			);
 		}
 
 		return parts.isEmpty() ? null : new ObservedTileObject(tileObject, parts, ClassifiedObjectType.UNKNOWN);
 	}
 
-	private static void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable, LocalPoint localPoint, int plane)
+	private static void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable, LocalPoint localPoint, int plane, int worldHeight)
 	{
 		if (renderable == null || localPoint == null
 			|| renderable instanceof Actor
@@ -75,7 +75,7 @@ public final class ObservedTileObjectBuilder
 			return;
 		}
 
-		parts.add(new ObjectRenderablePart(renderable, localPoint, plane));
+		parts.add(new ObjectRenderablePart(renderable, localPoint, plane, worldHeight));
 	}
 
 	private static LocalPoint offsetLocalPoint(LocalPoint base, int xOffset, int yOffset)

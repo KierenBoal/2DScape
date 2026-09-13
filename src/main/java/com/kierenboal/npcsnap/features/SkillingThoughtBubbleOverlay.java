@@ -57,6 +57,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	private final SkillIconManager skillIconManager;
 	private final SkillingBubbleAnimation animation;
 	private final Map<Skill, BufferedImage> skillImages = new EnumMap<>(Skill.class);
+	private volatile boolean active;
 
 	@Inject
 	private SkillingThoughtBubbleOverlay(
@@ -81,7 +82,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!config.enableSkillingBubbles() || client.getGameState() != GameState.LOGGED_IN)
+		if (!active || !config.enableSkillingBubbles() || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return null;
 		}
@@ -113,6 +114,11 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 
 		drawBubble(graphics, player, anchor, activeSkills, nowMillis, alpha);
 		return null;
+	}
+
+	public void setActive(boolean active)
+	{
+		this.active = active;
 	}
 
 	private Point getBubbleAnchor(Player player)

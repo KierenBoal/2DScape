@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.features.LoginXpDropGuard;
+import com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility;
 import com.kierenboal.npcsnap.features.SkillingActivityTracker;
 import com.kierenboal.npcsnap.features.SkillingThoughtBubbleOverlay;
 import com.kierenboal.npcsnap.export.BillboardExportBatch;
@@ -88,9 +89,13 @@ public class NpcSnapPlugin extends Plugin
 	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
+	private volatile boolean active;
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private BillboardSceneVisibility sceneVisibility;
 
 	@Inject
 	private DrawManager drawManager;
@@ -131,6 +136,9 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		active = true;
+		billboardOverlay.setActive(true);
+		skillingThoughtBubbleOverlay.setActive(true);
 		migrateLegacyRetroOverheadConfig();
 		ensureTextureBandingManager().markDirty();
 		ensureUiTextureManager().markDirty();
@@ -170,33 +178,62 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
-		renderCallbackManager.unregister(this);
-		overlayManager.remove(skillingThoughtBubbleOverlay);
-		overlayManager.remove(billboardOverlay);
-		drawManager.unregisterEveryFrameListener(restoreFrameListener);
-		restoreFrameState();
-		billboardOverlay.clearGroundItems();
-		billboardOverlay.clearTileObjects();
-		billboardOverlay.clearBillboardCache();
-		billboardOverlay.clearTextureCache();
-		billboardOverlay.clearInteractionState();
-		skillingActivityTracker.clear();
+		// PluginManager removes us from the event bus before calling this method. Keep
+		// the direct render hooks harmless even if one cleanup step below fails.
+		active = false;
+		cleanupStep("billboard overlay activity", () -> billboardOverlay.setActive(false));
+		cleanupStep("thought bubble overlay activity", () -> skillingThoughtBubbleOverlay.setActive(false));
+		cleanupStep("scene visibility", sceneVisibility::stop);
+		cleanupStep("render callback", () -> renderCallbackManager.unregister(this));
+		cleanupStep("thought bubble overlay", () -> overlayManager.remove(skillingThoughtBubbleOverlay));
+		cleanupStep("billboard overlay", () -> overlayManager.remove(billboardOverlay));
+		cleanupStep("frame listener", () -> drawManager.unregisterEveryFrameListener(restoreFrameListener));
+		cleanupStep("frame state", this::restoreFrameStateNow);
+		cleanupStep("ground item state", billboardOverlay::clearGroundItems);
+		cleanupStep("tile object state", billboardOverlay::clearTileObjects);
+		cleanupStep("billboard cache", billboardOverlay::clearBillboardCache);
+		cleanupStep("texture cache", billboardOverlay::clearTextureCache);
+		cleanupStep("interaction state", billboardOverlay::clearInteractionState);
+		cleanupStep("skilling state", skillingActivityTracker::clear);
 		pendingSkillXpSeed = false;
-		animationFrameSnapper.clear();
-		debug.clearFrameStates();
-		billboardPngExporter.shutDown();
-		if (ensureTextureBandingManager().restore())
+		cleanupStep("animation state", animationFrameSnapper::clear);
+		cleanupStep("debug frame state", debug::clearFrameStates);
+		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
+		cleanupStep("global texture restoration", () ->
 		{
-			billboardOverlay.clearTextureCache();
-			ensureRendererRefresher().requestRefresh();
-		}
-		ensureUiTextureManager().restore();
+			if (ensureTextureBandingManager().restore())
+			{
+				cleanupStep("texture cache after restoration", billboardOverlay::clearTextureCache);
+				cleanupStep("renderer refresh after restoration", () -> ensureRendererRefresher().requestRefresh());
+			}
+		});
+		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
 		log.debug("2DScape stopped");
+	}
+
+	private void cleanupStep(String name, Runnable cleanup)
+	{
+		try
+		{
+			cleanup.run();
+		}
+		catch (RuntimeException ex)
+		{
+			// A broken client-side object should not prevent later hooks from being
+			// removed. RuneLite has already marked the plugin inactive at this point.
+			log.debug("2DScape cleanup step failed: " + name, ex);
+		}
 	}
 
 	@Subscribe
 	public void onBeforeRender(BeforeRender beforeRender)
 	{
+		if (!active)
+		{
+			return;
+		}
+
+		sceneVisibility.beginFrame();
 		restoreFrameState();
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
@@ -605,6 +642,11 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	public boolean addEntity(Renderable renderable, boolean drawingUi)
 	{
+		if (!active)
+		{
+			return true;
+		}
+
 		return ensureSceneDrawCallbacks().addEntity(renderable, drawingUi);
 	}
 
@@ -617,12 +659,22 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	public boolean draw(Renderable renderable, boolean drawingUi)
 	{
+		if (!active)
+		{
+			return true;
+		}
+
 		return ensureSceneDrawCallbacks().draw(renderable, drawingUi);
 	}
 
 	@Override
 	public boolean drawObject(Scene scene, TileObject tileObject)
 	{
+		if (!active)
+		{
+			return true;
+		}
+
 		return ensureSceneDrawCallbacks().drawObject(tileObject);
 	}
 
@@ -784,16 +836,33 @@ public class NpcSnapPlugin extends Plugin
 
 		for (Map.Entry<Actor, RenderState> entry : mutatedActors.entrySet())
 		{
-			Actor actor = entry.getKey();
-			RenderState state = entry.getValue();
-			actor.setAnimationFrame(state.getAnimationFrame());
-			actor.setPoseAnimationFrame(state.getPoseAnimationFrame());
+			try
+			{
+				Actor actor = entry.getKey();
+				RenderState state = entry.getValue();
+				actor.setAnimationFrame(state.getAnimationFrame());
+				actor.setPoseAnimationFrame(state.getPoseAnimationFrame());
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to restore actor animation state", ex);
+			}
 		}
 
 		mutatedActors.clear();
 	}
 
 	private void restoreFrameState()
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		restoreFrameStateNow();
+	}
+
+	private void restoreFrameStateNow()
 	{
 		restoreNpcState();
 		billboardOverlay.restoreBoatGeometry();

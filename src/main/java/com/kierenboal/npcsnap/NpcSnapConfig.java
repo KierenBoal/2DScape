@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
+import com.kierenboal.npcsnap.occlusion.BillboardOcclusionComposition;
 import java.awt.Color;
 import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
@@ -140,35 +141,41 @@ public interface NpcSnapConfig extends Config
 		return BillboardOcclusionQuality.MEDIUM;
 	}
 
+	@ConfigItem(keyName = "billboardOcclusionComposition", name = "Occlusion composition", description = "Choose how translucent scenery appears over sprites. Transparency-aware lets sprites show through; Hard cutout hides them completely.", section = renderingSection, position = 4)
+	default BillboardOcclusionComposition billboardOcclusionComposition()
+	{
+		return BillboardOcclusionComposition.TRANSPARENCY_AWARE;
+	}
+
 	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "billboardRadiusTiles", name = "Render distance tiles", description = "How many tiles away sprites can be drawn. Lower values can improve performance.", section = renderingSection, position = 4)
+	@ConfigItem(keyName = "billboardRadiusTiles", name = "Render distance tiles", description = "How many tiles away sprites can be drawn. Lower values can improve performance.", section = renderingSection, position = 5)
 	default int billboardRadiusTiles()
 	{
 		return 90;
 	}
 
 	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "billboardMaxEntities", name = "Max render count", description = "The most sprites the plugin can draw at once. Lower values can improve performance in crowded places.", section = renderingSection, position = 5)
+	@ConfigItem(keyName = "billboardMaxEntities", name = "Max render count", description = "The most sprites the plugin can draw at once. Lower values can improve performance in crowded places.", section = renderingSection, position = 6)
 	default int billboardMaxEntities()
 	{
 		return 128;
 	}
 
 	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "billboardMaxDrawsPerFrame", name = "Max updates per frame", description = "The most sprite pictures the plugin can refresh at once. Lower values can improve performance but make changes appear later.", section = renderingSection, position = 6)
+	@ConfigItem(keyName = "billboardMaxDrawsPerFrame", name = "Max updates per frame", description = "The most sprite pictures the plugin can refresh at once. Lower values can improve performance but make changes appear later.", section = renderingSection, position = 7)
 	default int billboardMaxDrawsPerFrame()
 	{
 		return 16;
 	}
 
 	@Range(min = 1, max = 100)
-	@ConfigItem(keyName = "renderBillboardQuality", name = "Render quality", description = "How sharp newly made sprites are. Lower values can improve performance.", section = renderingSection, position = 7)
+	@ConfigItem(keyName = "renderBillboardQuality", name = "Render quality", description = "How sharp newly made sprites are. Lower values can improve performance.", section = renderingSection, position = 8)
 	default double renderBillboardQuality()
 	{
 		return 33.0d;
 	}
 
-	@ConfigItem(keyName = "renderBillboardsOnAllPlanes", name = "Render billboards on all planes", description = "Also draw sprites on floors above and below you.", section = renderingSection, position = 8)
+	@ConfigItem(keyName = "renderBillboardsOnAllPlanes", name = "Render billboards on all planes", description = "Also draw sprites on floors above and below you.", section = renderingSection, position = 9)
 	default boolean renderBillboardsOnAllPlanes()
 	{
 		return false;
@@ -357,7 +364,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat and hitsplats", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, and hitsplats.", section = retroSection, position = 11)
 	default boolean useRetroOverheads()
 	{
-		return true;
+		return false;
 	}
 
 	/**

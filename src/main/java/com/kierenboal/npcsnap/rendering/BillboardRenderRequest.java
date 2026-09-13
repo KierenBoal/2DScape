@@ -16,6 +16,7 @@ public final class BillboardRenderRequest
 	public final int verticalOffset;
 	public final int relativeYaw;
 	public final int relativePitch;
+	public final boolean lowProfile;
 	public final int animationId;
 	public final int animationFrame;
 	public final int poseAnimationId;
@@ -49,7 +50,7 @@ public final class BillboardRenderRequest
 		this(
 			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
 			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			shouldHoverOutline, shouldInteractOutline, null, null, verticalAnchor, frameDebugInfo);
+			shouldHoverOutline, shouldInteractOutline, null, null, verticalAnchor, frameDebugInfo, false);
 	}
 
 	public BillboardRenderRequest(
@@ -70,7 +71,35 @@ public final class BillboardRenderRequest
 		Color hoverOutlineColor,
 		Color interactionOutlineColor,
 		VerticalAnchor verticalAnchor,
-		NpcSnapDebug.FrameDebugInfo frameDebugInfo
+		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
+	{
+		this(
+			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
+			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
+			shouldHoverOutline, shouldInteractOutline, hoverOutlineColor, interactionOutlineColor,
+			verticalAnchor, frameDebugInfo, false);
+	}
+
+	public BillboardRenderRequest(
+		Renderable renderable,
+		Model model,
+		LocalPoint localPoint,
+		int plane,
+		int verticalOffset,
+		int relativeYaw,
+		int relativePitch,
+		int animationId,
+		int animationFrame,
+		int poseAnimationId,
+		int poseAnimationFrame,
+		int animatedTextureId,
+		boolean shouldHoverOutline,
+		boolean shouldInteractOutline,
+		Color hoverOutlineColor,
+		Color interactionOutlineColor,
+		VerticalAnchor verticalAnchor,
+		NpcSnapDebug.FrameDebugInfo frameDebugInfo,
+		boolean lowProfile
 	)
 	{
 		this.renderable = renderable;
@@ -80,6 +109,7 @@ public final class BillboardRenderRequest
 		this.verticalOffset = verticalOffset;
 		this.relativeYaw = relativeYaw;
 		this.relativePitch = relativePitch;
+		this.lowProfile = lowProfile;
 		this.animationId = animationId;
 		this.animationFrame = animationFrame;
 		this.poseAnimationId = poseAnimationId;

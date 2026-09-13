@@ -22,6 +22,7 @@ public final class BillboardFrameBuffer
 	private final DepthSurfaceFactory depthSurfaceFactory;
 	private boolean[] rowHasDepth = new boolean[0];
 	private double[] rowDepth = new double[0];
+	private int[] sampleTransmittance = new int[0];
 	private BufferedImage image;
 	private int[] pixels = new int[0];
 	private char[] paintOrder = new char[0];
@@ -93,6 +94,10 @@ public final class BillboardFrameBuffer
 		long occlusionElapsedNanos = 0L;
 		boolean measureOcclusion = performanceMetrics.isEnabled() && hasActiveOcclusion;
 		int occlusionSampleStep = hasActiveOcclusion ? occlusionMask.sampleStep() : 0;
+		if (occlusionSampleStep > 1 && sampleTransmittance.length < occlusionSampleStep)
+		{
+			sampleTransmittance = new int[occlusionSampleStep];
+		}
 		for (int y = clipTop; y < clipBottom; y++)
 		{
 			int sourceY = geometry.sourceYAt(y, sourceHeight);
@@ -110,7 +115,6 @@ public final class BillboardFrameBuffer
 			long rowOcclusionStart = measureOcclusion && rowHasOcclusion ? System.nanoTime() : 0L;
 			BillboardOcclusionMask.CellResult cachedSampleResult = BillboardOcclusionMask.CellResult.VISIBLE;
 			int cachedSampleX = Integer.MIN_VALUE;
-			int cachedSampleBits = 0;
 			int cachedSampleStartX = 0;
 			for (int x = clipLeft; x < clipRight; x++)
 			{
@@ -141,7 +145,7 @@ public final class BillboardFrameBuffer
 						rowHasDepth[clippedRow] = true;
 					}
 					double pixelDepth = rowDepth[clippedRow];
-					boolean occluded;
+					int transmittance;
 					if (occlusionSampleStep > 1)
 					{
 						int sampleX = occlusionMask.sampleX(x);
@@ -151,25 +155,34 @@ public final class BillboardFrameBuffer
 							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth);
 							if (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE)
 							{
-								cachedSampleBits = occlusionMask.refinedSampleBits(sampleX, y, pixelDepth);
+								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance);
 								cachedSampleStartX = x - occlusionMask.sampleOffset(x);
 							}
 						}
-						occluded = cachedSampleResult == BillboardOcclusionMask.CellResult.OCCLUDED
-							|| (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE
-								&& (cachedSampleBits & (1 << (x - cachedSampleStartX))) != 0);
+						transmittance = cachedSampleResult == BillboardOcclusionMask.CellResult.OCCLUDED ? 0
+							: cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE
+								? sampleTransmittance[x - cachedSampleStartX] : 255;
 					}
 					else
 					{
-						occluded = occlusionMask.isOccluded(x, y, pixelDepth);
+						transmittance = occlusionMask.transmittanceAt(x, y, pixelDepth);
 					}
-					if (occluded)
+					if (transmittance == 0)
 					{
 						if (drawOccludedPixels)
 						{
 							pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(pixels[destinationIndex], DEBUG_OCCLUDED_PIXEL);
 						}
 						continue;
+					}
+					if (transmittance < 255)
+					{
+						if (drawOccludedPixels)
+						{
+							pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(
+								pixels[destinationIndex], debugOcclusionPixel(transmittance));
+						}
+						sourcePixel = occlusionMask.tintPixel(x, y, pixelDepth, sourcePixel);
 					}
 				}
 
@@ -178,7 +191,7 @@ public final class BillboardFrameBuffer
 				// blend arguments preserves transparent foreground layers instead of allowing
 				// later, farther pixels to draw on top of or replace them.
 				pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(sourcePixel, pixels[destinationIndex]);
-				if (((pixels[destinationIndex] >>> 24) & 0xFF) == 0xFF)
+				if (sourceAlpha == 0xFF)
 				{
 					paintOrder[destinationIndex] = (char) drawPaintOrder;
 				}
@@ -192,6 +205,12 @@ public final class BillboardFrameBuffer
 		{
 			performanceMetrics.addElapsed("Per-pixel occlusion checks", occlusionElapsedNanos);
 		}
+	}
+
+	private static int debugOcclusionPixel(int transmittance)
+	{
+		int alpha = ((DEBUG_OCCLUDED_PIXEL >>> 24) & 0xFF) * (255 - transmittance) / 255;
+		return (DEBUG_OCCLUDED_PIXEL & 0x00FFFFFF) | (alpha << 24);
 	}
 
 	private void ensureCapacity(int width, int height)

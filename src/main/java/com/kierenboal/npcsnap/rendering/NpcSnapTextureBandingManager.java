@@ -61,13 +61,27 @@ public final class NpcSnapTextureBandingManager
 		}
 
 		TextureProvider textureProvider = appliedTextureProvider;
-		if (textureProvider != null)
+		try
 		{
-			Texture[] textures = textureProvider.getTextures();
-			for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
+			if (textureProvider != null)
 			{
-				restoreTexturePixels(textureProvider, textures, entry.getKey(), entry.getValue());
+				Texture[] textures = textureProvider.getTextures();
+				for (Map.Entry<Integer, int[]> entry : originalTexturePixels.entrySet())
+				{
+					try
+					{
+						restoreTexturePixels(textureProvider, textures, entry.getKey(), entry.getValue());
+					}
+					catch (RuntimeException ex)
+					{
+						log.debug("Unable to restore texture {}", entry.getKey(), ex);
+					}
+				}
 			}
+		}
+		catch (RuntimeException ex)
+		{
+			log.debug("Unable to inspect the texture provider while restoring textures", ex);
 		}
 
 		boolean changed = applied || !originalTexturePixels.isEmpty();
@@ -78,7 +92,14 @@ public final class NpcSnapTextureBandingManager
 		appliedTextureProvider = null;
 		if (textureProvider != null)
 		{
-			resetTextureProviderCache(textureProvider);
+			try
+			{
+				resetTextureProviderCache(textureProvider);
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to reset the texture provider cache", ex);
+			}
 		}
 		return changed;
 	}

@@ -27,7 +27,8 @@ public class ObservedTileObjectBuilderTest
 			GameObject.class,
 			method("getRenderable", renderable),
 			method("getLocalLocation", localPoint),
-			method("getPlane", 2)
+			method("getPlane", 2),
+			method("getZ", -417)
 		);
 
 		ObservedTileObject observed = ObservedTileObjectBuilder.build(gameObject);
@@ -38,6 +39,7 @@ public class ObservedTileObjectBuilderTest
 		Assert.assertSame(renderable, observed.parts.get(0).renderable);
 		Assert.assertEquals(localPoint, observed.parts.get(0).localPoint);
 		Assert.assertEquals(2, observed.parts.get(0).plane);
+		Assert.assertEquals(-417, observed.parts.get(0).worldHeight);
 	}
 
 	@Test
@@ -51,6 +53,7 @@ public class ObservedTileObjectBuilderTest
 			method("getRenderable2", second),
 			method("getLocalLocation", new LocalPoint(128, 256)),
 			method("getPlane", 1),
+			method("getZ", -288),
 			method("getXOffset", 10),
 			method("getYOffset", -20),
 			method("getXOffset2", -30),
@@ -65,6 +68,8 @@ public class ObservedTileObjectBuilderTest
 		Assert.assertEquals(new LocalPoint(138, 236), observed.parts.get(0).localPoint);
 		Assert.assertSame(second, observed.parts.get(1).renderable);
 		Assert.assertEquals(new LocalPoint(98, 296), observed.parts.get(1).localPoint);
+		Assert.assertEquals(-288, observed.parts.get(0).worldHeight);
+		Assert.assertEquals(-288, observed.parts.get(1).worldHeight);
 	}
 
 	@Test

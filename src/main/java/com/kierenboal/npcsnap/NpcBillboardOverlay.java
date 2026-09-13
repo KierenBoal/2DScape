@@ -13,6 +13,7 @@ import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
 import com.kierenboal.npcsnap.occlusion.BillboardWorldOcclusionCollector;
+import com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.BillboardAngleUtils;
 import com.kierenboal.npcsnap.rendering.BillboardCanvasPoint;
@@ -141,6 +142,8 @@ class NpcBillboardOverlay extends Overlay
 	private final NpcSnapDebug debug;
 	private final BillboardDepthCalculator depthCalculator;
 	private final BillboardWorldOcclusionCollector worldOcclusionCollector;
+	private WorldView occlusionWorldView;
+	private List<BillboardWorldOcclusionCollector.TraceTarget> occlusionTraceTargets = Collections.emptyList();
 	private final BillboardOrientationCalculator orientationCalculator;
 	private final BillboardCacheStore billboardCache = new BillboardCacheStore();
 	private final BillboardTextureResolver textureResolver;
@@ -181,16 +184,17 @@ class NpcBillboardOverlay extends Overlay
 	private Actor lastSkewDebugActor;
 	private int lastSkewDebugCameraPitch = Integer.MIN_VALUE;
 	private int lastSkewDebugCameraYaw = Integer.MIN_VALUE;
+	private volatile boolean active;
 
 	@Inject
-	private NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper)
+	private NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper, BillboardSceneVisibility sceneVisibility)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
 		this.config = config;
 		this.debug = debug;
 		this.depthCalculator = new BillboardDepthCalculator(client);
-		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, performanceMetrics, log);
+		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, performanceMetrics, log, sceneVisibility);
 		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
 		this.requestFactory = new BillboardRenderRequestFactory(
 			client, config, debug, animationFrameSnapper, orientationCalculator, interactionState);
@@ -207,6 +211,11 @@ class NpcBillboardOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (!active)
+		{
+			return null;
+		}
+
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Render overlay"))
 		{
 			if (client.getGameState() != GameState.LOGGED_IN)
@@ -261,6 +270,11 @@ class NpcBillboardOverlay extends Overlay
 			performanceMetrics.finishFrame();
 			drawPerformanceMetrics(graphics);
 		}
+	}
+
+	void setActive(boolean active)
+	{
+		this.active = active;
 	}
 
 	private void drawPerformanceMetrics(Graphics2D graphics)
@@ -410,21 +424,42 @@ class NpcBillboardOverlay extends Overlay
 	{
 		for (Map.Entry<Model, int[]> entry : maskedBoatModelColors.entrySet())
 		{
-			int[] colors = entry.getKey().getFaceColors3();
-			if (colors != null && colors.length == entry.getValue().length)
+			try
 			{
-				System.arraycopy(entry.getValue(), 0, colors, 0, colors.length);
+				int[] colors = entry.getKey().getFaceColors3();
+				if (colors != null && colors.length == entry.getValue().length)
+				{
+					System.arraycopy(entry.getValue(), 0, colors, 0, colors.length);
+				}
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to restore masked boat model geometry", ex);
 			}
 		}
 		maskedBoatModelColors.clear();
 		for (Map.Entry<SceneTilePaint, BoatPaintState> entry : maskedBoatPaints.entrySet())
 		{
-			entry.getValue().restore(entry.getKey());
+			try
+			{
+				entry.getValue().restore(entry.getKey());
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to restore masked boat paint", ex);
+			}
 		}
 		maskedBoatPaints.clear();
 		for (Map.Entry<SceneTileModel, BoatTileModelState> entry : maskedBoatTileModels.entrySet())
 		{
-			entry.getValue().restore(entry.getKey());
+			try
+			{
+				entry.getValue().restore(entry.getKey());
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to restore masked boat tile model", ex);
+			}
 		}
 		maskedBoatTileModels.clear();
 	}
@@ -520,6 +555,8 @@ class NpcBillboardOverlay extends Overlay
 		{
 			expireCaches(System.currentTimeMillis());
 			worldOcclusionCollector.resetFrame();
+			occlusionWorldView = null;
+			occlusionTraceTargets = Collections.emptyList();
 			occlusionDebugSampler.clear();
 			sceneRenderablesLastFrame.clear();
 			sceneRenderablesLastFrame.addAll(sceneRenderablesThisFrame);
@@ -1474,7 +1511,15 @@ class NpcBillboardOverlay extends Overlay
 			}
 			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Prepare occlusion mask"))
 			{
-				occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
+				// ABOVE_SCENE runs after preSceneDraw has supplied this frame's actual
+				// roof groups and floor range. Preparing targets in BeforeRender is too
+				// early to decide which scenery the renderer will hide.
+				try (BillboardPerformanceMetrics.Timer gathering = performanceMetrics.time("Gather world occluders"))
+				{
+					worldOcclusionCollector.collectTerrainOccluders(occlusionWorldView, occlusionTraceTargets,
+						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderablesLastFrame);
+				}
+				occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), config.billboardOcclusionComposition(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
 			}
 			occlusionDebugSampler.collect(preparedDraws, config.debugLogBillboardOcclusion());
 			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionBounds, occlusionDebugSampler.samples());
@@ -1768,16 +1813,12 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		BillboardOcclusionQuality occlusionQuality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
-		List<BillboardWorldOcclusionCollector.TraceTarget> occlusionTraceTargets;
+		occlusionWorldView = worldView;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Build occlusion trace targets"))
 		{
 			occlusionTraceTargets = occlusionQuality == BillboardOcclusionQuality.OFF
 				? Collections.emptyList()
 				: buildOcclusionTraceTargets(candidates);
-		}
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Gather world occluders"))
-		{
-			worldOcclusionCollector.collectTerrainOccluders(worldView, occlusionTraceTargets, occlusionQuality, sceneRenderablesLastFrame);
 		}
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Schedule frame updates"))
 		{

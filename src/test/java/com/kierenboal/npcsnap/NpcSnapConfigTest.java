@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
+import com.kierenboal.npcsnap.occlusion.BillboardOcclusionComposition;
 
 import java.awt.Color;
 import org.junit.Test;
@@ -24,7 +25,7 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableBillboardSpriteShadows());
 		assertFalse(config.applyToBoats());
 		assertFalse(config.deterministicAnimationLooping());
-		assertTrue(config.useRetroOverheads());
+		assertFalse(config.useRetroOverheads());
 		assertTrue(config.alignOverheadPrayers());
 		assertFalse(config.ignoreProjectionSkewCorrection());
 		assertFalse(config.logBillboardAnimationData());
@@ -120,6 +121,10 @@ public class NpcSnapConfigTest
 		assertEquals(33.0d, config.renderBillboardQuality(), 0d);
 		assertEquals(100.0d, config.globalTextureSpriteQuality(), 0d);
 		assertEquals(BillboardOcclusionQuality.MEDIUM, config.billboardOcclusionQuality());
+		assertEquals(BillboardOcclusionComposition.TRANSPARENCY_AWARE, config.billboardOcclusionComposition());
+		assertEquals("Transparency-aware", BillboardOcclusionComposition.TRANSPARENCY_AWARE.toString());
+		assertEquals("Hard cutout", BillboardOcclusionComposition.HARD_CUTOUT.toString());
+		assertEquals(BillboardOcclusionComposition.TRANSPARENCY_AWARE, BillboardOcclusionComposition.normalize(null));
 		assertEquals(90, config.billboardRadiusTiles());
 		assertEquals(128, config.billboardMaxEntities());
 		assertEquals(16, config.billboardMaxDrawsPerFrame());

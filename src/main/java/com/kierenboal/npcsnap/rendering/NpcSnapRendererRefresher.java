@@ -1,5 +1,7 @@
 package com.kierenboal.npcsnap.rendering;
 
+import com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +38,7 @@ public final class NpcSnapRendererRefresher
 	{
 		try
 		{
-			DrawCallbacks drawCallbacks = client.getDrawCallbacks();
+			DrawCallbacks drawCallbacks = BillboardSceneVisibility.renderer(client.getDrawCallbacks());
 			if (!(drawCallbacks instanceof Plugin))
 			{
 				log.debug("Active GPU draw callbacks are not directly refreshable; world textures will update on the next renderer reload");

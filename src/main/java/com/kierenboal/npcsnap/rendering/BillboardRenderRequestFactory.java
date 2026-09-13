@@ -15,7 +15,9 @@ import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.DynamicObject;
 import net.runelite.api.GraphicsObject;
+import net.runelite.api.Model;
 import net.runelite.api.Projectile;
+import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
 import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
@@ -83,10 +85,13 @@ public final class BillboardRenderRequestFactory
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo = snappedFrame >= 0
 			? NpcSnapDebug.FrameDebugInfo.of(animationId, originalFrame, snappedFrame)
 			: null;
+		Model model = part.renderable.getModel();
+		boolean lowProfile = target.type != BillboardTargetType.BOAT && isLowProfile(part.renderable, model);
 		return request(
-			part.renderable, part.renderable.getModel(), part.localPoint, part.plane, 0,
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
-			animationId, snappedFrame, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, frameDebugInfo);
+			part.renderable, model, part.localPoint, part.plane, 0,
+			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			animationId, snappedFrame, -1, -1, -1, false, false, lowProfile,
+			VerticalAnchor.BOTTOM, frameDebugInfo);
 	}
 
 	public BillboardRenderRequest buildActor(Actor actor)
@@ -100,8 +105,9 @@ public final class BillboardRenderRequestFactory
 			&& actor == interactionState.frameHoveredTarget();
 		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
 		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
+		Model model = actor.getModel();
 		return request(
-			actor, actor.getModel(), mainWorldLocation,
+			actor, model, mainWorldLocation,
 			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
 			Math.max(0, actor.getAnimationHeightOffset()),
 			orientationCalculator.relativeYaw(actor,
@@ -110,15 +116,17 @@ public final class BillboardRenderRequestFactory
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
 			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
 			hoverColor, interactionColor,
-			VerticalAnchor.BOTTOM, debug.actorFrameDebugInfo(actor));
+			false, VerticalAnchor.BOTTOM, debug.actorFrameDebugInfo(actor));
 	}
 
 	public BillboardRenderRequest buildStaticObjectPart(ObjectRenderablePart part)
 	{
+		Model model = part.renderable.getModel();
+		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
-			part.renderable, part.renderable.getModel(), part.localPoint, part.plane, 0,
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
-			-1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			part.renderable, model, part.localPoint, part.plane, 0,
+			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			-1, -1, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM, null);
 	}
 
 	public BillboardRenderRequest buildActorSpotAnimation(ActorSpotAnim spotAnimation, Actor actor)
@@ -127,33 +135,39 @@ public final class BillboardRenderRequestFactory
 		{
 			return null;
 		}
+		Model model = spotAnimation.getModel();
+		boolean lowProfile = isLowProfile(spotAnimation, model);
 		return request(
-			spotAnimation, spotAnimation.getModel(), actor.getLocalLocation(), actor.getWorldView().getPlane(),
+			spotAnimation, model, actor.getLocalLocation(), actor.getWorldView().getPlane(),
 			Math.max(0, spotAnimation.getHeight()),
-			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(),
+			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(lowProfile),
 			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1, false, false,
-			VerticalAnchor.BOTTOM,
+			lowProfile, VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(spotAnimation.getId(), spotAnimation.getFrame(), spotAnimation.getFrame()));
 	}
 
 	public BillboardRenderRequest buildProjectile(Projectile projectile)
 	{
 		int snappedFrame = snapFrame(projectile.getAnimation(), projectile.getAnimationFrame(), config.enableAnimationFrameSnapping());
+		Model model = projectile.getModel();
+		boolean lowProfile = isLowProfile(projectile, model);
 		return request(
-			projectile, projectile.getModel(), BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor(),
+			projectile, model, BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor(),
 			BillboardProjectileGeometry.verticalOffset(client, projectile),
-			orientationCalculator.relativeYaw(projectile), orientationCalculator.relativePitch(),
-			projectile.getId(), snappedFrame, -1, -1, -1, false, false, VerticalAnchor.CENTER,
+			orientationCalculator.relativeYaw(projectile), orientationCalculator.relativePitch(lowProfile),
+			projectile.getId(), snappedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.CENTER,
 			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), snappedFrame));
 	}
 
 	public BillboardRenderRequest buildGraphicsObject(GraphicsObject graphicsObject)
 	{
 		int snappedFrame = snapFrame(graphicsObject.getAnimation(), graphicsObject.getAnimationFrame(), config.enableAnimationFrameSnapping());
+		Model model = graphicsObject.getModel();
+		boolean lowProfile = isLowProfile(graphicsObject, model);
 		return request(
-			graphicsObject, graphicsObject.getModel(), graphicsObject.getLocation(), graphicsObject.getLevel(),
-			Math.max(0, graphicsObject.getZ()), orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
-			graphicsObject.getId(), snappedFrame, -1, -1, -1, false, false, VerticalAnchor.BOTTOM,
+			graphicsObject, model, graphicsObject.getLocation(), graphicsObject.getLevel(),
+			Math.max(0, graphicsObject.getZ()), orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			graphicsObject.getId(), snappedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), snappedFrame));
 	}
 
@@ -163,15 +177,17 @@ public final class BillboardRenderRequestFactory
 		{
 			return null;
 		}
+		Model model = item.getModel();
+		boolean lowProfile = isLowProfile(item, model);
 		return request(
-			item, item.getModel(), groundItem.localPoint, groundItem.plane, groundItem.verticalOffset,
+			item, model, groundItem.localPoint, groundItem.plane, groundItem.verticalOffset,
 			orientationCalculator.relativeGroundItemYaw(), orientationCalculator.relativeGroundItemPitch(),
 			item.getId(), item.getQuantity(), -1, -1, item.getId(),
 			config.enableGroundItemInteractionOutline() && item == interactionState.frameHoveredTarget()
 				&& item != interactionState.frameInteractionTarget(),
 			config.enableGroundItemInteractionOutline() && item == interactionState.frameInteractionTarget(),
 			config.groundItemHoverOutlineColor(), config.groundItemInteractionOutlineColor(),
-			VerticalAnchor.BOTTOM, null);
+			lowProfile, VerticalAnchor.BOTTOM, null);
 	}
 
 	private BillboardRenderRequest request(
@@ -189,13 +205,14 @@ public final class BillboardRenderRequestFactory
 		int animatedTextureId,
 		boolean hoverOutline,
 		boolean interactionOutline,
+		boolean lowProfile,
 		VerticalAnchor verticalAnchor,
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
 	{
 		return request(
 			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
 			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			hoverOutline, interactionOutline, null, null, verticalAnchor, frameDebugInfo);
+			hoverOutline, interactionOutline, null, null, lowProfile, verticalAnchor, frameDebugInfo);
 	}
 
 	private BillboardRenderRequest request(
@@ -215,13 +232,21 @@ public final class BillboardRenderRequestFactory
 		boolean interactionOutline,
 		Color hoverOutlineColor,
 		Color interactionOutlineColor,
+		boolean lowProfile,
 		VerticalAnchor verticalAnchor,
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
 	{
 		return new BillboardRenderRequest(
 			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
 			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			hoverOutline, interactionOutline, hoverOutlineColor, interactionOutlineColor, verticalAnchor, frameDebugInfo);
+			hoverOutline, interactionOutline, hoverOutlineColor, interactionOutlineColor, verticalAnchor, frameDebugInfo,
+			lowProfile);
+	}
+
+	private boolean isLowProfile(Renderable renderable, Model model)
+	{
+		return model != null && renderable != null
+			&& BillboardModelProfile.isLowProfile(model, renderable.getModelHeight());
 	}
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)

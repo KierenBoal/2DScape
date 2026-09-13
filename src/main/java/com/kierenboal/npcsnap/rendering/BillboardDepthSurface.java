@@ -80,7 +80,7 @@ public final class BillboardDepthSurface
 			localPoint.getY(),
 			baseHeight + request.verticalOffset,
 			request.renderable.getModelHeight(),
-			supportsVerticalPlaneOcclusion(request.model),
+			!request.lowProfile && supportsVerticalPlaneOcclusion(request.model),
 			sourceBounds,
 			drawBounds
 		);
@@ -93,48 +93,7 @@ public final class BillboardDepthSurface
 
 	static boolean supportsVerticalPlaneOcclusion(Model model)
 	{
-		if (model == null || model.getVerticesCount() <= 0)
-		{
-			return false;
-		}
-
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
-		if (verticesX == null || verticesY == null || verticesZ == null)
-		{
-			return false;
-		}
-
-		int count = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
-		float minX = Float.POSITIVE_INFINITY;
-		float minY = Float.POSITIVE_INFINITY;
-		float minZ = Float.POSITIVE_INFINITY;
-		float maxX = Float.NEGATIVE_INFINITY;
-		float maxY = Float.NEGATIVE_INFINITY;
-		float maxZ = Float.NEGATIVE_INFINITY;
-		for (int i = 0; i < count; i++)
-		{
-			if (!Float.isFinite(verticesX[i]) || !Float.isFinite(verticesY[i]) || !Float.isFinite(verticesZ[i]))
-			{
-				continue;
-			}
-			minX = Math.min(minX, verticesX[i]);
-			minY = Math.min(minY, verticesY[i]);
-			minZ = Math.min(minZ, verticesZ[i]);
-			maxX = Math.max(maxX, verticesX[i]);
-			maxY = Math.max(maxY, verticesY[i]);
-			maxZ = Math.max(maxZ, verticesZ[i]);
-		}
-
-		if (!Float.isFinite(minX))
-		{
-			return false;
-		}
-
-		double verticalSpan = maxY - minY;
-		double horizontalSpan = Math.max(maxX - minX, maxZ - minZ);
-		return verticalSpan >= Math.max(2.0d, horizontalSpan * 0.1d);
+		return BillboardModelProfile.supportsVerticalPlaneOcclusion(model);
 	}
 
 	public double depthAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight, int canvasY)

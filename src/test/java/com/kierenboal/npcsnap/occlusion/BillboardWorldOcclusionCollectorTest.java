@@ -17,6 +17,7 @@ import net.runelite.api.Renderable;
 import net.runelite.api.Model;
 import net.runelite.api.Point;
 import net.runelite.api.Tile;
+import net.runelite.api.Constants;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
@@ -46,6 +47,10 @@ public class BillboardWorldOcclusionCollectorTest
 		assertTrue(BillboardWorldOcclusionCollector.isInvisibleFace(3, colors, transparencies));
 		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(4, colors, transparencies));
 		assertFalse(BillboardWorldOcclusionCollector.isInvisibleFace(0, null, null));
+		assertEquals(0, BillboardWorldOcclusionCollector.faceTransmittance(0, null));
+		assertEquals(128, BillboardWorldOcclusionCollector.faceTransmittance(4, transparencies));
+		assertEquals(255, BillboardWorldOcclusionCollector.faceTransmittance(3, transparencies));
+		assertEquals(0xFFFFFF, BillboardWorldOcclusionCollector.faceTintRgb(0, null, null, null, null));
 	}
 	@Test
 	public void directCandidatePlanesStartAtTheCurrentPlane()
@@ -78,6 +83,20 @@ public class BillboardWorldOcclusionCollectorTest
 
 		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.NON_ROOF, classification.kind);
 		assertTrue(classification.visibleBelow);
+	}
+
+	@Test
+	public void underRoofFlagAloneDoesNotInventARendererRoofGroup()
+	{
+		SceneFixture fixture = sceneFixture();
+		fixture.settings[1][fixture.offset][fixture.offset] = (byte) Constants.TILE_FLAG_UNDER_ROOF;
+
+		BillboardWorldOcclusionCollector.RoofClassification classification =
+			BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, fixture.tile(1, 0, 0));
+
+		assertEquals(BillboardWorldOcclusionCollector.RoofClassificationKind.NON_ROOF, classification.kind);
+		assertEquals(0, classification.roofId);
+		assertTrue(classification.underRoof);
 	}
 
 	@Test
@@ -128,6 +147,18 @@ public class BillboardWorldOcclusionCollectorTest
 		assertEquals(2, tiles.size());
 		assertSame(direct, tiles.get(0));
 		assertSame(bridge, tiles.get(1));
+	}
+
+	@Test
+	public void linkedTileUsesContainingSceneSlotForRoofGroup()
+	{
+		SceneFixture fixture = sceneFixture();
+		fixture.roofs[2][fixture.offset][fixture.offset] = 42;
+		Tile linked = fixture.tile(3, 0, 0);
+		assertEquals(0, BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, linked, 0).roofId);
+		fixture.settings[1][fixture.offset][fixture.offset] = (byte) Constants.TILE_FLAG_BRIDGE;
+		fixture.roofs[0][fixture.offset][fixture.offset] = 17;
+		assertEquals(17, BillboardWorldOcclusionCollector.classifyRoof(fixture.scene, linked, 0).roofId);
 	}
 
 	@Test
@@ -187,7 +218,7 @@ public class BillboardWorldOcclusionCollectorTest
 	}
 
 	@Test
-	public void bridgeSceneryRequiresAPartRenderedByRuneLite()
+	public void bridgeSceneryRenderEvidenceCanBeTrackedWithoutGatingTheBridgeLayer()
 	{
 		Renderable renderedPart = proxy(Renderable.class);
 		ObservedTileObject observed = new ObservedTileObject(
