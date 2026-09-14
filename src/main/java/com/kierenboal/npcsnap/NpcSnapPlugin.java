@@ -136,6 +136,7 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		migrateOcclusionQuality();
 		active = true;
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
@@ -149,6 +150,15 @@ public class NpcSnapPlugin extends Plugin
 		renderCallbackManager.register(this);
 		billboardPngExporter.start();
 		log.debug("2DScape started");
+	}
+
+	private void migrateOcclusionQuality()
+	{
+		String value = configManager.getConfiguration(CONFIG_GROUP, "billboardOcclusionQuality");
+		if (com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality.isRetiredValue(value))
+		{
+			configManager.setConfiguration(CONFIG_GROUP, "billboardOcclusionQuality", "HIGH");
+		}
 	}
 
 	private void migrateLegacyRetroOverheadConfig()
@@ -623,6 +633,10 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
+		if (CONFIG_GROUP.equals(configChanged.getGroup()) && "billboardOcclusionQuality".equals(configChanged.getKey()))
+		{
+			migrateOcclusionQuality();
+		}
 		ensureConfigChangeHandler().handle(configChanged.getGroup(), configChanged.getKey());
 	}
 

@@ -169,7 +169,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
-	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask();
+	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask(performanceMetrics);
 	private float[] spriteXScratch = new float[0];
 	private float[] spriteYScratch = new float[0];
 	private float[] spriteDepthScratch = new float[0];
@@ -1516,10 +1516,21 @@ class NpcBillboardOverlay extends Overlay
 				// early to decide which scenery the renderer will hide.
 				try (BillboardPerformanceMetrics.Timer gathering = performanceMetrics.time("Gather world occluders"))
 				{
+					// Inventory sprites can extend beyond the model preview. Gather for
+					// the actual draws so their outer pixels receive scenery occlusion too.
+					worldOcclusionCollector.clearInterest();
+					Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
+					for (PreparedBillboardDraw draw : preparedDraws)
+					{
+						worldOcclusionCollector.addInterest(draw.bounds, viewportBounds);
+					}
 					worldOcclusionCollector.collectTerrainOccluders(occlusionWorldView, occlusionTraceTargets,
 						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderablesLastFrame);
 				}
-				occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), config.billboardOcclusionComposition(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
+				try (BillboardPerformanceMetrics.Timer maskTimer = performanceMetrics.time("Build occlusion mask"))
+				{
+					occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), config.billboardOcclusionComposition(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
+				}
 			}
 			occlusionDebugSampler.collect(preparedDraws, config.debugLogBillboardOcclusion());
 			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionBounds, occlusionDebugSampler.samples());
@@ -1543,10 +1554,6 @@ class NpcBillboardOverlay extends Overlay
 			}
 			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Debug overlay drawing"))
 			{
-				if (config.debugDrawBillboardOcclusionMask())
-				{
-					occlusionMask.drawDebug(graphics);
-				}
 				for (PreparedBillboardDraw draw : preparedDraws)
 				{
 					drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
@@ -1856,7 +1863,8 @@ class NpcBillboardOverlay extends Overlay
 			}
 		}
 
-		return worldOcclusionCollector.interestBounds() != null ? traceTargets : Collections.emptyList();
+		// A drawn inventory sprite can overlap the viewport even when its model preview does not.
+		return traceTargets;
 	}
 
 	private BillboardWorldOcclusionCollector.TraceTarget addOcclusionTraceTarget(BillboardTarget target, Rectangle viewportBounds)

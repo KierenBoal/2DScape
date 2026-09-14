@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
 import net.runelite.api.Model;
+import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardDepthSurface
@@ -74,13 +75,16 @@ public final class BillboardDepthSurface
 		}
 
 		LocalPoint localPoint = request.localPoint;
+		// Ground-item sprites use the same camera-facing depth plane as actors,
+		// even when their source model is flat or reports zero height.
+		boolean groundItem = request.renderable instanceof TileItem;
 		return new BillboardDepthSurface(
 			depthCalculator,
 			localPoint.getX(),
 			localPoint.getY(),
 			baseHeight + request.verticalOffset,
-			request.renderable.getModelHeight(),
-			!request.lowProfile && supportsVerticalPlaneOcclusion(request.model),
+			groundItem ? Math.max(1, request.renderable.getModelHeight()) : request.renderable.getModelHeight(),
+			groundItem || (!request.lowProfile && supportsVerticalPlaneOcclusion(request.model)),
 			sourceBounds,
 			drawBounds
 		);

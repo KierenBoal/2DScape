@@ -15,7 +15,6 @@ import java.awt.Shape;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -54,7 +53,7 @@ public final class BillboardWorldOcclusionCollector
 	private final BillboardSceneVisibility sceneVisibility;
 	private final List<BillboardOcclusionMask.Occluder> worldOccluders = new ArrayList<>();
 	private final List<Rectangle> interestRegions = new ArrayList<>();
-	private final Set<Long> visitedTileCoordinates = new HashSet<>();
+	private final BillboardTileVisits tileVisits = new BillboardTileVisits();
 	private final Set<Tile> visitedTiles = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<TileObject> visitedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final IdentityHashMap<Tile, TileCandidate> tileCandidatesByTile = new IdentityHashMap<>();
@@ -195,12 +194,15 @@ public final class BillboardWorldOcclusionCollector
 		}
 		refreshFallbackShapeCacheCameraState();
 
-		visitedTileCoordinates.clear();
+		tileVisits.reset(tiles, terrainCorridorRadiusTiles(quality));
 		visitedTiles.clear();
 		visitedObjects.clear();
 		tileCandidatesByTile.clear();
 		tileCandidates.clear();
 		int currentPlane = Math.max(0, Math.min(worldView.getPlane(), Constants.MAX_Z - 1));
+		int[] candidatePlanes = directCandidatePlanes(currentPlane, tiles.length);
+		int cameraX = Math.round(client.getCameraFpX());
+		int cameraY = Math.round(client.getCameraFpY());
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain corridor traversal"))
 		{
 			for (TraceTarget traceTarget : traceTargets)
@@ -210,7 +212,7 @@ public final class BillboardWorldOcclusionCollector
 					continue;
 				}
 
-				collectTerrainCorridorTiles(tiles, traceTarget, currentPlane, quality, visitedTileCoordinates, visitedTiles, tileCandidatesByTile, tileCandidates);
+				collectTerrainCorridorTiles(tiles, traceTarget, currentPlane, quality, candidatePlanes, cameraX, cameraY, visitedTiles, tileCandidatesByTile, tileCandidates);
 			}
 		}
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain face/scenery gathering"))
@@ -373,14 +375,14 @@ public final class BillboardWorldOcclusionCollector
 		TraceTarget target,
 		int currentPlane,
 		BillboardOcclusionQuality quality,
-		Set<Long> visitedTileCoordinates,
+		int[] candidatePlanes,
+		int cameraX,
+		int cameraY,
 		Set<Tile> visitedTiles,
 		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
 		List<TileCandidate> candidates)
 	{
 		int tileSize = BillboardConstants.LOCAL_TILE_SIZE;
-		int cameraX = Math.round(client.getCameraFpX());
-		int cameraY = Math.round(client.getCameraFpY());
 		int targetX = target.localPoint.getX();
 		int targetY = target.localPoint.getY();
 		int dx = targetX - cameraX;
@@ -392,13 +394,16 @@ public final class BillboardWorldOcclusionCollector
 		}
 
 		int radiusTiles = terrainCorridorRadiusTiles(quality);
-		int[] candidatePlanes = directCandidatePlanes(currentPlane, tiles.length);
 		for (int step = 0; step <= steps; step++)
 		{
 			int x = cameraX + (int) Math.round((double) dx * step / steps);
 			int y = cameraY + (int) Math.round((double) dy * step / steps);
 			int centerTileX = Math.floorDiv(x, tileSize);
 			int centerTileY = Math.floorDiv(y, tileSize);
+			if (!tileVisits.addCenter(centerTileX, centerTileY))
+			{
+				continue;
+			}
 			for (int offsetX = -radiusTiles; offsetX <= radiusTiles; offsetX++)
 			{
 				for (int offsetY = -radiusTiles; offsetY <= radiusTiles; offsetY++)
@@ -411,7 +416,6 @@ public final class BillboardWorldOcclusionCollector
 							currentPlane,
 							centerTileX + offsetX,
 							centerTileY + offsetY,
-							visitedTileCoordinates,
 							visitedTiles,
 							candidatesByTile,
 							candidates);
@@ -425,10 +429,6 @@ public final class BillboardWorldOcclusionCollector
 	{
 		switch (quality)
 		{
-			case MAX:
-				return 10;
-			case ULTRA:
-				return 8;
 			case HIGH:
 				return 6;
 			case MEDIUM:
@@ -445,7 +445,6 @@ public final class BillboardWorldOcclusionCollector
 		int currentPlane,
 		int tileX,
 		int tileY,
-		Set<Long> visitedTileCoordinates,
 		Set<Tile> visitedTiles,
 		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
 		List<TileCandidate> candidates)
@@ -461,8 +460,7 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		long key = terrainTileKey(plane, tileX, tileY);
-		if (!visitedTileCoordinates.add(key))
+		if (!tileVisits.addCoordinate(plane, tileX, tileY))
 		{
 			return;
 		}
@@ -526,11 +524,6 @@ public final class BillboardWorldOcclusionCollector
 
 		LocalPoint localPoint = tile.getLocalLocation();
 		debugBridgeTileSamples.add("plane=" + tile.getPlane() + " local=" + (localPoint == null ? "-" : localPoint.getX() + "," + localPoint.getY()));
-	}
-
-	private long terrainTileKey(int plane, int tileX, int tileY)
-	{
-		return ((long) plane << 48) ^ ((long) (tileX & 0xFFFFFF) << 24) ^ (tileY & 0xFFFFFFL);
 	}
 
 	private void collectTerrainTileOccluder(
@@ -1203,28 +1196,25 @@ public final class BillboardWorldOcclusionCollector
 
 	private boolean addWorldOccluder(Shape shape, double depth, String source)
 	{
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Occluder shape creation"))
+		if (shape == null || shape.getBounds().isEmpty())
 		{
-			if (shape == null || shape.getBounds().isEmpty())
-			{
-				return false;
-			}
-			if (!isForwardOccluderDepth(depth))
-			{
-				debugOccludersRejectedBehindCamera++;
-				return false;
-			}
-
-			if (interestBounds != null && !intersectsInterest(shape.getBounds()))
-			{
-				return false;
-			}
-
-			worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth, source));
-			debugShapesAccepted++;
-			debugFlatFallbackOccludersAccepted++;
-			return true;
+			return false;
 		}
+		if (!isForwardOccluderDepth(depth))
+		{
+			debugOccludersRejectedBehindCamera++;
+			return false;
+		}
+
+		if (interestBounds != null && !intersectsInterest(shape.getBounds()))
+		{
+			return false;
+		}
+
+		worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth, source));
+		debugShapesAccepted++;
+		debugFlatFallbackOccludersAccepted++;
+		return true;
 	}
 
 	private String debugOccluderSource(TileObject tileObject, String sourceType)
@@ -1391,7 +1381,7 @@ public final class BillboardWorldOcclusionCollector
 
 	private boolean intersectsInterest(Rectangle bounds)
 	{
-		if (bounds == null || bounds.isEmpty())
+		if (bounds == null || bounds.isEmpty() || interestBounds == null || !bounds.intersects(interestBounds))
 		{
 			return false;
 		}
@@ -1457,6 +1447,7 @@ public final class BillboardWorldOcclusionCollector
 		int baseHeight = partBaseHeight(part);
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model face traversal"))
 		{
+			// Shape creation stays inside this batch timer: timing each triangle adds hot-loop overhead.
 			// Skipping arbitrary faces creates holes; quality controls the mask/corridor instead.
 			for (int face = 0; face < geometry.faceCount; face++)
 			{
@@ -1580,48 +1571,45 @@ public final class BillboardWorldOcclusionCollector
 
 	private void addSceneObjectTriangleOccluder(int a, int b, int c, String source, int transmittance, int tintRgb)
 	{
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Occluder shape creation"))
+		double depth0 = projectedModelDepths[a];
+		double depth1 = projectedModelDepths[b];
+		double depth2 = projectedModelDepths[c];
+		if (!hasForwardVertex(depth0, depth1, depth2))
 		{
-			double depth0 = projectedModelDepths[a];
-			double depth1 = projectedModelDepths[b];
-			double depth2 = projectedModelDepths[c];
-			if (!hasForwardVertex(depth0, depth1, depth2))
-			{
-				debugOccludersRejectedBehindCamera++;
-				return;
-			}
-
-			Point p0 = projectedModelVertices[a];
-			Point p1 = projectedModelVertices[b];
-			Point p2 = projectedModelVertices[c];
-			if (p0 == null || p1 == null || p2 == null)
-			{
-				return;
-			}
-
-			if (!intersectsInterest(triangleBounds(p0, p1, p2)))
-			{
-				return;
-			}
-
-			BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
-				p0.getX(), p0.getY(), (float) depth0,
-				p1.getX(), p1.getY(), (float) depth1,
-				p2.getX(), p2.getY(), (float) depth2,
-				source,
-				transmittance,
-				tintRgb
-			);
-			if (occluder == null)
-			{
-				return;
-			}
-
-			worldOccluders.add(occluder);
-			debugSceneObjectFacesAccepted++;
-			debugShapesAccepted++;
-			debugTriangleOccludersAccepted++;
+			debugOccludersRejectedBehindCamera++;
+			return;
 		}
+
+		Point p0 = projectedModelVertices[a];
+		Point p1 = projectedModelVertices[b];
+		Point p2 = projectedModelVertices[c];
+		if (p0 == null || p1 == null || p2 == null)
+		{
+			return;
+		}
+
+		if (!intersectsInterest(triangleBounds(p0, p1, p2)))
+		{
+			return;
+		}
+
+		BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
+			p0.getX(), p0.getY(), (float) depth0,
+			p1.getX(), p1.getY(), (float) depth1,
+			p2.getX(), p2.getY(), (float) depth2,
+			source,
+			transmittance,
+			tintRgb
+		);
+		if (occluder == null)
+		{
+			return;
+		}
+
+		worldOccluders.add(occluder);
+		debugSceneObjectFacesAccepted++;
+		debugShapesAccepted++;
+		debugTriangleOccludersAccepted++;
 	}
 
 	private TerrainGeometry terrainGeometry(Tile tile, LocalPoint localPoint)
@@ -1732,49 +1720,46 @@ public final class BillboardWorldOcclusionCollector
 		int y2 = triangle.y2;
 		int z2 = triangle.z2;
 
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Occluder shape creation"))
+		double rawDepth0 = depthCalculator.cameraForwardDepth(x0, y0, z0);
+		double rawDepth1 = depthCalculator.cameraForwardDepth(x1, y1, z1);
+		double rawDepth2 = depthCalculator.cameraForwardDepth(x2, y2, z2);
+		if (!hasForwardVertex(rawDepth0, rawDepth1, rawDepth2))
 		{
-			double rawDepth0 = depthCalculator.cameraForwardDepth(x0, y0, z0);
-			double rawDepth1 = depthCalculator.cameraForwardDepth(x1, y1, z1);
-			double rawDepth2 = depthCalculator.cameraForwardDepth(x2, y2, z2);
-			if (!hasForwardVertex(rawDepth0, rawDepth1, rawDepth2))
-			{
-				debugOccludersRejectedBehindCamera++;
-				return;
-			}
-
-			Point p0 = Perspective.localToCanvas(client, x0, y0, z0);
-			Point p1 = Perspective.localToCanvas(client, x1, y1, z1);
-			Point p2 = Perspective.localToCanvas(client, x2, y2, z2);
-			if (p0 == null || p1 == null || p2 == null)
-			{
-				return;
-			}
-
-			if (!intersectsInterest(triangleBounds(p0, p1, p2)))
-			{
-				return;
-			}
-
-			double depth0 = rawDepth0 + TERRAIN_OCCLUSION_DEPTH_BIAS;
-			double depth1 = rawDepth1 + TERRAIN_OCCLUSION_DEPTH_BIAS;
-			double depth2 = rawDepth2 + TERRAIN_OCCLUSION_DEPTH_BIAS;
-			BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
-				p0.getX(), p0.getY(), (float) depth0,
-				p1.getX(), p1.getY(), (float) depth1,
-				p2.getX(), p2.getY(), (float) depth2,
-				terrainOccluderSource(plane)
-			);
-			if (occluder == null)
-			{
-				return;
-			}
-
-			worldOccluders.add(occluder);
-			debugTerrainFacesAccepted++;
-			debugShapesAccepted++;
-			debugTriangleOccludersAccepted++;
+			debugOccludersRejectedBehindCamera++;
+			return;
 		}
+
+		Point p0 = Perspective.localToCanvas(client, x0, y0, z0);
+		Point p1 = Perspective.localToCanvas(client, x1, y1, z1);
+		Point p2 = Perspective.localToCanvas(client, x2, y2, z2);
+		if (p0 == null || p1 == null || p2 == null)
+		{
+			return;
+		}
+
+		if (!intersectsInterest(triangleBounds(p0, p1, p2)))
+		{
+			return;
+		}
+
+		double depth0 = rawDepth0 + TERRAIN_OCCLUSION_DEPTH_BIAS;
+		double depth1 = rawDepth1 + TERRAIN_OCCLUSION_DEPTH_BIAS;
+		double depth2 = rawDepth2 + TERRAIN_OCCLUSION_DEPTH_BIAS;
+		BillboardOcclusionMask.Occluder occluder = BillboardOcclusionMask.Occluder.triangle(
+			p0.getX(), p0.getY(), (float) depth0,
+			p1.getX(), p1.getY(), (float) depth1,
+			p2.getX(), p2.getY(), (float) depth2,
+			terrainOccluderSource(plane)
+		);
+		if (occluder == null)
+		{
+			return;
+		}
+
+		worldOccluders.add(occluder);
+		debugTerrainFacesAccepted++;
+		debugShapesAccepted++;
+		debugTriangleOccludersAccepted++;
 	}
 
 	public static boolean isUnevenTerrainTriangle(int height0, int height1, int height2)

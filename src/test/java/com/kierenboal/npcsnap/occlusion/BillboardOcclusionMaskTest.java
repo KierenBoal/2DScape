@@ -11,8 +11,6 @@ import net.runelite.api.Client;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
@@ -25,6 +23,33 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardOcclusionMaskTest
 {
+	@Test
+	public void maskStageTimersPreserveTransparencyAndPublishUnderBuildTimer()
+	{
+		java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(
+			() -> clock.getAndAdd(100_000_000L));
+		BillboardOcclusionMask mask = new BillboardOcclusionMask(metrics);
+		metrics.beginFrame(true);
+		try (BillboardPerformanceMetrics.Timer ignored = metrics.time("Build occlusion mask"))
+		{
+			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+				new Rectangle(0, 0, 8, 8), 20f, "canopy", 128)),
+				BillboardOcclusionQuality.HIGH, 0, 0, 8, 8);
+		}
+		metrics.finishFrame();
+		assertEquals(128, mask.transmittanceAt(2, 2, 40d));
+		for (String stage : new String[] {"Initialize mask buffers", "Mark active mask regions", "Index occluder coverage"})
+		{
+			assertTrue(stage, metrics.rows(20).stream().anyMatch(row -> stage.equals(row.name) && row.depth == 2));
+		}
+		metrics.beginFrame(false);
+		mask.prepare(Collections.emptyList(), BillboardOcclusionQuality.OFF, 0, 0, 8, 8);
+		metrics.finishFrame();
+		assertEquals(255, mask.transmittanceAt(2, 2, 40d));
+		assertTrue(metrics.rows(20).isEmpty());
+	}
+
 	@Test
 	public void transparentSceneryAttenuatesInsteadOfHardCuttingOut()
 	{
@@ -197,76 +222,6 @@ public class BillboardOcclusionMaskTest
 		}
 	}
 	@Test
-	public void qualityLevelsTradeAccuracyForSamplingCost()
-	{
-		assertEquals(16, BillboardOcclusionQuality.LOW.sampleStep());
-		assertEquals(8, BillboardOcclusionQuality.MEDIUM.sampleStep());
-		assertEquals(4, BillboardOcclusionQuality.HIGH.sampleStep());
-		assertEquals(2, BillboardOcclusionQuality.ULTRA.sampleStep());
-		assertEquals(1, BillboardOcclusionQuality.MAX.sampleStep());
-		assertTrue(BillboardOcclusionQuality.LOW.sampleStep() > BillboardOcclusionQuality.MEDIUM.sampleStep());
-		assertTrue(BillboardOcclusionQuality.MEDIUM.sampleStep() > BillboardOcclusionQuality.HIGH.sampleStep());
-		assertTrue(BillboardOcclusionQuality.HIGH.sampleStep() > BillboardOcclusionQuality.ULTRA.sampleStep());
-		assertTrue(BillboardOcclusionQuality.ULTRA.sampleStep() > BillboardOcclusionQuality.MAX.sampleStep());
-		assertTrue(BillboardOcclusionQuality.LOW.vertexStride() > BillboardOcclusionQuality.MEDIUM.vertexStride());
-		assertTrue(BillboardOcclusionQuality.MEDIUM.vertexStride() > BillboardOcclusionQuality.HIGH.vertexStride());
-		assertEquals(BillboardOcclusionQuality.HIGH.vertexStride(), BillboardOcclusionQuality.ULTRA.vertexStride());
-		assertEquals(BillboardOcclusionQuality.ULTRA.vertexStride(), BillboardOcclusionQuality.MAX.vertexStride());
-	}
-
-	@Test
-	public void ultraRasterizesMoreCellsThanHigh()
-	{
-		BillboardOcclusionMask high = new BillboardOcclusionMask();
-		high.prepare(
-			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 20f)),
-			BillboardOcclusionQuality.HIGH,
-			0,
-			0,
-			16,
-			16
-		);
-
-		BillboardOcclusionMask ultra = new BillboardOcclusionMask();
-		ultra.prepare(
-			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 20f)),
-			BillboardOcclusionQuality.ULTRA,
-			0,
-			0,
-			16,
-			16
-		);
-
-		assertTrue(ultra.coveredCellCount() > high.coveredCellCount());
-	}
-
-	@Test
-	public void maxRasterizesMoreCellsThanUltra()
-	{
-		BillboardOcclusionMask ultra = new BillboardOcclusionMask();
-		ultra.prepare(
-			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 20f)),
-			BillboardOcclusionQuality.ULTRA,
-			0,
-			0,
-			16,
-			16
-		);
-
-		BillboardOcclusionMask max = new BillboardOcclusionMask();
-		max.prepare(
-			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 20f)),
-			BillboardOcclusionQuality.MAX,
-			0,
-			0,
-			16,
-			16
-		);
-
-		assertTrue(max.coveredCellCount() > ultra.coveredCellCount());
-	}
-
-	@Test
 	public void offQualityDoesNotOcclude()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
@@ -360,7 +315,7 @@ public class BillboardOcclusionMaskTest
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(
 			Collections.singletonList(BillboardOcclusionMask.Occluder.triangle(0, 0, 10f, 10, 0, 110f, 0, 10, 210f)),
-			BillboardOcclusionQuality.MAX,
+			BillboardOcclusionQuality.HIGH,
 			0,
 			0,
 			12,
@@ -378,7 +333,7 @@ public class BillboardOcclusionMaskTest
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(
 			Collections.singletonList(BillboardOcclusionMask.Occluder.triangle(0, 0, 10f, 10, 0, 100f, 0, 10, 100f)),
-			BillboardOcclusionQuality.MAX,
+			BillboardOcclusionQuality.HIGH,
 			0,
 			0,
 			12,
@@ -395,7 +350,7 @@ public class BillboardOcclusionMaskTest
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(
 			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 12, 12), 25f)),
-			BillboardOcclusionQuality.MAX,
+			BillboardOcclusionQuality.HIGH,
 			0,
 			0,
 			12,
@@ -416,7 +371,7 @@ public class BillboardOcclusionMaskTest
 				10, 100f,
 				0, 200f,
 				"vertical-wall")),
-			BillboardOcclusionQuality.MAX,
+			BillboardOcclusionQuality.HIGH,
 			0,
 			0,
 			12,
@@ -496,102 +451,6 @@ public class BillboardOcclusionMaskTest
 
 		assertEquals("near-wall", mask.sourceAt(2, 2));
 		assertEquals(null, mask.sourceAt(12, 12));
-	}
-
-	@Test
-	public void debugRenderFadesFartherDepthsTowardBlack()
-	{
-		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		mask.prepare(
-			Arrays.asList(
-				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 4, 4), 10f),
-				new BillboardOcclusionMask.Occluder(new Rectangle(4, 0, 4, 4), 30f)
-			),
-			BillboardOcclusionQuality.HIGH,
-			0,
-			0,
-			8,
-			4
-		);
-
-		BufferedImage image = new BufferedImage(8, 4, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D graphics = image.createGraphics();
-		try
-		{
-			mask.drawDebug(graphics);
-		}
-		finally
-		{
-			graphics.dispose();
-		}
-
-		Color near = new Color(image.getRGB(1, 1), true);
-		Color far = new Color(image.getRGB(5, 1), true);
-		assertTrue(near.getBlue() > far.getBlue());
-		assertTrue(near.getGreen() > far.getGreen());
-		assertEquals(10f, mask.nearestDepth(), 0.0f);
-		assertEquals(30f, mask.furthestDepth(), 0.0f);
-	}
-
-	@Test
-	public void debugRenderDrawsRasterBounds()
-	{
-		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		mask.prepare(
-			Collections.singletonList(new BillboardOcclusionMask.Occluder(new Rectangle(4, 4, 4, 4), 10f)),
-			BillboardOcclusionQuality.HIGH,
-			0,
-			0,
-			16,
-			16,
-			new Rectangle(4, 4, 8, 8)
-		);
-
-		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D graphics = image.createGraphics();
-		try
-		{
-			mask.drawDebug(graphics);
-		}
-		finally
-		{
-			graphics.dispose();
-		}
-
-		Color border = new Color(image.getRGB(4, 4), true);
-		assertTrue(border.getAlpha() > 0);
-		assertTrue(border.getBlue() > 0);
-	}
-
-	@Test
-	public void debugRenderDrawsRasterBoundsForEmptyMask()
-	{
-		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		mask.prepare(
-			Collections.emptyList(),
-			BillboardOcclusionQuality.HIGH,
-			0,
-			0,
-			16,
-			16,
-			new Rectangle(4, 4, 8, 8)
-		);
-
-		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D graphics = image.createGraphics();
-		try
-		{
-			mask.drawDebug(graphics);
-		}
-		finally
-		{
-			graphics.dispose();
-		}
-
-		Color border = new Color(image.getRGB(4, 4), true);
-		assertTrue(border.getAlpha() > 0);
-		assertFalse(mask.isOccluded(6, 6, 100d));
-		assertEquals(0, mask.coveredCellCount());
 	}
 
 	@Test

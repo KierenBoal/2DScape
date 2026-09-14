@@ -135,7 +135,7 @@ public interface NpcSnapConfig extends Config
 		return 180;
 	}
 
-	@ConfigItem(keyName = "billboardOcclusionQuality", name = "Occlusion quality", description = "Hide parts of sprites behind walls, hills, trees, and other scenery. Higher settings look smoother but may use more performance.", section = renderingSection, position = 3)
+	@ConfigItem(keyName = "billboardOcclusionQuality", name = "Occlusion quality", description = "Hide parts of sprites behind walls, hills, trees, and other scenery. Blocky skips edge refinement for chunky occlusion. Low, Medium, and High retain accurate edges with different sampling costs.", section = renderingSection, position = 3)
 	default BillboardOcclusionQuality billboardOcclusionQuality()
 	{
 		return BillboardOcclusionQuality.MEDIUM;
@@ -300,7 +300,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "skillingTimeoutSeconds", name = "Skilling bubble timeout seconds", description = "How long the skill icon stays above your character after you gain XP.", section = retroSection, position = 1)
 	default int skillingTimeoutSeconds()
 	{
-		return 15;
+		return 6;
 	}
 
 	@ConfigItem(keyName = "enableBillboardCombatSnapping", name = "Enable combat rotation snapping", description = "Make fighting NPC and player sprites face each other in set directions.", section = retroSection, position = 2)
@@ -436,7 +436,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugDrawBillboardOcclusionMask", name = "Show scenery blocking", description = "Show the parts of scenery that hide sprites behind them.", section = debugSection, position = 5)
+	@ConfigItem(keyName = "debugDrawBillboardOcclusionMask", name = "Highlight occluded sprite pixels", description = "Highlight sprite pixels hidden by scenery. Does not draw the scenery mask.", section = debugSection, position = 5)
 	default boolean debugDrawBillboardOcclusionMask()
 	{
 		return false;

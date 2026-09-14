@@ -3,11 +3,10 @@ package com.kierenboal.npcsnap.occlusion;
 public enum BillboardOcclusionQuality
 {
 	OFF(0, Integer.MAX_VALUE),
+	BLOCKY(16, 8),
 	LOW(16, 8),
 	MEDIUM(8, 4),
-	HIGH(4, 1),
-	ULTRA(2, 1),
-	MAX(1, 1);
+	HIGH(4, 1);
 
 	private final int sampleStep;
 	private final int vertexStride;
@@ -31,5 +30,10 @@ public enum BillboardOcclusionQuality
 	public static BillboardOcclusionQuality normalize(BillboardOcclusionQuality quality)
 	{
 		return quality != null ? quality : OFF;
+	}
+
+	public static boolean isRetiredValue(String value)
+	{
+		return "ULTRA".equals(value) || "MAX".equals(value);
 	}
 }
