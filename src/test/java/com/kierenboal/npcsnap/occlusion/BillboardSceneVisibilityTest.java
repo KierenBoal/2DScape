@@ -1,6 +1,8 @@
 package com.kierenboal.npcsnap.occlusion;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
@@ -142,6 +144,28 @@ public class BillboardSceneVisibilityTest
 		assertNotSame(replacement, client.callbacks);
 		visibility.stop();
 		assertSame(replacement, client.callbacks);
+	}
+
+	@Test
+	public void stopDefersCallbackRestorationToTheClientThreadDispatcher()
+	{
+		TestClient client = new TestClient();
+		Renderer renderer = new Renderer();
+		client.callbacks = renderer;
+		List<Runnable> queued = new ArrayList<>();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(
+			() -> client.callbacks,
+			value -> client.callbacks = value,
+			queued::add);
+
+		visibility.beginFrame();
+		DrawCallbacks wrapper = client.callbacks;
+		visibility.stop();
+
+		assertSame(wrapper, client.callbacks);
+		assertEquals(1, queued.size());
+		queued.get(0).run();
+		assertSame(renderer, client.callbacks);
 	}
 
 	private static final class TestClient

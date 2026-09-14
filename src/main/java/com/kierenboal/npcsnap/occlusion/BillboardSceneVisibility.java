@@ -12,6 +12,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Projection;
 import net.runelite.api.Scene;
 import net.runelite.api.hooks.DrawCallbacks;
+import net.runelite.client.callback.ClientThread;
 
 /** Reads the same floor range and roof groups that the renderer receives. */
 @Singleton
@@ -19,20 +20,30 @@ public final class BillboardSceneVisibility
 {
 	private final Supplier<DrawCallbacks> callbackReader;
 	private final Consumer<DrawCallbacks> callbackWriter;
+	private final Consumer<Runnable> clientThreadInvoker;
 	private final IdentityHashMap<Scene, Snapshot> snapshots = new IdentityHashMap<>();
 	private Observer observer;
 	private boolean enabled;
 
 	@Inject
-	public BillboardSceneVisibility(Client client)
+	public BillboardSceneVisibility(Client client, ClientThread clientThread)
 	{
-		this(client::getDrawCallbacks, client::setDrawCallbacks);
+		this(client::getDrawCallbacks, client::setDrawCallbacks, clientThread::invoke);
 	}
 
 	BillboardSceneVisibility(Supplier<DrawCallbacks> reader, Consumer<DrawCallbacks> writer)
 	{
+		this(reader, writer, Runnable::run);
+	}
+
+	BillboardSceneVisibility(
+		Supplier<DrawCallbacks> reader,
+		Consumer<DrawCallbacks> writer,
+		Consumer<Runnable> clientThreadInvoker)
+	{
 		this.callbackReader = reader;
 		this.callbackWriter = writer;
+		this.clientThreadInvoker = clientThreadInvoker;
 	}
 
 	public void beginFrame()
@@ -54,6 +65,11 @@ public final class BillboardSceneVisibility
 	}
 
 	public void stop()
+	{
+		clientThreadInvoker.accept(this::stopNow);
+	}
+
+	private void stopNow()
 	{
 		enabled = false;
 		Observer installedObserver = observer;

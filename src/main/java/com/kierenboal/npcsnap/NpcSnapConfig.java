@@ -335,21 +335,21 @@ public interface NpcSnapConfig extends Config
 		return 8;
 	}
 
-	@ConfigItem(keyName = "enableGlobalTextureBanding", name = "Reduce game texture quality", description = "Give world textures fewer shades for a more retro look.", section = retroSection, position = 7)
+	@ConfigItem(keyName = "enableGlobalTextureBanding", name = "Reduce game texture quality", description = "Give world textures fewer shades for a more retro look.", section = retroSection, position = 7, hidden = true)
 	default boolean enableGlobalTextureBanding()
 	{
 		return false;
 	}
 
 	@Range(min = 1, max = 64)
-	@ConfigItem(keyName = "globalTextureSpriteQuality", name = "Texture sprite quality", description = "How sharp world textures are. Lower values make texture pixels larger and rougher.", section = retroSection, position = 8)
+	@ConfigItem(keyName = "globalTextureSpriteQuality", name = "Texture sprite quality", description = "How sharp world textures are. Lower values make texture pixels larger and rougher.", section = retroSection, position = 8, hidden = true)
 	default double globalTextureSpriteQuality()
 	{
 		return 100.0d;
 	}
 
 	@Range(min = 1, max = 64)
-	@ConfigItem(keyName = "globalTextureColorBands", name = "Texture color bands", description = "How many shades world textures can use when game texture reduction is on.", section = retroSection, position = 9)
+	@ConfigItem(keyName = "globalTextureColorBands", name = "Texture color bands", description = "How many shades world textures can use when game texture reduction is on.", section = retroSection, position = 9, hidden = true)
 	default int globalTextureColorBands()
 	{
 		return 16;

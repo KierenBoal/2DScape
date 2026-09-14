@@ -213,7 +213,7 @@ public class ActorOverheadRendererTest
 	@Test
 	public void hitsplatsExpireAndRemainIsolatedByActorIdentity()
 	{
-		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class));
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, true));
 		NPC first = TestProxies.proxy(NPC.class);
 		NPC second = TestProxies.proxy(NPC.class);
 		Hitsplat hitsplat = TestProxies.proxy(Hitsplat.class,

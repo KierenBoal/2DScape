@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
+import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.TestProxies;
 
 import net.runelite.api.Actor;
@@ -196,6 +197,32 @@ public class BillboardRenderRequestFactoryTest
 		ActorSpotAnim animation = TestProxies.proxy(ActorSpotAnim.class);
 
 		assertNull(factory().buildActorSpotAnimation(animation, null));
+	}
+
+	@Test
+	public void transientObjectModelFailureSkipsThePart()
+	{
+		net.runelite.api.Renderable renderable = TestProxies.proxy(
+			net.runelite.api.Renderable.class,
+			TestProxies.methodSupplier("getModel", () ->
+			{
+				throw new NullPointerException("transient model state");
+			}));
+		ObjectRenderablePart part = new ObjectRenderablePart(renderable, new LocalPoint(128, 128, worldView(0)), 0);
+
+		assertNull(factory().buildStaticObjectPart(part));
+	}
+
+	@Test
+	public void staticObjectPartUsesTheAvailableModel()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		net.runelite.api.Renderable renderable = TestProxies.proxy(
+			net.runelite.api.Renderable.class,
+			TestProxies.method("getModel", model));
+		ObjectRenderablePart part = new ObjectRenderablePart(renderable, new LocalPoint(128, 128, worldView(0)), 0);
+
+		assertSame(model, factory().buildStaticObjectPart(part).model);
 	}
 
 	private static BillboardRenderRequestFactory factory()

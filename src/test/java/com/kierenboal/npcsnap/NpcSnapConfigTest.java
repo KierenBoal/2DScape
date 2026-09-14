@@ -59,6 +59,20 @@ public class NpcSnapConfigTest
 		assertConfig("ignoreProjectionSkewCorrection", "ignoreProjectionSkewCorrection", "Ignore projection skew correction", 13);
 	}
 
+	@Test
+	public void unsupportedWorldTextureOptionsRemainHiddenForCompatibility()
+		throws NoSuchMethodException
+	{
+		for (String method : new String[] {"enableGlobalTextureBanding", "globalTextureSpriteQuality", "globalTextureColorBands"})
+		{
+			ConfigItem item = NpcSnapConfig.class.getMethod(method).getAnnotation(ConfigItem.class);
+			assertEquals(method, item.keyName());
+			assertTrue(item.hidden());
+		}
+
+		assertFalse(config.enableGlobalTextureBanding());
+	}
+
 	private static void assertLegacyConfigHidden(String method)
 		throws NoSuchMethodException
 	{
@@ -129,7 +143,7 @@ public class NpcSnapConfigTest
 		assertEquals(128, config.billboardMaxEntities());
 		assertEquals(16, config.billboardMaxDrawsPerFrame());
 		assertEquals(16, config.billboardColorBands());
-		assertEquals(15, config.skillingTimeoutSeconds());
+		assertEquals(6, config.skillingTimeoutSeconds());
 	}
 
 	@Test

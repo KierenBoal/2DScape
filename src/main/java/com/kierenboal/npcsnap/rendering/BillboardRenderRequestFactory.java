@@ -85,7 +85,11 @@ public final class BillboardRenderRequestFactory
 		NpcSnapDebug.FrameDebugInfo frameDebugInfo = snappedFrame >= 0
 			? NpcSnapDebug.FrameDebugInfo.of(animationId, originalFrame, snappedFrame)
 			: null;
-		Model model = part.renderable.getModel();
+		Model model = safeModel(part.renderable);
+		if (model == null)
+		{
+			return null;
+		}
 		boolean lowProfile = target.type != BillboardTargetType.BOAT && isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
@@ -121,7 +125,16 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildStaticObjectPart(ObjectRenderablePart part)
 	{
-		Model model = part.renderable.getModel();
+		if (part == null || part.renderable == null)
+		{
+			return null;
+		}
+
+		Model model = safeModel(part.renderable);
+		if (model == null)
+		{
+			return null;
+		}
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
@@ -247,6 +260,23 @@ public final class BillboardRenderRequestFactory
 	{
 		return model != null && renderable != null
 			&& BillboardModelProfile.isLowProfile(model, renderable.getModelHeight());
+	}
+
+	private static Model safeModel(Renderable renderable)
+	{
+		if (renderable == null)
+		{
+			return null;
+		}
+
+		try
+		{
+			return renderable.getModel();
+		}
+		catch (RuntimeException ex)
+		{
+			return null;
+		}
 	}
 
 	private int snapFrame(net.runelite.api.Animation animation, int frame, boolean enabled)

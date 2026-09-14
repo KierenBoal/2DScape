@@ -8,8 +8,6 @@ import com.kierenboal.npcsnap.export.BillboardExportBatch;
 import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.export.BillboardPngExporter;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
-import com.kierenboal.npcsnap.rendering.NpcSnapTextureBandingManager;
-import com.kierenboal.npcsnap.rendering.NpcSnapRendererRefresher;
 import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
@@ -63,7 +61,6 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
@@ -84,8 +81,6 @@ public class NpcSnapPlugin extends Plugin
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private boolean pendingSkillXpSeed;
 	private NpcSnapUiTextureManager uiTextureManager;
-	private NpcSnapTextureBandingManager textureBandingManager;
-	private NpcSnapRendererRefresher rendererRefresher;
 	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
@@ -128,9 +123,6 @@ public class NpcSnapPlugin extends Plugin
 	private RenderCallbackManager renderCallbackManager;
 
 	@Inject
-	private PluginManager pluginManager;
-
-	@Inject
 	private BillboardPngExporter billboardPngExporter;
 
 	@Override
@@ -141,7 +133,6 @@ public class NpcSnapPlugin extends Plugin
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
 		migrateLegacyRetroOverheadConfig();
-		ensureTextureBandingManager().markDirty();
 		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
 		drawManager.registerEveryFrameListener(restoreFrameListener);
@@ -209,14 +200,6 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("animation state", animationFrameSnapper::clear);
 		cleanupStep("debug frame state", debug::clearFrameStates);
 		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
-		cleanupStep("global texture restoration", () ->
-		{
-			if (ensureTextureBandingManager().restore())
-			{
-				cleanupStep("texture cache after restoration", billboardOverlay::clearTextureCache);
-				cleanupStep("renderer refresh after restoration", () -> ensureRendererRefresher().requestRefresh());
-			}
-		});
 		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
 		log.debug("2DScape stopped");
 	}
@@ -253,8 +236,6 @@ public class NpcSnapPlugin extends Plugin
 		{
 			return;
 		}
-
-		syncGlobalTextureQuality();
 
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView == null)
@@ -391,7 +372,6 @@ public class NpcSnapPlugin extends Plugin
 			pendingSkillXpSeed = true;
 			loginXpDropGuard.onLoggedIn();
 			ensureUiTextureManager().markDirty();
-			ensureTextureBandingManager().markDirty();
 			billboardOverlay.clearTextureCache();
 		}
 		else
@@ -645,8 +625,6 @@ public class NpcSnapPlugin extends Plugin
 		if (configChangeHandler == null)
 		{
 			configChangeHandler = new NpcSnapConfigChangeHandler(
-				() -> ensureTextureBandingManager().markDirty(),
-				billboardOverlay::clearTextureCache,
 				() -> ensureUiTextureManager().markDirty(),
 				billboardOverlay::clearBillboardCache);
 		}
@@ -782,19 +760,6 @@ public class NpcSnapPlugin extends Plugin
 		// The rotation config is kept so the supported API can be wired in immediately if that changes.
 	}
 
-	private void syncGlobalTextureQuality()
-	{
-		boolean changed = ensureTextureBandingManager().sync(
-			config.enableGlobalTextureBanding(),
-			config.globalTextureColorBands(),
-			config.globalTextureSpriteQuality());
-		if (changed)
-		{
-			billboardOverlay.clearTextureCache();
-			ensureRendererRefresher().requestRefresh();
-		}
-	}
-
 	private void syncUiTextureQuality()
 	{
 		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
@@ -808,26 +773,6 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		return uiTextureManager;
-	}
-
-	private NpcSnapTextureBandingManager ensureTextureBandingManager()
-	{
-		if (textureBandingManager == null)
-		{
-			textureBandingManager = new NpcSnapTextureBandingManager(client);
-		}
-
-		return textureBandingManager;
-	}
-
-	private NpcSnapRendererRefresher ensureRendererRefresher()
-	{
-		if (rendererRefresher == null)
-		{
-			rendererRefresher = new NpcSnapRendererRefresher(client, pluginManager);
-		}
-
-		return rendererRefresher;
 	}
 
 	private NpcSnapUiTextureManager.SpriteSnapshot loadSpriteSnapshot(int spriteId)

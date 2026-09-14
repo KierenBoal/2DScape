@@ -13,20 +13,23 @@ public class NpcSnapConfigChangeHandlerTest
 		Counters counters = new Counters();
 		NpcSnapConfigChangeHandler handler = counters.handler();
 
-		handler.handle("other", "enableGlobalTextureBanding");
+		handler.handle("other", "enableUiTextureBanding");
+		handler.handle("npc-snap", "enableGlobalTextureBanding");
+		handler.handle("npc-snap", "globalTextureSpriteQuality");
+		handler.handle("npc-snap", "globalTextureColorBands");
 		handler.handle("npc-snap", "unrelated");
 
-		counters.assertCounts(0, 0, 0, 0);
+		counters.assertCounts(0, 0);
 	}
 
 	@Test
-	public void globalBandingChangesDirtyManagerAndTextureCache()
+	public void retiredGlobalBandingChangesAreIgnored()
 	{
 		for (String key : new String[] {"enableGlobalTextureBanding", "globalTextureSpriteQuality", "globalTextureColorBands"})
 		{
 			Counters counters = new Counters();
 			counters.handler().handle("npc-snap", key);
-			counters.assertCounts(1, 1, 0, 0);
+			counters.assertCounts(0, 0);
 		}
 	}
 
@@ -37,7 +40,7 @@ public class NpcSnapConfigChangeHandlerTest
 		{
 			Counters counters = new Counters();
 			counters.handler().handle("npc-snap", key);
-			counters.assertCounts(0, 0, 1, 0);
+			counters.assertCounts(1, 0);
 		}
 	}
 
@@ -48,29 +51,23 @@ public class NpcSnapConfigChangeHandlerTest
 
 		counters.handler().handle("npc-snap", "useInventorySpritesForGroundItems");
 
-		counters.assertCounts(0, 0, 0, 1);
+		counters.assertCounts(0, 1);
 	}
 
 	private static final class Counters
 	{
-		private final AtomicInteger textureDirty = new AtomicInteger();
-		private final AtomicInteger textureCache = new AtomicInteger();
 		private final AtomicInteger uiDirty = new AtomicInteger();
 		private final AtomicInteger billboardCache = new AtomicInteger();
 
 		private NpcSnapConfigChangeHandler handler()
 		{
 			return new NpcSnapConfigChangeHandler(
-				textureDirty::incrementAndGet,
-				textureCache::incrementAndGet,
 				uiDirty::incrementAndGet,
 				billboardCache::incrementAndGet);
 		}
 
-		private void assertCounts(int textureDirty, int textureCache, int uiDirty, int billboardCache)
+		private void assertCounts(int uiDirty, int billboardCache)
 		{
-			assertEquals(textureDirty, this.textureDirty.get());
-			assertEquals(textureCache, this.textureCache.get());
 			assertEquals(uiDirty, this.uiDirty.get());
 			assertEquals(billboardCache, this.billboardCache.get());
 		}

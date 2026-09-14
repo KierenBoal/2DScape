@@ -34,6 +34,7 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequestFactory;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.BillboardTextureResolver;
+import com.kierenboal.npcsnap.state.FrameRenderableTracker;
 import com.kierenboal.npcsnap.rendering.BuiltFaces;
 import com.kierenboal.npcsnap.rendering.FaceDraw;
 import com.kierenboal.npcsnap.rendering.NpcSnapColorBanding;
@@ -161,8 +162,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Object observedTileObjectsLock = new Object();
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final BillboardVisibilityState visibility = new BillboardVisibilityState();
-	private final Set<Renderable> sceneRenderablesThisFrame = Collections.newSetFromMap(new IdentityHashMap<>());
-	private final Set<Renderable> sceneRenderablesLastFrame = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final FrameRenderableTracker<Renderable> sceneRenderables = new FrameRenderableTracker<>();
 	private final BillboardUpdateQueue updateQueue = new BillboardUpdateQueue();
 	private final BillboardClassificationDebug classificationDebug;
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
@@ -523,10 +523,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void noteSceneRenderable(Renderable renderable)
 	{
-		if (renderable != null)
-		{
-			sceneRenderablesThisFrame.add(renderable);
-		}
+		sceneRenderables.record(renderable);
 	}
 
 	private void clearObservedTileObjectBillboards(Collection<ObservedTileObject> observedTileObjects)
@@ -558,9 +555,7 @@ class NpcBillboardOverlay extends Overlay
 			occlusionWorldView = null;
 			occlusionTraceTargets = Collections.emptyList();
 			occlusionDebugSampler.clear();
-			sceneRenderablesLastFrame.clear();
-			sceneRenderablesLastFrame.addAll(sceneRenderablesThisFrame);
-			sceneRenderablesThisFrame.clear();
+			sceneRenderables.advanceFrame();
 			synchronized (observedTileObjectsLock)
 			{
 				visibleTileObjects.clear();
@@ -912,12 +907,12 @@ class NpcBillboardOverlay extends Overlay
 
 	private boolean wasSceneRenderableDrawnLastFrame(Renderable renderable)
 	{
-		return renderable != null && sceneRenderablesLastFrame.contains(renderable);
+		return sceneRenderables.containsPrevious(renderable);
 	}
 
 	private boolean wasSceneRenderableDrawnThisFrame(Renderable renderable)
 	{
-		return renderable != null && sceneRenderablesThisFrame.contains(renderable);
+		return sceneRenderables.containsCurrent(renderable);
 	}
 
 	void observeTileObject(TileObject tileObject)
@@ -1525,7 +1520,7 @@ class NpcBillboardOverlay extends Overlay
 						worldOcclusionCollector.addInterest(draw.bounds, viewportBounds);
 					}
 					worldOcclusionCollector.collectTerrainOccluders(occlusionWorldView, occlusionTraceTargets,
-						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderablesLastFrame);
+						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderables.previousSnapshot());
 				}
 				try (BillboardPerformanceMetrics.Timer maskTimer = performanceMetrics.time("Build occlusion mask"))
 				{
