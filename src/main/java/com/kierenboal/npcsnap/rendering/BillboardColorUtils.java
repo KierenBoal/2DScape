@@ -50,6 +50,15 @@ public final class BillboardColorUtils
 			&& color.getAlpha() == CAPE_ARTIFACT_FACE_ALPHA;
 	}
 
+	public static boolean isInvisibleFace(int face, int[] faceColors3, byte[] transparencies)
+	{
+		// -1 is flat shading, not hidden. RuneLite stores transparency separately:
+		// unsigned 0 is opaque, while unsigned 255 has no visible opacity.
+		return face >= 0
+			&& ((faceColors3 != null && face < faceColors3.length && faceColors3[face] == -2)
+			|| (transparencies != null && face < transparencies.length && (transparencies[face] & 0xFF) == 255));
+	}
+
 	public static Color decodedLitFaceColor(int face, int[] faceColors1, int[] faceColors2, int[] faceColors3, int alpha)
 	{
 		if (hasFlatFaceColor(face, faceColors1, faceColors3))

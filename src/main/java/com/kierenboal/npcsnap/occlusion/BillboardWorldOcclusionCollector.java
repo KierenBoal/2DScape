@@ -1490,10 +1490,7 @@ public final class BillboardWorldOcclusionCollector
 
 	static boolean isInvisibleFace(int face, int[] colors3, byte[] transparencies)
 	{
-		// -1 is flat shading, not hidden. RuneLite stores transparency separately:
-		// unsigned 0 is opaque, unsigned 255 has no visible opacity.
-		return (colors3 != null && face < colors3.length && colors3[face] == -2)
-			|| (transparencies != null && face < transparencies.length && (transparencies[face] & 0xFF) == 255);
+		return BillboardColorUtils.isInvisibleFace(face, colors3, transparencies);
 	}
 
 	static int faceTransmittance(int face, byte[] transparencies)

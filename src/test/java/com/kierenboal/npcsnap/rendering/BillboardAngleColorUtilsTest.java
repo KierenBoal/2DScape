@@ -51,6 +51,22 @@ public class BillboardAngleColorUtilsTest
 	}
 
 	@Test
+	public void identifiesRuneLiteHiddenAndFullyTransparentFaces()
+	{
+		Assert.assertTrue(BillboardColorUtils.isInvisibleFace(0, new int[] {-2}, new byte[] {0}));
+		Assert.assertTrue(BillboardColorUtils.isInvisibleFace(0, new int[] {123}, new byte[] {(byte) 255}));
+		Assert.assertFalse(BillboardColorUtils.isInvisibleFace(0, new int[] {-1}, new byte[] {0}));
+		Assert.assertFalse(BillboardColorUtils.isInvisibleFace(0, new int[] {123}, new byte[] {(byte) 254}));
+	}
+
+	@Test
+	public void hiddenFaceSentinelRequiresAValidFaceIndex()
+	{
+		Assert.assertFalse(BillboardColorUtils.isInvisibleFace(-1, new int[] {-2}, new byte[] {(byte) 255}));
+		Assert.assertFalse(BillboardColorUtils.isInvisibleFace(1, new int[] {-2}, new byte[] {(byte) 255}));
+	}
+
+	@Test
 	public void applyLightBoostScalesRgbAndPreservesAlpha()
 	{
 		Color color = BillboardColorUtils.applyLightBoost(new Color(80, 100, 120, 150), 125.0d);

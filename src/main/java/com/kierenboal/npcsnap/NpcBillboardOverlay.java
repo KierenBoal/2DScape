@@ -3320,6 +3320,10 @@ class NpcBillboardOverlay extends Overlay
 			int a = faceIndices1[face];
 			int b = faceIndices2[face];
 			int c = faceIndices3[face];
+			if (BillboardColorUtils.isInvisibleFace(face, faceColors3, transparencies))
+			{
+				continue;
+			}
 			if (cullBackFaces && BillboardGeometryUtils.isBackFace(spriteX, spriteY, spriteDepth, a, b, c))
 			{
 				continue;
