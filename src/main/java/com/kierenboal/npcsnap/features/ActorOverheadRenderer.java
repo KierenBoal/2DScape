@@ -32,6 +32,8 @@ public final class ActorOverheadRenderer
 	private static final int ELEMENT_GAP = 2;
 	private static final int HEALTH_WIDTH = 30;
 	private static final int HEALTH_HEIGHT = 5;
+	private static final int[] HITSPLAT_OFFSETS_X = {0, -20, 20, 0};
+	private static final int[] HITSPLAT_OFFSETS_Y = {0, 16, 16, 32};
 	private static final Color CHAT_SHADOW = Color.BLACK;
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -104,12 +106,6 @@ public final class ActorOverheadRenderer
 			return false;
 		}
 
-		if (!config.alignOverheadPrayers() && actor instanceof Player
-			&& ((Player) actor).getOverheadIcon() != null)
-		{
-			return false;
-		}
-
 		return canReplace(actor);
 	}
 
@@ -125,7 +121,7 @@ public final class ActorOverheadRenderer
 			return;
 		}
 		hitsplats.computeIfAbsent(actor, ignored -> new ArrayList<>()).add(new TrackedHitsplat(
-			hitsplat.getHitsplatType(), hitsplat.getAmount(), hitsplat.getDisappearsOnGameCycle()));
+			hitsplat.getAmount(), hitsplat.getDisappearsOnGameCycle()));
 	}
 
 	public void clear(Actor actor)
@@ -441,12 +437,12 @@ public final class ActorOverheadRenderer
 
 	private static int hitsplatOffsetX(int index)
 	{
-		return new int[] {0, -20, 20, 0}[index % 4];
+		return HITSPLAT_OFFSETS_X[index % 4];
 	}
 
 	private static int hitsplatOffsetY(int index)
 	{
-		return new int[] {0, 16, 16, 32}[index % 4];
+		return HITSPLAT_OFFSETS_Y[index % 4];
 	}
 
 	static Color hitsplatColor(int amount)
@@ -481,13 +477,11 @@ public final class ActorOverheadRenderer
 
 	private static final class TrackedHitsplat
 	{
-		private final int type;
 		private final int amount;
 		private final int expiresOnCycle;
 
-		private TrackedHitsplat(int type, int amount, int expiresOnCycle)
+		private TrackedHitsplat(int amount, int expiresOnCycle)
 		{
-			this.type = type;
 			this.amount = amount;
 			this.expiresOnCycle = expiresOnCycle;
 		}

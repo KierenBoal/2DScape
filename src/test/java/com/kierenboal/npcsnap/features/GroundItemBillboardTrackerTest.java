@@ -2,10 +2,8 @@ package com.kierenboal.npcsnap.features;
 
 import com.kierenboal.npcsnap.TestProxies;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
@@ -50,36 +48,30 @@ public class GroundItemBillboardTrackerTest
 	}
 
 	@Test
-	public void syncRemovesItemsNoLongerPresentInScene()
-	{
-		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();
-		TileItem staleItem = proxy(TileItem.class);
-		TileItem currentItem = proxy(TileItem.class);
-		Tile staleTile = tile(0, new LocalPoint(128, 128), Arrays.asList(staleItem));
-		Tile currentTile = tile(0, new LocalPoint(256, 256), Arrays.asList(currentItem));
-		List<TileItem> removedItems = new ArrayList<>();
-
-		tracker.track(staleItem, staleTile);
-		tracker.sync(worldView(currentTile), removedItems::add);
-
-		Assert.assertNull(tracker.get(staleItem));
-		Assert.assertNotNull(tracker.get(currentItem));
-		Assert.assertEquals(Arrays.asList(staleItem), removedItems);
-	}
-
-	@Test
-	public void syncClearsTrackedItemsWhenSceneIsUnavailable()
+	public void seedTracksItemsInScene()
 	{
 		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();
 		TileItem item = proxy(TileItem.class);
-		Tile tile = tile(0, new LocalPoint(128, 128), Arrays.asList(item));
-		List<TileItem> removedItems = new ArrayList<>();
+		Tile currentTile = tile(0, new LocalPoint(256, 256), Arrays.asList(item));
 
-		tracker.track(item, tile);
-		tracker.sync(proxy(WorldView.class), removedItems::add);
+		tracker.seed(worldView(currentTile));
 
-		Assert.assertNull(tracker.get(item));
-		Assert.assertEquals(Arrays.asList(item), removedItems);
+		Assert.assertNotNull(tracker.get(item));
+	}
+
+	@Test
+	public void clearAllowsASeedForTheNextScene()
+	{
+		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();
+		TileItem firstItem = proxy(TileItem.class);
+		TileItem secondItem = proxy(TileItem.class);
+
+		tracker.seed(worldView(tile(0, new LocalPoint(128, 128), Arrays.asList(firstItem))));
+		tracker.clear();
+		tracker.seed(worldView(tile(0, new LocalPoint(256, 256), Arrays.asList(secondItem))));
+
+		Assert.assertNull(tracker.get(firstItem));
+		Assert.assertNotNull(tracker.get(secondItem));
 	}
 
 	private static WorldView worldView(Tile... tiles)

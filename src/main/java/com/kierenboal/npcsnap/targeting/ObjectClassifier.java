@@ -24,11 +24,6 @@ public final class ObjectClassifier
 	{
 	}
 
-	public static ClassifiedObjectType classify(Object object, Client client)
-	{
-		return classifyDecision(object, client).classification;
-	}
-
 	public static ClassificationDecision classifyDecision(Object object, Client client)
 	{
 		if (object == null)

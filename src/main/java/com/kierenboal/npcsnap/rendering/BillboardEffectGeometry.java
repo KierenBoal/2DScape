@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap.rendering;
 
-import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.GraphicsObject;
@@ -13,7 +12,7 @@ public final class BillboardEffectGeometry
 	{
 	}
 
-	public static int actorSpotVerticalOffset(Actor actor, ActorSpotAnim spotAnimation)
+	public static int actorSpotVerticalOffset(ActorSpotAnim spotAnimation)
 	{
 		if (spotAnimation == null)
 		{

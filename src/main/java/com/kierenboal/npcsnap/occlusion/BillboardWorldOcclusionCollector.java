@@ -249,16 +249,6 @@ public final class BillboardWorldOcclusionCollector
 		return worldOccluders;
 	}
 
-	public Rectangle interestBounds()
-	{
-		return interestBounds;
-	}
-
-	public List<Rectangle> interestRegions()
-	{
-		return interestRegions;
-	}
-
 	public void logDebugStats(BillboardOcclusionMask occlusionMask, Rectangle maskInterestBounds, List<String> depthSamples)
 	{
 		if (!config.debugLogBillboardOcclusion())
@@ -585,7 +575,7 @@ public final class BillboardWorldOcclusionCollector
 	static int[] directCandidatePlanes(int currentPlane, int planeCount)
 	{
 		int firstPlane = Math.max(0, currentPlane);
-		int lastExclusive = Math.min(Math.min(planeCount, Constants.MAX_Z), Constants.MAX_Z);
+		int lastExclusive = Math.min(planeCount, Constants.MAX_Z);
 		if (firstPlane >= lastExclusive)
 		{
 			return new int[0];
@@ -779,7 +769,7 @@ public final class BillboardWorldOcclusionCollector
 		{
 			for (ObjectRenderablePart part : observed.parts)
 			{
-				hasModelGeometry |= collectSceneObjectPartOccluders(part, debugOccluderSource(tileObject, "model"));
+				hasModelGeometry |= collectSceneObjectPartOccluders(part, debugOccluderSource(tileObject, "model"), tileObject);
 			}
 		}
 
@@ -1056,7 +1046,7 @@ public final class BillboardWorldOcclusionCollector
 		{
 			clickbox = tileObject.getClickbox();
 		}
-		return addFallbackWorldOccluder(clickbox, firstPart(observed), depths.fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"));
+		return addFallbackWorldOccluder(clickbox, firstPart(observed), depths.fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"), tileObject);
 	}
 
 	private ShapeFallbackResult addSceneryShapeFallbackOccluder(
@@ -1075,7 +1065,7 @@ public final class BillboardWorldOcclusionCollector
 				return ShapeFallbackResult.handled(false);
 			}
 			return ShapeFallbackResult.handled(
-				addFallbackWorldOccluder(hull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull")));
+				addFallbackWorldOccluder(hull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull"), tileObject));
 		}
 
 		if (tileObject instanceof WallObject)
@@ -1090,9 +1080,9 @@ public final class BillboardWorldOcclusionCollector
 				return ShapeFallbackResult.handled(false);
 			}
 			boolean addedFirst = hasFirstHull
-				&& addFallbackWorldOccluder(firstHull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull-1"));
+				&& addFallbackWorldOccluder(firstHull, part(observed, 0), depths.partDepth(0), debugOccluderSource(tileObject, "fallback-hull-1"), tileObject);
 			boolean addedSecond = hasSecondHull
-				&& addFallbackWorldOccluder(secondHull, part(observed, 1), depths.partDepth(1), debugOccluderSource(tileObject, "fallback-hull-2"));
+				&& addFallbackWorldOccluder(secondHull, part(observed, 1), depths.partDepth(1), debugOccluderSource(tileObject, "fallback-hull-2"), tileObject);
 			return ShapeFallbackResult.handled(addedFirst || addedSecond);
 		}
 
@@ -1196,7 +1186,7 @@ public final class BillboardWorldOcclusionCollector
 	}
 
 
-	private boolean addWorldOccluder(Shape shape, double depth, String source)
+	private boolean addWorldOccluder(Shape shape, double depth, String source, TileObject owner)
 	{
 		if (shape == null || shape.getBounds().isEmpty())
 		{
@@ -1213,7 +1203,7 @@ public final class BillboardWorldOcclusionCollector
 			return false;
 		}
 
-		worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth, source));
+		worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth, source, 0, 0xFFFFFF, owner));
 		debugShapesAccepted++;
 		debugFlatFallbackOccludersAccepted++;
 		return true;
@@ -1229,25 +1219,6 @@ public final class BillboardWorldOcclusionCollector
 		LocalPoint localPoint = tileObject.getLocalLocation();
 		return sourceType + " id=" + tileObject.getId() + " plane=" + tileObject.getPlane() + " height=" + tileObject.getZ()
 			+ " local=" + (localPoint == null ? "-" : localPoint.getX() + "," + localPoint.getY());
-	}
-
-	private boolean sceneryIntersectsInterest(TileObject tileObject)
-	{
-		if (tileObject instanceof WallObject)
-		{
-			WallObject wallObject = (WallObject) tileObject;
-			return intersectsInterest(wallObject.getConvexHull())
-				|| intersectsInterest(wallObject.getConvexHull2())
-				|| intersectsInterest(tileObject.getClickbox());
-		}
-
-		if (tileObject instanceof GameObject)
-		{
-			return intersectsInterest(((GameObject) tileObject).getConvexHull())
-				|| intersectsInterest(tileObject.getClickbox());
-		}
-
-		return false;
 	}
 
 	private boolean sceneryBroadPhaseIntersectsInterest(ObservedTileObject observed)
@@ -1411,7 +1382,7 @@ public final class BillboardWorldOcclusionCollector
 		// Static scenery can already be a Model; do not ask that model to generate another.
 		return renderable instanceof Model ? (Model) renderable : renderable != null ? renderable.getModel() : null;
 	}
-	private boolean collectSceneObjectPartOccluders(ObjectRenderablePart part, String source)
+	private boolean collectSceneObjectPartOccluders(ObjectRenderablePart part, String source, TileObject owner)
 	{
 		if (part == null || part.renderable == null || part.localPoint == null)
 		{
@@ -1486,7 +1457,7 @@ public final class BillboardWorldOcclusionCollector
 				projectModelVertex(part, geometry, a, baseHeight);
 				projectModelVertex(part, geometry, b, baseHeight);
 				projectModelVertex(part, geometry, c, baseHeight);
-				addSceneObjectTriangleOccluder(a, b, c, source, transmittance, tintRgb);
+				addSceneObjectTriangleOccluder(a, b, c, source, transmittance, tintRgb, owner);
 			}
 		}
 		return true;
@@ -1570,7 +1541,7 @@ public final class BillboardWorldOcclusionCollector
 		return geometry;
 	}
 
-	private void addSceneObjectTriangleOccluder(int a, int b, int c, String source, int transmittance, int tintRgb)
+	private void addSceneObjectTriangleOccluder(int a, int b, int c, String source, int transmittance, int tintRgb, TileObject owner)
 	{
 		double depth0 = projectedModelDepths[a];
 		double depth1 = projectedModelDepths[b];
@@ -1604,7 +1575,8 @@ public final class BillboardWorldOcclusionCollector
 			p2.getX(), p2.getY(), (float) depth2,
 			source,
 			transmittance,
-			tintRgb
+			tintRgb,
+			owner
 		);
 		if (occluder == null)
 		{
@@ -1914,19 +1886,19 @@ public final class BillboardWorldOcclusionCollector
 				partBaseHeight(part) - Math.max(0, part.renderable.getModelHeight() / 2.0d));
 	}
 
-	private boolean addFallbackWorldOccluder(Shape shape, ObjectRenderablePart part, double flatDepth, String source)
+	private boolean addFallbackWorldOccluder(Shape shape, ObjectRenderablePart part, double flatDepth, String source, TileObject owner)
 	{
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback occluder preparation"))
 		{
-			return addFallbackWorldOccluderInternal(shape, part, flatDepth, source);
+			return addFallbackWorldOccluderInternal(shape, part, flatDepth, source, owner);
 		}
 	}
 
-	private boolean addFallbackWorldOccluderInternal(Shape shape, ObjectRenderablePart part, double flatDepth, String source)
+	private boolean addFallbackWorldOccluderInternal(Shape shape, ObjectRenderablePart part, double flatDepth, String source, TileObject owner)
 	{
 		if (shape == null || shape.getBounds().isEmpty() || part == null || part.localPoint == null || part.renderable == null)
 		{
-			return addWorldOccluder(shape, flatDepth, source);
+			return addWorldOccluder(shape, flatDepth, source, owner);
 		}
 		if (cameraInsideWorldBounds(part))
 		{
@@ -1948,11 +1920,11 @@ public final class BillboardWorldOcclusionCollector
 				shape,
 				basePoint.getY(), (float) baseDepth,
 				topPoint.getY(), (float) topDepth,
-				verticalSource)
+				verticalSource, owner)
 			: null;
 		if (occluder == null || !isForwardOccluderDepth(baseDepth) || !isForwardOccluderDepth(topDepth))
 		{
-			return addWorldOccluder(shape, flatDepth, source);
+			return addWorldOccluder(shape, flatDepth, source, owner);
 		}
 		if (interestBounds != null && !intersectsInterest(shape.getBounds()))
 		{

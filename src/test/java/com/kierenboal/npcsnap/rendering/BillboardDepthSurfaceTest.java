@@ -28,9 +28,7 @@ public class BillboardDepthSurfaceTest
 			0.0d,
 			100,
 			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0,
-			0
+			new Rectangle(0, 0, 20, 100)
 		);
 
 		double centerPixelDepth = surface.depthAt(9, 49, 20, 100);
@@ -49,9 +47,7 @@ public class BillboardDepthSurfaceTest
 			0.0d,
 			100,
 			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0,
-			0
+			new Rectangle(0, 0, 20, 100)
 		);
 
 		assertTrue(surface.depthAt(10, 0, 20, 100) < surface.depthAt(10, 99, 20, 100));
@@ -67,9 +63,7 @@ public class BillboardDepthSurfaceTest
 			0.0d,
 			100,
 			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0,
-			0
+			new Rectangle(0, 0, 20, 100)
 		);
 
 		double leftDepth = surface.depthAt(0, 50, 20, 100);
@@ -85,13 +79,11 @@ public class BillboardDepthSurfaceTest
 		BillboardDepthSurface near = new BillboardDepthSurface(
 			calculator, 0, 0, 0.0d, 100,
 			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0, 0);
+			new Rectangle(0, 0, 20, 100));
 		BillboardDepthSurface far = new BillboardDepthSurface(
 			calculator, 0, 256, 0.0d, 100,
 			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0, 0);
+			new Rectangle(0, 0, 20, 100));
 
 		for (int sourceY : new int[]{0, 50, 99})
 		{
@@ -103,28 +95,24 @@ public class BillboardDepthSurfaceTest
 	public void spriteRenderYawDoesNotChangeWorldDepthSurface()
 	{
 		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client(0, 2048));
-		BillboardDepthSurface forwardSprite = new BillboardDepthSurface(
-			calculator,
-			0,
-			0,
-			0.0d,
-			100,
-			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			0,
-			0
-		);
-		BillboardDepthSurface turnedSprite = new BillboardDepthSurface(
-			calculator,
-			0,
-			0,
-			0.0d,
-			100,
-			new Rectangle(-10, -100, 20, 100),
-			new Rectangle(0, 0, 20, 100),
-			4096,
-			4096
-		);
+		Renderable renderable = proxy(Renderable.class, method("getModelHeight", 100));
+		Model model = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}),
+			method("getVerticesY", new float[] {0, 0, -100, -100}),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+		BillboardRenderRequest forwardRequest = new BillboardRenderRequest(
+			renderable, model, new LocalPoint(0, 0), 0, 0, 0, 0,
+			-1, -1, -1, -1, -1, false, false, null, null,
+			VerticalAnchor.BOTTOM, null, false);
+		BillboardRenderRequest turnedRequest = new BillboardRenderRequest(
+			renderable, model, new LocalPoint(0, 0), 0, 0, 4096, 4096,
+			-1, -1, -1, -1, -1, false, false, null, null,
+			VerticalAnchor.BOTTOM, null, false);
+		BillboardDepthSurface forwardSprite = BillboardDepthSurface.from(
+			calculator, forwardRequest, new Rectangle(-10, -100, 20, 100), new Rectangle(0, 0, 20, 100), 0.0d);
+		BillboardDepthSurface turnedSprite = BillboardDepthSurface.from(
+			calculator, turnedRequest, new Rectangle(-10, -100, 20, 100), new Rectangle(0, 0, 20, 100), 0.0d);
 
 		assertTrue(Math.abs(forwardSprite.depthAt(10, 80, 20, 100) - turnedSprite.depthAt(10, 80, 20, 100)) < 1.0d);
 	}
@@ -139,9 +127,7 @@ public class BillboardDepthSurfaceTest
 			0.0d,
 			100,
 			new Rectangle(-10, -200, 20, 100),
-			new Rectangle(400, 100, 20, 100),
-			0,
-			0
+			new Rectangle(400, 100, 20, 100)
 		);
 
 		assertTrue(surface.depthAt(10, 49, 20, 100, -50) < surface.depthAt(10, 49, 20, 100, 150));

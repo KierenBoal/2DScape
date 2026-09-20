@@ -2,7 +2,9 @@ package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
 import java.util.List;
+import net.runelite.api.Model;
 import net.runelite.api.Point;
+import net.runelite.api.Perspective;
 
 public final class BillboardGeometryUtils
 {
@@ -148,6 +150,40 @@ public final class BillboardGeometryUtils
 	public static boolean isUsableCanvasCoordinate(int coordinate)
 	{
 		return Math.abs(coordinate) <= MAX_CANVAS_COORDINATE;
+	}
+
+	/**
+	 * Transform model vertices into billboard space without allocating scratch arrays.
+	 */
+	public static void transformVertices(
+		Model model,
+		int yaw,
+		int pitch,
+		int offsetX,
+		int offsetZ,
+		float[] spriteX,
+		float[] spriteY,
+		float[] spriteDepth)
+	{
+		float[] verticesX = model.getVerticesX();
+		float[] verticesY = model.getVerticesY();
+		float[] verticesZ = model.getVerticesZ();
+		int vertexCount = model.getVerticesCount();
+		double yawSin = Perspective.SINE14[yaw] / 65536.0;
+		double yawCos = Perspective.COSINE14[yaw] / 65536.0;
+		int inversePitch = Math.floorMod(-pitch, BillboardAngleUtils.BILLBOARD_FULL_CIRCLE);
+		double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
+		double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
+		for (int i = 0; i < vertexCount; i++)
+		{
+			double modelX = verticesX[i] + offsetX;
+			double modelZ = verticesZ[i] + offsetZ;
+			double rotatedX = (modelX * yawCos) + (modelZ * yawSin);
+			double rotatedZ = (modelZ * yawCos) - (modelX * yawSin);
+			spriteX[i] = (float) rotatedX;
+			spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
+			spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
+		}
 	}
 
 	public static boolean isBackFace(float[] spriteX, float[] spriteY, float[] spriteDepth, int a, int b, int c)

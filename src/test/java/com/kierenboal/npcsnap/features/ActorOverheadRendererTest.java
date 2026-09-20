@@ -81,29 +81,25 @@ public class ActorOverheadRendererTest
 	@Test
 	public void disabledRetroOverheadsLeavesNativeOverheadsVisible()
 	{
-		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(false, true))
+		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(false))
 			.shouldReplace(TestProxies.proxy(NPC.class)));
 	}
 
 	@Test
-	public void disabledPrayerAlignmentLeavesNativeOverheadVisibleForPrayingPlayer()
+	public void retroOverheadsReplacePrayingPlayersWithTheAlignedPrayer()
 	{
+		BufferedImage image = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
+		SpritePixels prayer = TestProxies.proxy(SpritePixels.class,
+			TestProxies.method("toBufferedImage", image));
+		SpritePixels[] prayerSprites = new SpritePixels[HeadIcon.MAGIC.ordinal() + 1];
+		prayerSprites[HeadIcon.MAGIC.ordinal()] = prayer;
+		Client client = TestProxies.proxy(Client.class,
+			TestProxies.method("getSprites", prayerSprites));
 		Player player = TestProxies.proxy(Player.class,
 			TestProxies.method("getSkullIcon", -1),
 			TestProxies.method("getOverheadIcon", HeadIcon.MAGIC));
 
-		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, false))
-			.shouldReplace(player));
-	}
-
-	@Test
-	public void disabledPrayerAlignmentDoesNotAffectPlayersWithoutPrayer()
-	{
-		Player player = TestProxies.proxy(Player.class,
-			TestProxies.method("getSkullIcon", -1),
-			TestProxies.method("getOverheadIcon", null));
-
-		assertTrue(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, false))
+		assertTrue(new ActorOverheadRenderer(client, config(true))
 			.shouldReplace(player));
 	}
 
@@ -121,7 +117,7 @@ public class ActorOverheadRendererTest
 			TestProxies.method("getOverheadArchiveIds", new int[] {42}),
 			TestProxies.method("getOverheadSpriteIds", new short[] {3}));
 
-		ActorOverheadRenderer renderer = new ActorOverheadRenderer(client, config(false, true));
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(client, config(false));
 		assertTrue(renderer.canReplace(npc));
 		assertFalse(renderer.shouldReplace(npc));
 	}
@@ -213,7 +209,7 @@ public class ActorOverheadRendererTest
 	@Test
 	public void hitsplatsExpireAndRemainIsolatedByActorIdentity()
 	{
-		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true, true));
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true));
 		NPC first = TestProxies.proxy(NPC.class);
 		NPC second = TestProxies.proxy(NPC.class);
 		Hitsplat hitsplat = TestProxies.proxy(Hitsplat.class,
@@ -240,7 +236,7 @@ public class ActorOverheadRendererTest
 		assertFalse(resolved.intersects(occupied));
 	}
 
-	private static NpcSnapConfig config(boolean retroOverheads, boolean alignPrayers)
+	private static NpcSnapConfig config(boolean retroOverheads)
 	{
 		return new NpcSnapConfig()
 		{
@@ -248,12 +244,6 @@ public class ActorOverheadRendererTest
 			public boolean useRetroOverheads()
 			{
 				return retroOverheads;
-			}
-
-			@Override
-			public boolean alignOverheadPrayers()
-			{
-				return alignPrayers;
 			}
 		};
 	}

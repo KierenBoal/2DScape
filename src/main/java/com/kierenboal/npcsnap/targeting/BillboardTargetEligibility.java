@@ -137,7 +137,7 @@ public final class BillboardTargetEligibility
 			return false;
 		}
 
-		int verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(actor, spotAnimation);
+		int verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(spotAnimation);
 		Point canvasPoint = Perspective.localToCanvas(
 			client, actorLocation, plane, verticalOffset + (spotAnimation.getModelHeight() / 2));
 		if (isInside(viewport, canvasPoint))

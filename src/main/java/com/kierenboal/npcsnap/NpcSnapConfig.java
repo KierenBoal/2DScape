@@ -335,33 +335,13 @@ public interface NpcSnapConfig extends Config
 		return 8;
 	}
 
-	@ConfigItem(keyName = "enableGlobalTextureBanding", name = "Reduce game texture quality", description = "Give world textures fewer shades for a more retro look.", section = retroSection, position = 7, hidden = true)
-	default boolean enableGlobalTextureBanding()
-	{
-		return false;
-	}
-
-	@Range(min = 1, max = 64)
-	@ConfigItem(keyName = "globalTextureSpriteQuality", name = "Texture sprite quality", description = "How sharp world textures are. Lower values make texture pixels larger and rougher.", section = retroSection, position = 8, hidden = true)
-	default double globalTextureSpriteQuality()
-	{
-		return 100.0d;
-	}
-
-	@Range(min = 1, max = 64)
-	@ConfigItem(keyName = "globalTextureColorBands", name = "Texture color bands", description = "How many shades world textures can use when game texture reduction is on.", section = retroSection, position = 9, hidden = true)
-	default int globalTextureColorBands()
-	{
-		return 16;
-	}
-
 	@ConfigItem(keyName = "deterministicAnimationLooping", name = "Deterministic animation looping", description = "Keep the previous animation frame when an animation loops instead of following its loop metadata.", section = retroSection, position = 10)
 	default boolean deterministicAnimationLooping()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat and hitsplats", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, and hitsplats.", section = retroSection, position = 11)
+	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat, hitsplats and prayers", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, hitsplats, and prayers.", section = retroSection, position = 11)
 	default boolean useRetroOverheads()
 	{
 		return false;
@@ -388,13 +368,7 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "alignOverheadPrayers", name = "Align overhead prayers", description = "Move player overhead prayer icons to align with their billboard sprites.", section = retroSection, position = 12)
-	default boolean alignOverheadPrayers()
-	{
-		return true;
-	}
-
-	@ConfigItem(keyName = "ignoreProjectionSkewCorrection", name = "Ignore projection skew correction", description = "Disable the gentle perspective lean on actor sprites. Their proportions are preserved and the lean fades near overhead views.", section = retroSection, position = 13)
+	@ConfigItem(keyName = "ignoreProjectionSkewCorrection", name = "Ignore projection skew correction", description = "Disable the gentle perspective lean on actor sprites. Their proportions are preserved and the lean fades near overhead views.", section = retroSection, position = 12)
 	default boolean ignoreProjectionSkewCorrection()
 	{
 		return false;

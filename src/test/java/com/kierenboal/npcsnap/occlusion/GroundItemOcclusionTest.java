@@ -39,7 +39,7 @@ public class GroundItemOcclusionTest
 			for (int row = 0; row < BOUNDS.height; row++)
 			{
 				double expected = calculator.cameraForwardDepthOnVerticalPlane(0, 0, row);
-				assertEquals(expected, surface.depthAtRow(row, 4, row), 0.001d);
+				assertEquals(expected, surface.depthAtRow(4, row), 0.001d);
 				assertEquals(expected, surface.depthAt(0, row, 4, 4, row), 0.001d);
 			}
 		}

@@ -9,10 +9,7 @@ import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
 import net.runelite.api.GraphicsObject;
-import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
-import net.runelite.api.Point;
-import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
@@ -25,30 +22,6 @@ public final class BillboardDepthCalculator
 	public BillboardDepthCalculator(Client client)
 	{
 		this.client = client;
-	}
-
-	public double depth(NPC npc)
-	{
-		LocalPoint localPoint = npc.getLocalLocation();
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		double verticalOffset = Math.max(0, npc.getAnimationHeightOffset()) + (npc.getModelHeight() / 2.0);
-		return cameraDistance(npc, localPoint, verticalOffset);
-	}
-
-	public double depth(Player player)
-	{
-		LocalPoint localPoint = player.getLocalLocation();
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		double verticalOffset = Math.max(0, player.getAnimationHeightOffset()) + (player.getModelHeight() / 2.0);
-		return cameraDistance(player, localPoint, verticalOffset);
 	}
 
 	public double depth(Projectile projectile)
@@ -89,7 +62,7 @@ public final class BillboardDepthCalculator
 			return Double.NEGATIVE_INFINITY;
 		}
 
-		double verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(actor, actorSpotAnim);
+		double verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(actorSpotAnim);
 		int plane = actor.getWorldView() != null && actor.getWorldView().isTopLevel()
 			? actor.getWorldView().getPlane()
 			: 0;
@@ -206,24 +179,6 @@ public final class BillboardDepthCalculator
 		return cameraY / denominator;
 	}
 
-	public double cameraRightX()
-	{
-		int yaw = cameraYawIndex();
-		return Perspective.COSINE[yaw] / 65536.0d;
-	}
-
-	public double cameraRightY()
-	{
-		int yaw = cameraYawIndex();
-		return Perspective.SINE[yaw] / 65536.0d;
-	}
-
-	public double canvasYAtWorldHeight(int localX, int localY, double worldHeight)
-	{
-		Point point = Perspective.localToCanvas(client, localX, localY, (int) Math.round(worldHeight));
-		return point != null ? point.getY() : Double.NaN;
-	}
-
 	public BillboardCanvasPoint projectCanvasPoint(LocalPoint localPoint, int plane, double verticalOffset)
 	{
 		if (localPoint == null || !Double.isFinite(verticalOffset))
@@ -319,8 +274,4 @@ public final class BillboardDepthCalculator
 		);
 	}
 
-	private double cameraDistance(Actor actor, LocalPoint localPoint, double verticalOffset)
-	{
-		return cameraDistance(localPoint, actor.getWorldView().getPlane(), verticalOffset);
-	}
 }

@@ -14,23 +14,9 @@ public class NpcSnapConfigChangeHandlerTest
 		NpcSnapConfigChangeHandler handler = counters.handler();
 
 		handler.handle("other", "enableUiTextureBanding");
-		handler.handle("npc-snap", "enableGlobalTextureBanding");
-		handler.handle("npc-snap", "globalTextureSpriteQuality");
-		handler.handle("npc-snap", "globalTextureColorBands");
 		handler.handle("npc-snap", "unrelated");
 
 		counters.assertCounts(0, 0);
-	}
-
-	@Test
-	public void retiredGlobalBandingChangesAreIgnored()
-	{
-		for (String key : new String[] {"enableGlobalTextureBanding", "globalTextureSpriteQuality", "globalTextureColorBands"})
-		{
-			Counters counters = new Counters();
-			counters.handler().handle("npc-snap", key);
-			counters.assertCounts(0, 0);
-		}
 	}
 
 	@Test

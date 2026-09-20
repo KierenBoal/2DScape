@@ -80,6 +80,7 @@ public class NpcSnapPlugin extends Plugin
 	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private boolean pendingSkillXpSeed;
+	private Scene groundItemScene;
 	private NpcSnapUiTextureManager uiTextureManager;
 	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
@@ -190,7 +191,7 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("billboard overlay", () -> overlayManager.remove(billboardOverlay));
 		cleanupStep("frame listener", () -> drawManager.unregisterEveryFrameListener(restoreFrameListener));
 		cleanupStep("frame state", this::restoreFrameStateNow);
-		cleanupStep("ground item state", billboardOverlay::clearGroundItems);
+		cleanupStep("ground item state", this::clearGroundItemState);
 		cleanupStep("tile object state", billboardOverlay::clearTileObjects);
 		cleanupStep("billboard cache", billboardOverlay::clearBillboardCache);
 		cleanupStep("texture cache", billboardOverlay::clearTextureCache);
@@ -238,14 +239,10 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		WorldView worldView = client.getTopLevelWorldView();
+		ensureGroundItemsSeeded(worldView);
 		if (worldView == null)
 		{
 			return;
-		}
-
-		if (config.applyToGroundItems())
-		{
-			billboardOverlay.syncGroundItems(worldView);
 		}
 
 		if (config.applyToNpcs())
@@ -365,6 +362,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
+		clearGroundItemState();
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			skillingActivityTracker.clear();
@@ -541,23 +539,6 @@ public class NpcSnapPlugin extends Plugin
 			default:
 				return false;
 		}
-	}
-
-	private static String exportFallback(MenuEntry entry)
-	{
-		if (entry.getActor() instanceof NPC)
-		{
-			return "NPC_" + ((NPC) entry.getActor()).getId();
-		}
-		if (entry.getActor() instanceof Player)
-		{
-			return "Player";
-		}
-		if (BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()))
-		{
-			return "Item_" + entry.getIdentifier();
-		}
-		return "Object_" + entry.getIdentifier();
 	}
 
 	@Subscribe
@@ -764,6 +745,36 @@ public class NpcSnapPlugin extends Plugin
 	{
 		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(),
 			config.uiSpriteQuality(), config.applyToCustomUiTextures());
+	}
+
+	private void ensureGroundItemsSeeded(WorldView worldView)
+	{
+		Scene scene = worldView == null ? null : worldView.getScene();
+		if (scene == groundItemScene)
+		{
+			return;
+		}
+
+		clearGroundItemState();
+		groundItemScene = scene;
+		if (scene == null)
+		{
+			return;
+		}
+
+		billboardOverlay.seedGroundItems(worldView);
+	}
+
+	private void clearGroundItemState()
+	{
+		try
+		{
+			billboardOverlay.clearGroundItems();
+		}
+		finally
+		{
+			groundItemScene = null;
+		}
 	}
 
 	private NpcSnapUiTextureManager ensureUiTextureManager()

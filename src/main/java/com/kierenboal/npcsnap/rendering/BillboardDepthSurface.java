@@ -25,9 +25,7 @@ public final class BillboardDepthSurface
 		double baseHeight,
 		int modelHeight,
 		Rectangle sourceBounds,
-		Rectangle drawBounds,
-		int relativeYaw,
-		int relativePitch)
+		Rectangle drawBounds)
 	{
 		this(
 			depthCalculator,
@@ -106,7 +104,7 @@ public final class BillboardDepthSurface
 		return point.depth;
 	}
 
-	public double depthAtRow(int sourceY, int sourceHeight, int canvasY)
+	public double depthAtRow(int sourceHeight, int canvasY)
 	{
 		if (depthCalculator == null || sourceBounds == null || drawBounds == null || sourceHeight <= 0 || modelHeight <= 0 || !Double.isFinite(baseHeight))
 		{

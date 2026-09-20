@@ -1,11 +1,8 @@
 package com.kierenboal.npcsnap.features;
 
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
@@ -68,42 +65,6 @@ public final class GroundItemBillboardTracker
 	public void seed(WorldView worldView)
 	{
 		forEachSceneGroundItem(worldView, this::track);
-	}
-
-	public void sync(WorldView worldView, Consumer<TileItem> staleItemConsumer)
-	{
-		if (worldView == null || worldView.getScene() == null)
-		{
-			clearTrackedItems(staleItemConsumer);
-			return;
-		}
-
-		Set<TileItem> seenItems = Collections.newSetFromMap(new IdentityHashMap<>());
-		forEachSceneGroundItem(worldView, (item, tile) ->
-		{
-			seenItems.add(item);
-			track(item, tile);
-		});
-
-		groundItems.keySet().removeIf(item ->
-		{
-			boolean stale = !seenItems.contains(item);
-			if (stale)
-			{
-				staleItemConsumer.accept(item);
-			}
-			return stale;
-		});
-	}
-
-	private void clearTrackedItems(Consumer<TileItem> itemConsumer)
-	{
-		for (TileItem item : groundItems.keySet())
-		{
-			itemConsumer.accept(item);
-		}
-
-		groundItems.clear();
 	}
 
 	private static void forEachSceneGroundItem(WorldView worldView, GroundItemConsumer groundItemConsumer)

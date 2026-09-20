@@ -92,13 +92,13 @@ public final class BillboardOcclusionDebugSampler
 				}
 
 				BillboardDepthSurface.DebugPoint point = depthSurface.debugPointAt(sourceX, sourceY, sourceWidth, sourceHeight, canvasY);
-				float worldDepth = occlusionMask.depthAt(canvasX, canvasY);
+				float worldDepth = occlusionMask.depthAt(canvasX, canvasY, draw.occlusionIgnoredTileObject);
 				float bias = occlusionMask.occlusionDepthBias();
 				double margin = point.depth - (worldDepth + bias);
-				int transmittance = occlusionMask.transmittanceAt(canvasX, canvasY, point.depth);
+				int transmittance = occlusionMask.transmittanceAt(canvasX, canvasY, point.depth, draw.occlusionIgnoredTileObject);
 				samples.add(format(
 					draw, canvasX, canvasY, sourceX, sourceY, sourceAlpha, point,
-					worldDepth, occlusionMask.sourceAt(canvasX, canvasY), bias, margin,
+					worldDepth, occlusionMask.sourceAt(canvasX, canvasY, draw.occlusionIgnoredTileObject), bias, margin,
 					transmittance));
 			}
 		}

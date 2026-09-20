@@ -138,6 +138,19 @@ public class BillboardOutlineRendererTest
 	}
 
 	@Test
+	public void applyOutlineKeepsSolidExteriorOutlineInFrontOfSpriteShadow()
+	{
+		BufferedImage image = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(10, 19, 0xFFFFFFFF);
+
+		BillboardOutlineRenderer.applyOutline(
+			image, false, false, true, true, false, false, false, new Color(0xFFFFFF00));
+
+		assertEquals(0xFFFFFF00, image.getRGB(10, 18));
+		assertEquals(0x1B000000, image.getRGB(8, 19));
+	}
+
+	@Test
 	public void applyOutlineUsesCustomSpriteShadowHeightRatio()
 	{
 		BufferedImage defaultShadow = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);

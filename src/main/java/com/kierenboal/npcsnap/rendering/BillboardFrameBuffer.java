@@ -7,6 +7,7 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.Arrays;
+import net.runelite.api.TileObject;
 
 public final class BillboardFrameBuffer
 {
@@ -82,6 +83,7 @@ public final class BillboardFrameBuffer
 			: BillboardDrawGeometry.rectangular(draw.bounds);
 		int drawWidth = geometry.unskewedBounds.width;
 		int drawPaintOrder = draw.paintOrder;
+		TileObject ignoredTileObject = draw.occlusionIgnoredTileObject;
 		BillboardDepthSurface billboardDepth = occlusionMask.coveredCellCount() > 0 ? depthSurfaceFactory.create(draw) : null;
 		boolean hasActiveOcclusion = billboardDepth != null && billboardDepth.supportsWorldOcclusion();
 		int clippedHeight = clipBottom - clipTop;
@@ -141,7 +143,7 @@ public final class BillboardFrameBuffer
 				{
 					if (!rowHasDepth[clippedRow])
 					{
-						rowDepth[clippedRow] = billboardDepth.depthAtRow(sourceY, sourceHeight, y);
+						rowDepth[clippedRow] = billboardDepth.depthAtRow(sourceHeight, y);
 						rowHasDepth[clippedRow] = true;
 					}
 					double pixelDepth = rowDepth[clippedRow];
@@ -152,10 +154,10 @@ public final class BillboardFrameBuffer
 						if (sampleX != cachedSampleX)
 						{
 							cachedSampleX = sampleX;
-							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth);
+							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth, ignoredTileObject);
 							if (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE)
 							{
-								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance);
+								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance, ignoredTileObject);
 								cachedSampleStartX = x - occlusionMask.sampleOffset(x);
 							}
 						}
@@ -165,7 +167,7 @@ public final class BillboardFrameBuffer
 					}
 					else
 					{
-						transmittance = occlusionMask.transmittanceAt(x, y, pixelDepth);
+						transmittance = occlusionMask.transmittanceAt(x, y, pixelDepth, ignoredTileObject);
 					}
 					if (transmittance == 0)
 					{
@@ -182,7 +184,7 @@ public final class BillboardFrameBuffer
 							pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(
 								pixels[destinationIndex], debugOcclusionPixel(transmittance));
 						}
-						sourcePixel = occlusionMask.tintPixel(x, y, pixelDepth, sourcePixel);
+						sourcePixel = occlusionMask.tintPixel(x, y, pixelDepth, sourcePixel, ignoredTileObject);
 					}
 				}
 

@@ -1,8 +1,11 @@
 package com.kierenboal.npcsnap.rendering;
 
+import com.kierenboal.npcsnap.TestProxies;
+
 import java.awt.Color;
 import java.awt.Rectangle;
 import java.util.List;
+import net.runelite.api.Model;
 import net.runelite.api.Point;
 import org.junit.Assert;
 import org.junit.Test;
@@ -117,6 +120,39 @@ public class BillboardGeometryUtilsTest
 		float[] depth = {1, 1, 1};
 		Assert.assertTrue(BillboardGeometryUtils.isBackFace(x, y, depth, 0, 1, 2));
 		Assert.assertFalse(BillboardGeometryUtils.isBackFace(x, y, depth, 0, 2, 1));
+	}
+
+	@Test
+	public void transformVerticesAppliesZeroAndNonZeroWorldOffsets()
+	{
+		Model model = TestProxies.proxy(
+			Model.class,
+			TestProxies.method("getVerticesCount", 3),
+			TestProxies.method("getVerticesX", new float[] {1f, -2f, 3f}),
+			TestProxies.method("getVerticesY", new float[] {4f, 5f, 6f}),
+			TestProxies.method("getVerticesZ", new float[] {7f, 8f, 9f})
+		);
+		float[] spriteX = new float[3];
+		float[] spriteY = new float[3];
+		float[] spriteDepth = new float[3];
+
+		BillboardGeometryUtils.transformVertices(model, 0, 0, 0, 0, spriteX, spriteY, spriteDepth);
+
+		Assert.assertArrayEquals(new float[] {1f, -2f, 3f}, spriteX, 0f);
+		Assert.assertArrayEquals(new float[] {4f, 5f, 6f}, spriteY, 0f);
+		Assert.assertArrayEquals(new float[] {7f, 8f, 9f}, spriteDepth, 0f);
+
+		BillboardGeometryUtils.transformVertices(model, 0, 0, 10, -20, spriteX, spriteY, spriteDepth);
+
+		Assert.assertArrayEquals(new float[] {11f, 8f, 13f}, spriteX, 0f);
+		Assert.assertArrayEquals(new float[] {4f, 5f, 6f}, spriteY, 0f);
+		Assert.assertArrayEquals(new float[] {-13f, -12f, -11f}, spriteDepth, 0f);
+
+		BillboardGeometryUtils.transformVertices(model, 4096, 4096, 10, -20, spriteX, spriteY, spriteDepth);
+
+		Assert.assertArrayEquals(new float[] {-13f, -12f, -11f}, spriteX, 0f);
+		Assert.assertArrayEquals(new float[] {-11f, -8f, -13f}, spriteY, 0f);
+		Assert.assertArrayEquals(new float[] {-4f, -5f, -6f}, spriteDepth, 0f);
 	}
 
 	@Test

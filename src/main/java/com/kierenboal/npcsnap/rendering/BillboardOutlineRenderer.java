@@ -86,16 +86,20 @@ public final class BillboardOutlineRenderer
 		System.arraycopy(sourcePixels, 0, scratch.resultPixels, 0, pixelCount);
 		populateBoundaryMasks(sourcePixels, width, height, scratch);
 
+		// Build the shadow behind the edge effects. The shadow occupies transparent
+		// pixels near the feet, so drawing it last would replace the coloured
+		// exterior outline at the sprite's original silhouette.
+		if (spriteShadow)
+		{
+			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio);
+		}
+
 		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, false, solidInline, solidOutlineColor);
 		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, shadowInline, false, solidOutlineColor);
 		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, highlightInline, false, false, solidOutlineColor);
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, false, solidOutline, solidOutlineColor);
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, shadowOutline, false, solidOutlineColor);
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, false, false, solidOutlineColor);
-		if (spriteShadow)
-		{
-			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio);
-		}
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
 	}
 

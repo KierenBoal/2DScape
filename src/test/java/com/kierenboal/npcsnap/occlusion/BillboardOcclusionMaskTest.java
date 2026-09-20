@@ -15,6 +15,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Collections;
+import net.runelite.api.TileObject;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -23,6 +24,26 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardOcclusionMaskTest
 {
+	@Test
+	public void billboardCanIgnoreItsOwnWorldObjectOccluder()
+	{
+		TileObject owner = proxy(TileObject.class);
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 8, 8), 20f, "self", 0, 0xFFFFFF, owner)),
+			BillboardOcclusionQuality.HIGH, 0, 0, 8, 8);
+
+		assertTrue(mask.isOccluded(2, 2, 100d));
+		assertEquals(BillboardOcclusionMask.CellResult.REFINE, mask.classifySample(0, 2, 100d, owner));
+		assertFalse(mask.isOccluded(2, 2, 100d, owner));
+
+		mask.prepare(Arrays.asList(
+			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 20f, "self", 0, 0xFFFFFF, owner),
+			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 10f, "other")),
+			BillboardOcclusionQuality.HIGH, 0, 0, 8, 8);
+		assertTrue(mask.isOccluded(2, 2, 100d, owner));
+	}
+
 	@Test
 	public void maskStageTimersPreserveTransparencyAndPublishUnderBuildTimer()
 	{
@@ -115,7 +136,7 @@ public class BillboardOcclusionMaskTest
 			method("getViewportHeight", 4));
 		BillboardDepthSurface surface = new BillboardDepthSurface(
 			new BillboardDepthCalculator(client),
-			0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4), 0, 0);
+			0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4));
 		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(), draw -> surface);
 		BufferedImage near = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
 		BufferedImage far = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
@@ -185,7 +206,7 @@ public class BillboardOcclusionMaskTest
 		BillboardDepthSurface surface =
 			new BillboardDepthSurface(
 				new BillboardDepthCalculator(client),
-				0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4), 0, 0);
+				0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4));
 		BillboardFrameBuffer buffer =
 			new BillboardFrameBuffer(mask,
 				new BillboardPerformanceMetrics(), draw -> surface);

@@ -93,7 +93,10 @@ public final class BillboardRenderRequestFactory
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			// World objects follow the same camera pitch as actors. Low-profile is
+			// still carried on the request for depth/occlusion decisions, but it must
+			// not activate the ground-item minimum pitch here.
+			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
 			animationId, snappedFrame, -1, -1, -1, false, false, lowProfile,
 			VerticalAnchor.BOTTOM, frameDebugInfo);
 	}
@@ -138,7 +141,7 @@ public final class BillboardRenderRequestFactory
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
 			-1, -1, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM, null);
 	}
 
@@ -161,7 +164,7 @@ public final class BillboardRenderRequestFactory
 		return request(
 			spotAnimation, model, localPoint,
 			plane,
-			BillboardEffectGeometry.actorSpotVerticalOffset(actor, spotAnimation),
+			BillboardEffectGeometry.actorSpotVerticalOffset(spotAnimation),
 			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(lowProfile),
 			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1, false, false,
 			lowProfile, BillboardEffectGeometry.actorSpotVerticalAnchor(spotAnimation),

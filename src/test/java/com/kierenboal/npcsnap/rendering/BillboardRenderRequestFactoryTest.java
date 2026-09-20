@@ -249,6 +249,42 @@ public class BillboardRenderRequestFactoryTest
 		assertSame(model, factory().buildStaticObjectPart(part).model);
 	}
 
+	@Test
+	public void worldObjectPitchUsesTheSameCameraRangeAsActors()
+	{
+		Model model = TestProxies.proxy(Model.class,
+			TestProxies.method("getVerticesCount", 1),
+			TestProxies.method("getVerticesX", new float[] {0}),
+			TestProxies.method("getVerticesY", new float[] {0}),
+			TestProxies.method("getVerticesZ", new float[] {0}));
+		net.runelite.api.Renderable renderable = TestProxies.proxy(
+			net.runelite.api.Renderable.class,
+			TestProxies.method("getModel", model),
+			TestProxies.method("getModelHeight", 32));
+		ObjectRenderablePart part = new ObjectRenderablePart(
+			renderable, new LocalPoint(128, 128, worldView(0)), 0);
+		Client client = TestProxies.proxy(Client.class,
+			TestProxies.method("getCameraPitch", 2048));
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enableRotationSnapping", true),
+			TestProxies.method("numberOfYawRotationAngles", 4),
+			TestProxies.method("numberOfPitchRotationAngles", 4));
+		BillboardOrientationCalculator orientation = new BillboardOrientationCalculator(client, config);
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(
+			client,
+			config,
+			new NpcSnapDebug(client, config),
+			new AnimationFrameSnapper(client),
+			orientation,
+			new BillboardInteractionState());
+
+		BillboardRenderRequest request = factory.buildStaticObjectPart(part);
+
+		assertTrue(request.lowProfile);
+		assertEquals(orientation.relativePitch(), request.relativePitch);
+		assertTrue(request.relativePitch != orientation.relativePitch(true));
+	}
+
 	private static BillboardRenderRequestFactory factory()
 	{
 		return factory(true, null);

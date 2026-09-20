@@ -40,7 +40,6 @@ import com.kierenboal.npcsnap.rendering.BuiltFaces;
 import com.kierenboal.npcsnap.rendering.FaceDraw;
 import com.kierenboal.npcsnap.rendering.NpcSnapColorBanding;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
-import com.kierenboal.npcsnap.rendering.RenderedBillboardImage;
 import com.kierenboal.npcsnap.rendering.TextureSample;
 import com.kierenboal.npcsnap.rendering.TextureUvs;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
@@ -56,7 +55,6 @@ import com.kierenboal.npcsnap.state.BillboardVisibilityState;
 import com.kierenboal.npcsnap.state.CachedBillboard;
 import com.kierenboal.npcsnap.state.FrameUpdatePlan;
 import com.kierenboal.npcsnap.state.QueuedBillboardTarget;
-import com.kierenboal.npcsnap.state.TimedCacheEntry;
 import com.kierenboal.npcsnap.state.UpdateHeuristicSnapshot;
 import com.kierenboal.npcsnap.targeting.ActorStackTracker;
 import com.kierenboal.npcsnap.targeting.BillboardClassificationDebug;
@@ -84,14 +82,12 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -339,11 +335,6 @@ class NpcBillboardOverlay extends Overlay
 		visibility.clearSelections();
 	}
 
-	private boolean hasActiveBillboardTargets()
-	{
-		return !activeRenderableTargets.isEmpty() || !visibility.activeTileObjects.isEmpty();
-	}
-
 	private void clearActiveSnapshots()
 	{
 		visibility.clearSnapshots();
@@ -356,11 +347,6 @@ class NpcBillboardOverlay extends Overlay
 		billboardUpdateStates.clear();
 		frameUpdatePlans.clear();
 		forceHoverInteractionRedraws.clear();
-	}
-
-	void syncGroundItems(WorldView worldView)
-	{
-		groundItemTracker.sync(worldView, this::clearGroundItemRenderState);
 	}
 
 	void clearTileObjects()
@@ -693,26 +679,10 @@ class NpcBillboardOverlay extends Overlay
 		float[] spriteX = new float[vertexCount];
 		float[] spriteY = new float[vertexCount];
 		float[] spriteDepth = new float[vertexCount];
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
 		int offsetX = origin != null && original.localPoint != null ? original.localPoint.getX() - origin.getX() : 0;
 		int offsetZ = origin != null && original.localPoint != null ? original.localPoint.getY() - origin.getY() : 0;
-		double yawSin = Perspective.SINE14[yaw] / 65536.0;
-		double yawCos = Perspective.COSINE14[yaw] / 65536.0;
-		int inversePitch = Math.floorMod(-pitch, BILLBOARD_FULL_CIRCLE);
-		double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
-		double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
-		for (int i = 0; i < vertexCount; i++)
-		{
-			double modelX = verticesX[i] + offsetX;
-			double modelZ = verticesZ[i] + offsetZ;
-			double rotatedX = (modelX * yawCos) + (modelZ * yawSin);
-			double rotatedZ = (modelZ * yawCos) - (modelX * yawSin);
-			spriteX[i] = (float) rotatedX;
-			spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
-			spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
-		}
+		BillboardGeometryUtils.transformVertices(model, yaw, pitch, offsetX, offsetZ,
+			spriteX, spriteY, spriteDepth);
 		BuiltFaces builtFaces = buildFaces(model, spriteX, spriteY, spriteDepth,
 			System.currentTimeMillis(), original.animatedTextureId, true);
 		if (builtFaces.faces.isEmpty())
@@ -732,11 +702,11 @@ class NpcBillboardOverlay extends Overlay
 		}
 		double qualityScale = renderQualityScale();
 		int outlinePadding = outlinePadding(qualityScale);
-		RenderedBillboardImage rendered = renderBillboardImage(
+		BufferedImage rendered = renderBillboardImage(
 			builtFaces.faces, bounds, outlinePadding, qualityScale,
 			false, false, null, null);
 		return rendered == null ? null
-			: new ExportRenderedPart(rendered.image, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding));
+			: new ExportRenderedPart(rendered, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding));
 	}
 
 	private static BufferedImage compositeExportParts(List<ExportRenderedPart> images)
@@ -1028,7 +998,7 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			isReadyToRedrawDebug(target);
-			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
+			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder, target.tileObject));
 		}
 	}
 
@@ -2699,7 +2669,7 @@ class NpcBillboardOverlay extends Overlay
 		);
 	}
 
-	private RenderedBillboardImage renderBillboardImage(
+	private BufferedImage renderBillboardImage(
 		List<FaceDraw> faces,
 		Rectangle bounds,
 		int outlinePadding,
@@ -2789,7 +2759,7 @@ class NpcBillboardOverlay extends Overlay
 				}
 			}
 
-			return new RenderedBillboardImage(image);
+			return image;
 		}
 	}
 
@@ -2799,18 +2769,6 @@ class NpcBillboardOverlay extends Overlay
 		textureResolver.expire(nowMillis);
 	}
 
-	private static <K, V extends TimedCacheEntry> void expireIdleEntries(Iterator<Map.Entry<K, V>> iterator, long nowMillis)
-	{
-		while (iterator.hasNext())
-		{
-			Map.Entry<K, V> entry = iterator.next();
-			if (nowMillis - entry.getValue().lastUsedMillis() > BillboardConstants.CACHE_TTL_MILLIS)
-			{
-				iterator.remove();
-			}
-		}
-	}
-	
 	private double renderQualityScale()
 	{
 		return BillboardRenderQuality.fromPercent(config.renderBillboardQuality());
@@ -2841,11 +2799,6 @@ class NpcBillboardOverlay extends Overlay
 		spriteXScratch = new float[vertexCount];
 		spriteYScratch = new float[vertexCount];
 		spriteDepthScratch = new float[vertexCount];
-	}
-
-	private double seededQualityScale(int nearPriorityIndex, int maxUpdatesPerFrame)
-	{
-		return BillboardRenderQuality.seededScale(renderQualityScale(), nearPriorityIndex, maxUpdatesPerFrame);
 	}
 
 	private boolean isOutsideViewport(int x, int y, int width, int height)
@@ -3048,28 +3001,14 @@ class NpcBillboardOverlay extends Overlay
 		boolean updatePlanSucceeded = false;
 		if (updatePlan != null)
 		{
-			float[] verticesX = model.getVerticesX();
-			float[] verticesY = model.getVerticesY();
-			float[] verticesZ = model.getVerticesZ();
 			ensureSpriteScratchCapacity(vertexCount);
 			float[] spriteX = spriteXScratch;
 			float[] spriteY = spriteYScratch;
 			float[] spriteDepth = spriteDepthScratch;
-			double yawSin = Perspective.SINE14[request.relativeYaw] / 65536.0;
-			double yawCos = Perspective.COSINE14[request.relativeYaw] / 65536.0;
-			int inversePitch = Math.floorMod(-request.relativePitch, BILLBOARD_FULL_CIRCLE);
-			double pitchSin = Perspective.SINE14[inversePitch] / 65536.0;
-			double pitchCos = Perspective.COSINE14[inversePitch] / 65536.0;
 			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Transform vertices"))
 			{
-				for (int i = 0; i < vertexCount; i++)
-				{
-					double rotatedX = (verticesX[i] * yawCos) + (verticesZ[i] * yawSin);
-					double rotatedZ = (verticesZ[i] * yawCos) - (verticesX[i] * yawSin);
-					spriteX[i] = (float) rotatedX;
-					spriteY[i] = (float) ((verticesY[i] * pitchCos) - (rotatedZ * pitchSin));
-					spriteDepth[i] = (float) ((rotatedZ * pitchCos) + (verticesY[i] * pitchSin));
-				}
+				BillboardGeometryUtils.transformVertices(model, request.relativeYaw, request.relativePitch,
+					0, 0, spriteX, spriteY, spriteDepth);
 			}
 
 			BuiltFaces builtFaces;
@@ -3125,7 +3064,7 @@ class NpcBillboardOverlay extends Overlay
 					}
 					if (cacheInvalidated)
 					{
-						RenderedBillboardImage rendered = renderBillboardImage(
+						BufferedImage rendered = renderBillboardImage(
 							faces,
 							sourceBounds,
 							outlinePadding,
@@ -3137,7 +3076,7 @@ class NpcBillboardOverlay extends Overlay
 						);
 						if (rendered != null)
 						{
-							cached = new CachedBillboard(cacheKey, imageBounds, sourceBounds, rendered.image, nowMillis);
+							cached = new CachedBillboard(cacheKey, imageBounds, sourceBounds, rendered, nowMillis);
 							cached.markDebugFrameRedrawn();
 							billboardCache.put(renderable, cached);
 							spriteRedrawn = true;

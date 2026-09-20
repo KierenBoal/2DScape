@@ -26,7 +26,6 @@ public class NpcSnapConfigTest
 		assertTrue(config.applyToCustomUiTextures());
 		assertFalse(config.deterministicAnimationLooping());
 		assertFalse(config.useRetroOverheads());
-		assertTrue(config.alignOverheadPrayers());
 		assertFalse(config.ignoreProjectionSkewCorrection());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
@@ -36,32 +35,17 @@ public class NpcSnapConfigTest
 	public void retroOverheadOptionsHaveStablePublicConfiguration()
 		throws NoSuchMethodException
 	{
-		assertConfig("useRetroOverheads", "useRetroOverheads", "Use retro HP bar, overhead chat and hitsplats", 11);
+		assertConfig("useRetroOverheads", "useRetroOverheads", "Use retro HP bar, overhead chat, hitsplats and prayers", 11);
 		assertLegacyConfigHidden("useRetroHpBar");
 		assertLegacyConfigHidden("useRetroHitsplats");
 		assertLegacyConfigHidden("useRetroChatEffects");
-		assertConfig("alignOverheadPrayers", "alignOverheadPrayers", "Align overhead prayers", 12);
 	}
 
 	@Test
 	public void retroProjectionOptionsHaveStablePublicConfiguration()
 		throws NoSuchMethodException
 	{
-		assertConfig("ignoreProjectionSkewCorrection", "ignoreProjectionSkewCorrection", "Ignore projection skew correction", 13);
-	}
-
-	@Test
-	public void unsupportedWorldTextureOptionsRemainHiddenForCompatibility()
-		throws NoSuchMethodException
-	{
-		for (String method : new String[] {"enableGlobalTextureBanding", "globalTextureSpriteQuality", "globalTextureColorBands"})
-		{
-			ConfigItem item = NpcSnapConfig.class.getMethod(method).getAnnotation(ConfigItem.class);
-			assertEquals(method, item.keyName());
-			assertTrue(item.hidden());
-		}
-
-		assertFalse(config.enableGlobalTextureBanding());
+		assertConfig("ignoreProjectionSkewCorrection", "ignoreProjectionSkewCorrection", "Ignore projection skew correction", 12);
 	}
 
 	private static void assertLegacyConfigHidden(String method)
@@ -108,7 +92,6 @@ public class NpcSnapConfigTest
 	{
 		assertFalse(config.applyToObjects());
 		assertFalse(config.renderBillboardsOnAllPlanes());
-		assertFalse(config.enableGlobalTextureBanding());
 		assertFalse(config.enableUiTextureBanding());
 		assertFalse(config.debugDrawBillboardOutline());
 		assertFalse(config.debugDrawBillboardPaintOrder());
@@ -124,7 +107,6 @@ public class NpcSnapConfigTest
 		assertEquals(1, config.numberOfPitchRotationAngles());
 		assertEquals(4, config.animationFrameCount());
 		assertEquals(33.0d, config.renderBillboardQuality(), 0d);
-		assertEquals(100.0d, config.globalTextureSpriteQuality(), 0d);
 		assertEquals(BillboardOcclusionQuality.MEDIUM, config.billboardOcclusionQuality());
 		assertEquals(BillboardOcclusionComposition.TRANSPARENCY_AWARE, config.billboardOcclusionComposition());
 		assertEquals("Transparency-aware", BillboardOcclusionComposition.TRANSPARENCY_AWARE.toString());

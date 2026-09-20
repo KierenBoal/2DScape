@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import net.runelite.api.TileObject;
 
 public final class BillboardOcclusionMask
 {
@@ -273,12 +274,25 @@ public final class BillboardOcclusionMask
 
 	public CellResult classifySample(int sampleX, int y, double depth)
 	{
+		return classifySample(sampleX, y, depth, null);
+	}
+
+	public CellResult classifySample(int sampleX, int y, double depth, TileObject ignoredTileObject)
+	{
 		if (step == 0 || !Double.isFinite(depth) || sampleX < 0 || sampleX >= width
 			|| y < bounds.y || y >= bounds.y + bounds.height)
 		{
 			return CellResult.VISIBLE;
 		}
 		int cell = ((y - bounds.y) / step) * width + sampleX;
+		// The aggregate cell bounds include every scene object. If this billboard is
+		// replacing one of those objects, force the precise path whenever its own
+		// geometry is present so the self-occluder can be skipped without affecting
+		// other world objects in the same cell.
+		if (ignoredTileObject != null && cellContainsOwner(cell, ignoredTileObject))
+		{
+			return CellResult.REFINE;
+		}
 		CellResult result = CellResult.REFINE;
 		if (heads[cell] == -1 || lower[cell] + depthBias() >= depth)
 		{
@@ -301,6 +315,18 @@ public final class BillboardOcclusionMask
 		return offset < 0 ? -offset : coverageRows[offset + row];
 	}
 
+	private boolean cellContainsOwner(int cell, TileObject ignoredTileObject)
+	{
+		for (int ref = heads[cell]; ref != -1; ref = next[ref])
+		{
+			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private int effectiveTransmittance(Occluder occluder)
 	{
 		return composition == BillboardOcclusionComposition.HARD_CUTOUT ? 0 : occluder.transmittance;
@@ -311,6 +337,11 @@ public final class BillboardOcclusionMask
 	 * closer world geometry. 255 is fully visible and 0 is fully occluded.
 	 */
 	public int transmittanceAt(int x, int y, double depth)
+	{
+		return transmittanceAt(x, y, depth, null);
+	}
+
+	public int transmittanceAt(int x, int y, double depth, TileObject ignoredTileObject)
 	{
 		int cell = index(x, y);
 		if (cell < 0 || !Double.isFinite(depth))
@@ -328,6 +359,10 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			candidateTests++;
+			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			{
+				continue;
+			}
 			if ((coverageBits(ref, localY) & bit) == 0)
 			{
 				continue;
@@ -359,6 +394,11 @@ public final class BillboardOcclusionMask
 	 */
 	public int tintPixel(int x, int y, double depth, int pixel)
 	{
+		return tintPixel(x, y, depth, pixel, null);
+	}
+
+	public int tintPixel(int x, int y, double depth, int pixel, TileObject ignoredTileObject)
+	{
 		int cell = index(x, y);
 		if (cell < 0 || !Double.isFinite(depth))
 		{
@@ -370,6 +410,10 @@ public final class BillboardOcclusionMask
 		int tinted = pixel;
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
+			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			{
+				continue;
+			}
 			if ((coverageBits(ref, localY) & bit) == 0 || candidateTransmittance[ref] == 0)
 			{
 				continue;
@@ -413,7 +457,12 @@ public final class BillboardOcclusionMask
 
 	public boolean isOccluded(int x, int y, double depth)
 	{
-		return transmittanceAt(x, y, depth) == 0;
+		return isOccluded(x, y, depth, null);
+	}
+
+	public boolean isOccluded(int x, int y, double depth, TileObject ignoredTileObject)
+	{
+		return transmittanceAt(x, y, depth, ignoredTileObject) == 0;
 	}
 
 	/**
@@ -422,11 +471,16 @@ public final class BillboardOcclusionMask
 	 */
 	public int refinedSampleBits(int sampleX, int y, double depth)
 	{
+		return refinedSampleBits(sampleX, y, depth, null);
+	}
+
+	public int refinedSampleBits(int sampleX, int y, double depth, TileObject ignoredTileObject)
+	{
 		if (compatibilityTransmittance.length < Math.max(1, step))
 		{
 			compatibilityTransmittance = new int[Math.max(1, step)];
 		}
-		refinedSampleTransmittance(sampleX, y, depth, compatibilityTransmittance);
+		refinedSampleTransmittance(sampleX, y, depth, compatibilityTransmittance, ignoredTileObject);
 		int bits = 0;
 		for (int offset = 0; offset < step; offset++)
 		{
@@ -440,6 +494,11 @@ public final class BillboardOcclusionMask
 
 	/** Resolves every pixel in a coarse-cell row into reusable caller-owned storage. */
 	public void refinedSampleTransmittance(int sampleX, int y, double depth, int[] output)
+	{
+		refinedSampleTransmittance(sampleX, y, depth, output, null);
+	}
+
+	public void refinedSampleTransmittance(int sampleX, int y, double depth, int[] output, TileObject ignoredTileObject)
 	{
 		if (output == null || output.length < step)
 		{
@@ -458,6 +517,10 @@ public final class BillboardOcclusionMask
 			for (int reference = heads[cell]; reference != -1; reference = next[reference])
 			{
 				candidateTests++;
+				if (occluders.get(candidates[reference]).belongsTo(ignoredTileObject))
+				{
+					continue;
+				}
 				if (candidateFar[reference] + depthBias() < depth)
 				{
 					value = multiplyTransmittance(value, candidateTransmittance[reference]);
@@ -484,6 +547,10 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			candidateTests++;
+			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			{
+				continue;
+			}
 			int covered = coverageBits(ref, localY);
 			Occluder o = occluders.get(candidates[ref]);
 			while (covered != 0)
@@ -532,6 +599,11 @@ public final class BillboardOcclusionMask
 
 	public float depthAt(int x, int y)
 	{
+		return depthAt(x, y, null);
+	}
+
+	public float depthAt(int x, int y, TileObject ignoredTileObject)
+	{
 		int cell = index(x, y);
 		if (cell < 0)
 		{
@@ -540,7 +612,12 @@ public final class BillboardOcclusionMask
 		float value = Float.POSITIVE_INFINITY;
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
-			float d = occluders.get(candidates[ref]).depthAt(x, y);
+			Occluder occluder = occluders.get(candidates[ref]);
+			if (occluder.belongsTo(ignoredTileObject))
+			{
+				continue;
+			}
+			float d = occluder.depthAt(x, y);
 			if (Float.isFinite(d))
 			{
 				value = Math.min(value, d);
@@ -550,6 +627,11 @@ public final class BillboardOcclusionMask
 	}
 
 	public String sourceAt(int x, int y)
+	{
+		return sourceAt(x, y, null);
+	}
+
+	public String sourceAt(int x, int y, TileObject ignoredTileObject)
 	{
 		int cell = index(x, y);
 		if (cell < 0)
@@ -563,6 +645,10 @@ public final class BillboardOcclusionMask
 		{
 			int id = candidates[ref];
 			Occluder o = occluders.get(id);
+			if (o.belongsTo(ignoredTileObject))
+			{
+				continue;
+			}
 			float d = o.depthAt(x, y);
 			if (Float.isFinite(d) && (d < nearest || (d == nearest && id < winner)))
 			{
@@ -592,10 +678,6 @@ public final class BillboardOcclusionMask
 	public int coveredCellCount()
 	{
 		return coveredCellCount;
-	}
-	public Rectangle rasterBounds()
-	{
-		return step > 0 ? new Rectangle(bounds) : null;
 	}
 	private float depthBias()
 	{
@@ -645,6 +727,7 @@ public final class BillboardOcclusionMask
 		private final String source;
 		private final int transmittance;
 		private final int tintRgb;
+		private final TileObject owner;
 
 		Occluder(Shape shape, float depth)
 		{
@@ -662,6 +745,11 @@ public final class BillboardOcclusionMask
 		}
 
 		Occluder(Shape shape, float depth, String source, int transmittance, int tintRgb)
+		{
+			this(shape, depth, source, transmittance, tintRgb, null);
+		}
+
+		Occluder(Shape shape, float depth, String source, int transmittance, int tintRgb, TileObject owner)
 		{
 			this.shape = filledFallbackShape(shape);
 			this.depth = depth;
@@ -682,6 +770,7 @@ public final class BillboardOcclusionMask
 			this.source = source;
 			this.transmittance = clampTransmittance(transmittance);
 			this.tintRgb = tintRgb & 0xFFFFFF;
+			this.owner = owner;
 		}
 
 		static Occluder triangle(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2)
@@ -701,15 +790,22 @@ public final class BillboardOcclusionMask
 
 		static Occluder triangle(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2, String source, int transmittance, int tintRgb)
 		{
+			return triangle(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2, source, transmittance, tintRgb, null);
+		}
+
+		static Occluder triangle(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2,
+			String source, int transmittance, int tintRgb, TileObject owner)
+		{
 			if (!Float.isFinite(depth0) || !Float.isFinite(depth1) || !Float.isFinite(depth2))
 			{
 				return null;
 			}
 
-			return new Occluder(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2, source, transmittance, tintRgb);
+			return new Occluder(x0, y0, depth0, x1, y1, depth1, x2, y2, depth2, source, transmittance, tintRgb, owner);
 		}
 
-		private Occluder(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2, String source, int transmittance, int tintRgb)
+		private Occluder(int x0, int y0, float depth0, int x1, int y1, float depth1, int x2, int y2, float depth2,
+			String source, int transmittance, int tintRgb, TileObject owner)
 		{
 			shape = null;
 			depth = Float.NaN;
@@ -738,9 +834,15 @@ public final class BillboardOcclusionMask
 			this.source = source;
 			this.transmittance = clampTransmittance(transmittance);
 			this.tintRgb = tintRgb & 0xFFFFFF;
+			this.owner = owner;
 		}
 
 		static Occluder vertical(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source)
+		{
+			return vertical(shape, baseY, baseDepth, topY, topDepth, source, null);
+		}
+
+		static Occluder vertical(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source, TileObject owner)
 		{
 			if (shape == null || shape.getBounds().isEmpty() || baseY == topY
 				|| !Float.isFinite(baseDepth) || !Float.isFinite(topDepth) || baseDepth <= 0.0f || topDepth <= 0.0f)
@@ -748,10 +850,10 @@ public final class BillboardOcclusionMask
 				return null;
 			}
 
-			return new Occluder(shape, baseY, baseDepth, topY, topDepth, source);
+			return new Occluder(shape, baseY, baseDepth, topY, topDepth, source, owner);
 		}
 
-		private Occluder(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source)
+		private Occluder(Shape shape, int baseY, float baseDepth, int topY, float topDepth, String source, TileObject owner)
 		{
 			this.shape = filledFallbackShape(shape);
 			depth = Float.NaN;
@@ -772,6 +874,12 @@ public final class BillboardOcclusionMask
 			this.source = source;
 			this.transmittance = 0;
 			this.tintRgb = 0xFFFFFF;
+			this.owner = owner;
+		}
+
+		private boolean belongsTo(TileObject tileObject)
+		{
+			return tileObject != null && owner == tileObject;
 		}
 
 		private static int clampTransmittance(int value)
