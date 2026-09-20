@@ -70,29 +70,28 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	@Test
-	public void regularDrawAndNonActorEntityRespectRenderableSuppression()
+	public void addEntityKeepsHiddenRenderableInSceneForLaterSuppression()
 	{
 		FakeOverlay overlay = new FakeOverlay();
 		Renderable renderable = TestProxies.proxy(Renderable.class);
 		overlay.hiddenRenderables.add(renderable);
 		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
 
-		assertFalse(callbacks.addEntity(renderable, false));
+		assertTrue(callbacks.addEntity(renderable, false));
 		assertFalse(callbacks.draw(renderable, false));
 		assertTrue(overlay.noted.contains(renderable));
 	}
 
 	@Test
-	public void boatPartKeepsInteractionTraversalButSuppressesFinalDraw()
+	public void selectedObjectPartIsSuppressedBySceneDraw()
 	{
 		FakeOverlay overlay = new FakeOverlay();
 		Renderable part = TestProxies.proxy(Renderable.class);
 		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
 		overlay.hiddenRenderables.add(part);
-		overlay.interactionRenderables.add(part);
 		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
 
-		assertTrue(callbacks.drawObject(object));
+		assertFalse(callbacks.drawObject(object));
 		assertTrue(callbacks.addEntity(part, false));
 		assertFalse(callbacks.draw(part, false));
 	}
@@ -170,7 +169,6 @@ public class BillboardSceneDrawCallbacksTest
 		private final Set<Renderable> hiddenRenderables = identitySet();
 		private final Set<TileObject> hiddenTileObjects = identitySet();
 		private final Set<Renderable> hiddenActor2d = identitySet();
-		private final Set<Renderable> interactionRenderables = identitySet();
 
 		@Override
 		public void noteSceneRenderable(Renderable renderable)
@@ -191,12 +189,6 @@ public class BillboardSceneDrawCallbacksTest
 		public boolean shouldHideRenderable(Renderable renderable)
 		{
 			return hiddenRenderables.contains(renderable);
-		}
-
-		@Override
-		public boolean shouldKeepRenderableInteraction(Renderable renderable)
-		{
-			return interactionRenderables.contains(renderable);
 		}
 
 		@Override

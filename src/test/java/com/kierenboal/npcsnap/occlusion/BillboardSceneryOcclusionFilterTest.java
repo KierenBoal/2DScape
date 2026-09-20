@@ -49,6 +49,14 @@ public class BillboardSceneryOcclusionFilterTest
 	}
 
 	@Test
+	public void visibleDecorativeGeometryCanOcclude()
+	{
+		DecorativeObject decoration = proxy(DecorativeObject.class,
+			method("getRenderable", proxy(Renderable.class)));
+		assertTrue(BillboardSceneryOcclusionFilter.isOccluder(decoration));
+	}
+
+	@Test
 	public void gameObjectsUseConvexHullOrClickboxForInterest()
 	{
 		Rectangle interest = new Rectangle(0, 0, 8, 8);

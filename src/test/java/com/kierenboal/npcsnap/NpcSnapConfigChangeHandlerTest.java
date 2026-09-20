@@ -36,7 +36,8 @@ public class NpcSnapConfigChangeHandlerTest
 	@Test
 	public void uiChangesOnlyDirtyUiTextures()
 	{
-		for (String key : new String[] {"enableUiTextureBanding", "uiTextureColorBands", "uiSpriteQuality"})
+		for (String key : new String[] {"enableUiTextureBanding", "applyToCustomUiTextures",
+			"uiTextureColorBands", "uiSpriteQuality"})
 		{
 			Counters counters = new Counters();
 			counters.handler().handle("npc-snap", key);

@@ -135,6 +135,40 @@ public class BillboardWorldOcclusionCollectorTest
 	}
 
 	@Test
+	public void occlusionKeepsFrontWindingAndDropsBackWinding()
+	{
+		Point frontA = new Point(100, 100);
+		Point frontB = new Point(100, 200);
+		Point frontC = new Point(200, 100);
+		assertFalse(BillboardWorldOcclusionCollector.isBackFace(frontA, frontB, frontC));
+		assertTrue(BillboardWorldOcclusionCollector.isBackFace(frontA, frontC, frontB));
+		assertTrue(BillboardWorldOcclusionCollector.isBackFace(frontA, frontB, null));
+	}
+
+	@Test
+	public void cameraInsideFallbackBoundsIsSkippedWithOrWithoutSceneryRotation()
+	{
+		assertTrue(BillboardWorldOcclusionCollector.isCameraInsideWorldBounds(
+			1000.0d, 2000.0d, 250.0d,
+			1000.0d, 2000.0d, 300.0d, 0,
+			-64.0d, 64.0d, -128.0d, 0.0d, -64.0d, 64.0d));
+		assertFalse(BillboardWorldOcclusionCollector.isCameraInsideWorldBounds(
+			1100.0d, 2000.0d, 250.0d,
+			1000.0d, 2000.0d, 300.0d, 0,
+			-64.0d, 64.0d, -128.0d, 0.0d, -64.0d, 64.0d));
+
+		// At orientation 512, a model-local z extent projects along world x.
+		assertTrue(BillboardWorldOcclusionCollector.isCameraInsideWorldBounds(
+			1096.0d, 2000.0d, 250.0d,
+			1000.0d, 2000.0d, 300.0d, 512,
+			-16.0d, 16.0d, -128.0d, 0.0d, -128.0d, 128.0d));
+		assertFalse(BillboardWorldOcclusionCollector.isCameraInsideWorldBounds(
+			1140.0d, 2000.0d, 250.0d,
+			1000.0d, 2000.0d, 300.0d, 512,
+			-16.0d, 16.0d, -128.0d, 0.0d, -128.0d, 128.0d));
+	}
+
+	@Test
 	public void addsDirectTileAndBridgeTileOnDifferentPlane()
 	{
 		Tile bridge = proxy(Tile.class, method("getPlane", 1));

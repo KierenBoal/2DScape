@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.state;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
+import com.kierenboal.npcsnap.targeting.BillboardTargetType;
 import com.kierenboal.npcsnap.TestProxies;
 
 import static org.junit.Assert.assertFalse;
@@ -18,6 +19,16 @@ import org.junit.Test;
 
 public class BillboardUpdateModelsTest
 {
+	@Test
+	public void attachedAndDetachedEffectsUseAnimationCadenceWhenEnabled()
+	{
+		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.ACTOR_SPOT_ANIM, true));
+		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.GRAPHICS_OBJECT, true));
+		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.PROJECTILE, true));
+		assertFalse(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.PLAYER, true));
+		assertFalse(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.GRAPHICS_OBJECT, false));
+	}
+
 	@Test
 	public void cadencedProjectileSnapshotIgnoresLiveFlightState()
 	{

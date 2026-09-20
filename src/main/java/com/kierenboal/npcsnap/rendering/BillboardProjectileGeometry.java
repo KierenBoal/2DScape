@@ -20,6 +20,6 @@ public final class BillboardProjectileGeometry
 	{
 		LocalPoint localPoint = localPoint(projectile);
 		int tileHeight = Perspective.getTileHeight(client, localPoint, projectile.getFloor());
-		return tileHeight - (int) Math.round(projectile.getZ());
+		return (int) Math.round(BillboardDepthCalculator.worldHeight(tileHeight, projectile.getZ()));
 	}
 }

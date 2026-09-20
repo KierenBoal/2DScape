@@ -103,12 +103,6 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "applyToBoats", name = "Apply to boats", description = "Use sprites for your boat and other players' boats while sailing.", section = targetsSection, position = 6, hidden = true)
-	default boolean applyToBoats()
-	{
-		return false;
-	}
-
 	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 7)
 	default boolean enableShiftRightClickExportPng()
 	{
@@ -132,7 +126,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "billboardLightBoostPercent", name = "Light boost", description = "Make sprites brighter or darker. 100% keeps their normal brightness.", section = renderingSection, position = 2)
 	default int billboardLightBoostPercent()
 	{
-		return 180;
+		return 96;
 	}
 
 	@ConfigItem(keyName = "billboardOcclusionQuality", name = "Occlusion quality", description = "Hide parts of sprites behind walls, hills, trees, and other scenery. Blocky skips edge refinement for chunky occlusion. Low, Medium, and High retain accurate edges with different sampling costs.", section = renderingSection, position = 3)
@@ -165,7 +159,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "billboardMaxDrawsPerFrame", name = "Max updates per frame", description = "The most sprite pictures the plugin can refresh at once. Lower values can improve performance but make changes appear later.", section = renderingSection, position = 7)
 	default int billboardMaxDrawsPerFrame()
 	{
-		return 16;
+		return 64;
 	}
 
 	@Range(min = 1, max = 100)
@@ -300,7 +294,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "skillingTimeoutSeconds", name = "Skilling bubble timeout seconds", description = "How long the skill icon stays above your character after you gain XP.", section = retroSection, position = 1)
 	default int skillingTimeoutSeconds()
 	{
-		return 6;
+		return 10;
 	}
 
 	@ConfigItem(keyName = "enableBillboardCombatSnapping", name = "Enable combat rotation snapping", description = "Make fighting NPC and player sprites face each other in set directions.", section = retroSection, position = 2)
@@ -321,15 +315,21 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "applyToCustomUiTextures", name = "Applies to custom UIs", description = "Reduce the effective custom UI artwork when texture reduction is enabled.", section = retroSection, position = 5)
+	default boolean applyToCustomUiTextures()
+	{
+		return true;
+	}
+
 	@Range(min = 1, max = 100)
-	@ConfigItem(keyName = "uiSpriteQuality", name = "UI sprite quality", description = "How sharp interface icons and artwork are. Lower values look rougher.", section = retroSection, position = 5)
+	@ConfigItem(keyName = "uiSpriteQuality", name = "UI sprite quality", description = "How sharp interface icons and artwork are. Lower values look rougher.", section = retroSection, position = 6)
 	default double uiSpriteQuality()
 	{
 		return 100.0d;
 	}
 
 	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "uiTextureColorBands", name = "UI texture color bands", description = "How many shades interface icons and artwork can use when UI texture reduction is on.", section = retroSection, position = 6)
+	@ConfigItem(keyName = "uiTextureColorBands", name = "UI texture color bands", description = "How many shades interface icons and artwork can use when UI texture reduction is on.", section = retroSection, position = 7)
 	default int uiTextureColorBands()
 	{
 		return 8;

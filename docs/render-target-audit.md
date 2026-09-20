@@ -10,9 +10,9 @@ This audit is based on the RuneLite 1.12.28 public API surface used by this plug
 - Players
   - Live frame snapping is supported through the same `Actor` APIs as NPCs.
   - Players projected from sailing world views are resolved through their owning `WorldEntity` before billboard eligibility and placement.
-- Sailing boats (disabled experimental implementation)
-  - The configuration item is hidden and defaults off while nested-scene rendering and interaction preservation remain unreliable.
-  - The implementation is retained for future investigation, but target classification is hard-disabled so previously saved configuration values cannot activate it.
+- Sailing actors
+  - Players projected from nested sailing world views retain their main-world location and orientation mapping.
+  - Boat models remain 3D. The disabled composite boat billboard path and its geometry masking have been removed.
 - Projectiles
   - Billboard rendering is supported through `RenderCallback.addEntity(...)`.
   - Billboard frame snapping is supported by snapping the billboard cache key from `Projectile.getAnimation()` and `Projectile.getAnimationFrame()`.
@@ -32,13 +32,16 @@ This audit is based on the RuneLite 1.12.28 public API surface used by this plug
   - Billboard rendering is supported through `ItemLayer` interception plus tracked `TileItem` locations.
   - Frame snapping is not applicable because `TileItem` does not expose an animation timeline.
 
-## Partially Supported / Not Implemented
+## Partially Supported
 
 - Attached spot animations on actors
   - RuneLite exposes `ActorSpotAnim.getFrame()` and `setFrame(...)`, but the public API does not expose the associated spot-animation definition or animation metadata needed to safely derive total frame counts for generalized snapping.
-  - A robust billboard path also needs parent-actor attachment and stacking logic across multiple concurrent spot anims.
-  - This is the bucket that likely contains effects such as ruby bolt procs on a player, ice barrage freezing visuals attached to an actor, and similar actor-bound graphics.
-  - Result: not implemented in this plugin.
+  - The billboard path anchors these effects to the parent actor and uses the effect's own height offset. Sprite redraws follow the configured cadence while placement follows the actor each frame.
+
+## Investigated, deferred
+
+- Sailing boat occlusion: `WorldEntity` exposes the nested `WorldView` and a main-world point transform, but not a ready stream of projected boat triangles. Rebuilding the hull from every nested scene tile each tick would require a full scene scan and is unsuitable here. Boats remain 3D and are not added to the occlusion depth buffer.
+- ToA room fades: a room fade may be a widget or screen-space pass rather than scene geometry. The public scene object hooks used for face occlusion do not expose a general post-interface pixel layer with blend order. The billboard overlay therefore leaves this fade compositing unchanged.
 
 ## Not Supported By A Comparable Public Hook
 
@@ -58,10 +61,10 @@ This audit is based on the RuneLite 1.12.28 public API surface used by this plug
 - Objects
   - Supported through the world object path.
 - Animations like ruby bolts proccing on you
-  - Not implemented. These are most likely actor-attached spot animations, which do not expose enough public metadata for generalized snapping or billboard replacement.
+  - Supported when exposed as actor-attached spot animations, subject to the missing public animation metadata above.
 - Effects like ice barrage
   - Supported when they exist as detached `GraphicsObject`s in the world.
-  - Not implemented when they are actor-attached spot animations rather than detached world graphics.
+  - Also supported when they are actor-attached spot animations.
 - Items in inventory
   - Not supported by a comparable public render hook.
 - Items in bank

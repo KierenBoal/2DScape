@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Color;
+import net.runelite.api.Model;
 
 public final class BillboardColorUtils
 {
@@ -37,6 +38,59 @@ public final class BillboardColorUtils
 		}
 
 		return new Color(0, 0, 0, Math.max(0, Math.min(255, alpha)));
+	}
+
+	public static Color resolveFaceColor(
+		int face,
+		int[] faceColors1,
+		int[] faceColors2,
+		int[] faceColors3,
+		short[] unlitFaceColors,
+		int alpha,
+		Model model)
+	{
+		if (model == null || model.getOverrideAmount() <= 0)
+		{
+			return resolveFaceColor(face, faceColors1, faceColors2, faceColors3, unlitFaceColors, alpha);
+		}
+
+		Color unlitColor = unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1
+			? packedHslToColor(applyHslOverride(Short.toUnsignedInt(unlitFaceColors[face]), model), alpha)
+			: null;
+		Color litColor = null;
+		if (hasFlatFaceColor(face, faceColors1, faceColors3))
+		{
+			litColor = packedHslToColor(applyHslOverride(faceColors1[face], model), alpha);
+		}
+		else if (hasLitFaceColors(face, faceColors1, faceColors2, faceColors3))
+		{
+			litColor = averagePackedFaceColor(
+				applyHslOverride(faceColors1[face], model),
+				applyHslOverride(faceColors2[face], model),
+				applyHslOverride(faceColors3[face], model), alpha);
+		}
+		Color color = chooseFaceColor(unlitColor, litColor);
+		return color != null ? color : new Color(0, 0, 0, Math.max(0, Math.min(255, alpha)));
+	}
+
+	static int applyHslOverride(int packedHsl, Model model)
+	{
+		int amount = model.getOverrideAmount();
+		if (amount <= 0 || packedHsl < 0)
+		{
+			return packedHsl;
+		}
+		int hue = blend((packedHsl >> 10) & 63, model.getOverrideHue(), amount);
+		int saturation = blend((packedHsl >> 7) & 7, model.getOverrideSaturation(), amount);
+		int luminance = blend(packedHsl & 127, model.getOverrideLuminance(), amount);
+		return ((hue << 10) | (saturation << 7) | luminance) & 0xFFFF;
+	}
+
+	private static int blend(int original, int replacement, int amount)
+	{
+		// Match RuneLite's ModelUploader: 128-step interpolation, with -1 meaning
+		// that this HSL component is left as it was.
+		return replacement == -1 ? original : original + ((amount * (replacement - original)) >> 7);
 	}
 
 	public static boolean isSkippedCapeArtifactFaceColor(Color color)

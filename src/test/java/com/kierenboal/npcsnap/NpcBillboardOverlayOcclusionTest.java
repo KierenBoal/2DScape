@@ -7,6 +7,7 @@ import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.List;
+import net.runelite.api.Point;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -52,6 +53,18 @@ public class NpcBillboardOverlayOcclusionTest
 			BillboardOcclusionRegions.union(List.of(
 				new Rectangle(), new Rectangle(1, 2, 3, 4), new Rectangle(10, 10, 3, 4))));
 		assertEquals(null, BillboardOcclusionRegions.union(List.of()));
+	}
+
+	@Test
+	public void groundContactAlignsVisibleContentBottomToActorGroundPoint()
+	{
+		Rectangle drawRect = NpcBillboardOverlay.alignGroundContact(
+			new Rectangle(10, 100, 20, 40),
+			new Rectangle(0, 0, 20, 40),
+			new Rectangle(2, 5, 16, 25),
+			new Point(20, 200));
+
+		assertEquals(new Rectangle(10, 170, 20, 40), drawRect);
 	}
 
 	private static PreparedBillboardDraw draw(Rectangle bounds)

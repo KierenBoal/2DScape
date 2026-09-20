@@ -8,6 +8,7 @@ import java.awt.Rectangle;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Projectile;
+import net.runelite.api.Model;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
@@ -69,6 +70,19 @@ public class BillboardTargetEligibilityTest
 			TestProxies.method("getModel", null));
 
 		assertFalse(eligibility(0, false, 10).projectile(player, projectile, VIEWPORT));
+	}
+
+	@Test
+	public void projectileRemainsWorldEligibleWithoutCanvasProjection()
+	{
+		LocalPoint player = point(0, 0, 0);
+		Projectile projectile = TestProxies.proxy(Projectile.class,
+			TestProxies.method("getX", 128d),
+			TestProxies.method("getY", 0d),
+			TestProxies.method("getFloor", 0),
+			TestProxies.method("getModel", TestProxies.proxy(Model.class)));
+
+		assertTrue(eligibility(0, false, 10).projectileInWorld(player, projectile));
 	}
 
 	private static BillboardTargetEligibility eligibility(int plane, boolean allPlanes, int radius)

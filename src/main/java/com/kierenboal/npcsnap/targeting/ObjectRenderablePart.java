@@ -9,6 +9,7 @@ public final class ObjectRenderablePart
 	public final LocalPoint localPoint;
 	public final int plane;
 	public final int worldHeight;
+	public final int modelOrientation;
 
 	public ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane)
 	{
@@ -17,10 +18,16 @@ public final class ObjectRenderablePart
 
 	public ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane, int worldHeight)
 	{
+		this(renderable, localPoint, plane, worldHeight, 0);
+	}
+
+	public ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane, int worldHeight, int modelOrientation)
+	{
 		this.renderable = renderable;
 		this.localPoint = localPoint;
 		this.plane = plane;
 		this.worldHeight = worldHeight;
+		this.modelOrientation = modelOrientation;
 	}
 }
 

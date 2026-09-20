@@ -28,6 +28,7 @@ public class ObservedTileObjectBuilderTest
 			method("getRenderable", renderable),
 			method("getLocalLocation", localPoint),
 			method("getPlane", 2),
+			method("getModelOrientation", 512),
 			method("getZ", -417)
 		);
 
@@ -40,6 +41,7 @@ public class ObservedTileObjectBuilderTest
 		Assert.assertEquals(localPoint, observed.parts.get(0).localPoint);
 		Assert.assertEquals(2, observed.parts.get(0).plane);
 		Assert.assertEquals(-417, observed.parts.get(0).worldHeight);
+		Assert.assertEquals(512, observed.parts.get(0).modelOrientation);
 	}
 
 	@Test

@@ -154,6 +154,27 @@ public class BillboardDepthSurfaceTest
 	}
 
 	@Test
+	public void positiveRequestHeightIsStoredAboveTheTile()
+	{
+		Renderable renderable = proxy(Renderable.class, method("getModelHeight", 100));
+		Model model = proxy(Model.class,
+			method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}),
+			method("getVerticesY", new float[] {0, 0, -100, -100}),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+		BillboardRenderRequest request = new BillboardRenderRequest(
+			renderable, model, new LocalPoint(0, 0), 0, 40, 0, 0,
+			-1, -1, -1, -1, -1, false, false, null, null,
+			VerticalAnchor.BOTTOM, null, false);
+
+		BillboardDepthSurface surface = BillboardDepthSurface.from(
+			new BillboardDepthCalculator(client(0, 2048)), request,
+			new Rectangle(0, 0, 10, 10), new Rectangle(0, 0, 10, 10), 100.0d);
+
+		assertEquals(60.0d, surface.debugPointAt(5, 5, 10, 10, 5).height, 0.0d);
+	}
+
+	@Test
 	public void flatModelsBypassVerticalPlaneWorldOcclusion()
 	{
 		Model flat = proxy(Model.class,

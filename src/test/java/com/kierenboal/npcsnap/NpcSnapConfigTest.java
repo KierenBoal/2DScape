@@ -23,22 +23,13 @@ public class NpcSnapConfigTest
 		assertTrue(config.enableRotationSnapping());
 		assertTrue(config.enableSkillingBubbles());
 		assertTrue(config.enableBillboardSpriteShadows());
-		assertFalse(config.applyToBoats());
+		assertTrue(config.applyToCustomUiTextures());
 		assertFalse(config.deterministicAnimationLooping());
 		assertFalse(config.useRetroOverheads());
 		assertTrue(config.alignOverheadPrayers());
 		assertFalse(config.ignoreProjectionSkewCorrection());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
-	}
-
-	@Test
-	public void boatsAreHiddenAndDisabled()
-		throws NoSuchMethodException
-	{
-		ConfigItem item = NpcSnapConfig.class.getMethod("applyToBoats").getAnnotation(ConfigItem.class);
-		assertTrue(item.hidden());
-		assertFalse(config.applyToBoats());
 	}
 
 	@Test
@@ -141,9 +132,9 @@ public class NpcSnapConfigTest
 		assertEquals(BillboardOcclusionComposition.TRANSPARENCY_AWARE, BillboardOcclusionComposition.normalize(null));
 		assertEquals(90, config.billboardRadiusTiles());
 		assertEquals(128, config.billboardMaxEntities());
-		assertEquals(16, config.billboardMaxDrawsPerFrame());
+		assertEquals(64, config.billboardMaxDrawsPerFrame());
 		assertEquals(16, config.billboardColorBands());
-		assertEquals(6, config.skillingTimeoutSeconds());
+		assertEquals(10, config.skillingTimeoutSeconds());
 	}
 
 	@Test

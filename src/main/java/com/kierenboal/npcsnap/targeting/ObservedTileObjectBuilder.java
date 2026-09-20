@@ -31,7 +31,9 @@ public final class ObservedTileObjectBuilder
 		List<ObjectRenderablePart> parts = new ArrayList<>(2);
 		if (tileObject instanceof GameObject)
 		{
-			addObjectRenderablePart(parts, ((GameObject) tileObject).getRenderable(), tileObject.getLocalLocation(), tileObject.getPlane(), tileObject.getZ());
+			GameObject object = (GameObject) tileObject;
+			addObjectRenderablePart(parts, object.getRenderable(), tileObject.getLocalLocation(),
+				tileObject.getPlane(), tileObject.getZ(), object.getModelOrientation());
 		}
 		else if (tileObject instanceof GroundObject)
 		{
@@ -65,6 +67,12 @@ public final class ObservedTileObjectBuilder
 
 	private static void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable, LocalPoint localPoint, int plane, int worldHeight)
 	{
+		addObjectRenderablePart(parts, renderable, localPoint, plane, worldHeight, 0);
+	}
+
+	private static void addObjectRenderablePart(List<ObjectRenderablePart> parts, Renderable renderable,
+		LocalPoint localPoint, int plane, int worldHeight, int modelOrientation)
+	{
 		if (renderable == null || localPoint == null
 			|| renderable instanceof Actor
 			|| renderable instanceof ActorSpotAnim
@@ -75,7 +83,7 @@ public final class ObservedTileObjectBuilder
 			return;
 		}
 
-		parts.add(new ObjectRenderablePart(renderable, localPoint, plane, worldHeight));
+		parts.add(new ObjectRenderablePart(renderable, localPoint, plane, worldHeight, modelOrientation));
 	}
 
 	private static LocalPoint offsetLocalPoint(LocalPoint base, int xOffset, int yOffset)

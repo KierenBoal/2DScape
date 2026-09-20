@@ -58,7 +58,7 @@ public final class UpdateHeuristicSnapshot
 	}
 
 	/**
-	 * A projectile keeps its current screen position while its sprite image is held
+	 * An animated effect keeps tracking its screen position while its sprite image is held
 	 * until the next animation cadence update. Its continuously changing model and
 	 * orientation therefore must not bypass that cadence.
 	 */

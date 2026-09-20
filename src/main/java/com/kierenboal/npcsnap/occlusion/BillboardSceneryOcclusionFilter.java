@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.BillboardConstants;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import net.runelite.api.GameObject;
+import net.runelite.api.DecorativeObject;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileObject;
 import net.runelite.api.WallObject;
@@ -22,6 +23,11 @@ public final class BillboardSceneryOcclusionFilter
 		if (tileObject instanceof WallObject)
 		{
 			return true;
+		}
+		if (tileObject instanceof DecorativeObject)
+		{
+			DecorativeObject decoration = (DecorativeObject) tileObject;
+			return decoration.getRenderable() != null || decoration.getRenderable2() != null;
 		}
 
 		if (!(tileObject instanceof GameObject))

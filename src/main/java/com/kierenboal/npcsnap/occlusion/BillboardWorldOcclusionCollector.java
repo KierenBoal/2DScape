@@ -39,6 +39,7 @@ import org.slf4j.Logger;
 public final class BillboardWorldOcclusionCollector
 {
 	private static final float TERRAIN_OCCLUSION_DEPTH_BIAS = BillboardConstants.LOCAL_TILE_SIZE * 2.0f;
+	private static final double CAMERA_INSIDE_EPSILON = 1.0d;
 	private static final int DEBUG_OCCLUSION_SAMPLE_LIMIT = 8;
 	private static final int MAX_MODEL_GEOMETRY_CACHE_SIZE = 4096;
 	private static final int MAX_FALLBACK_SHAPE_CACHE_SIZE = 4096;
@@ -201,8 +202,8 @@ public final class BillboardWorldOcclusionCollector
 		tileCandidates.clear();
 		int currentPlane = Math.max(0, Math.min(worldView.getPlane(), Constants.MAX_Z - 1));
 		int[] candidatePlanes = directCandidatePlanes(currentPlane, tiles.length);
-		int cameraX = Math.round(client.getCameraFpX());
-		int cameraY = Math.round(client.getCameraFpY());
+		int cameraX = (int) Math.round(cameraX());
+		int cameraY = (int) Math.round(cameraY());
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain corridor traversal"))
 		{
 			for (TraceTarget traceTarget : traceTargets)
@@ -684,6 +685,7 @@ public final class BillboardWorldOcclusionCollector
 		}
 
 		collectSceneTileObjectOccluder(tile.getWallObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables);
+		collectSceneTileObjectOccluder(tile.getDecorativeObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables);
 		GameObject[] gameObjects = tile.getGameObjects();
 		if (gameObjects == null)
 		{
@@ -1159,9 +1161,9 @@ public final class BillboardWorldOcclusionCollector
 	private void refreshFallbackShapeCacheCameraState()
 	{
 		CameraProjectionState current = new CameraProjectionState(
-			Float.floatToIntBits(client.getCameraFpX()),
-			Float.floatToIntBits(client.getCameraFpY()),
-			Float.floatToIntBits(client.getCameraFpZ()),
+			Float.floatToIntBits((float) cameraX()),
+			Float.floatToIntBits((float) cameraY()),
+			Float.floatToIntBits((float) cameraZ()),
 			client.getCameraPitch(),
 			client.getCameraYaw(),
 			client.get3dZoom(),
@@ -1344,10 +1346,12 @@ public final class BillboardWorldOcclusionCollector
 
 		for (int xIndex = 0; xIndex < 2; xIndex++)
 		{
-			int localX = baseX + Math.round(xIndex == 0 ? geometry.minX : geometry.maxX);
+			float vertexX = xIndex == 0 ? geometry.minX : geometry.maxX;
 			for (int zIndex = 0; zIndex < 2; zIndex++)
 			{
-				int localY = baseY + Math.round(zIndex == 0 ? geometry.minZ : geometry.maxZ);
+				float vertexZ = zIndex == 0 ? geometry.minZ : geometry.maxZ;
+				int localX = baseX + Math.round(SceneryModelRotation.x(part.modelOrientation, vertexX, vertexZ));
+				int localY = baseY + Math.round(SceneryModelRotation.z(part.modelOrientation, vertexX, vertexZ));
 				for (int yIndex = 0; yIndex < 2; yIndex++)
 				{
 					int height = modelWorldHeight(baseHeight, yIndex == 0 ? geometry.minY : geometry.maxY);
@@ -1536,8 +1540,8 @@ public final class BillboardWorldOcclusionCollector
 		{
 			return;
 		}
-		int localX = part.localPoint.getX() + Math.round(x);
-		int localY = part.localPoint.getY() + Math.round(z);
+		int localX = part.localPoint.getX() + Math.round(SceneryModelRotation.x(part.modelOrientation, x, z));
+		int localY = part.localPoint.getY() + Math.round(SceneryModelRotation.z(part.modelOrientation, x, z));
 		int height = modelWorldHeight(baseHeight, y);
 		projectedModelDepths[vertex] = depthCalculator.cameraForwardDepth(localX, localY, height);
 		projectedModelVertices[vertex] = Perspective.localToCanvas(client, localX, localY, height);
@@ -1581,6 +1585,10 @@ public final class BillboardWorldOcclusionCollector
 		Point p1 = projectedModelVertices[b];
 		Point p2 = projectedModelVertices[c];
 		if (p0 == null || p1 == null || p2 == null)
+		{
+			return;
+		}
+		if (isBackFace(p0, p1, p2))
 		{
 			return;
 		}
@@ -1733,6 +1741,10 @@ public final class BillboardWorldOcclusionCollector
 		{
 			return;
 		}
+		if (isBackFace(p0, p1, p2))
+		{
+			return;
+		}
 
 		if (!intersectsInterest(triangleBounds(p0, p1, p2)))
 		{
@@ -1778,6 +1790,25 @@ public final class BillboardWorldOcclusionCollector
 		int maxX = Math.max(p0.getX(), Math.max(p1.getX(), p2.getX()));
 		int maxY = Math.max(p0.getY(), Math.max(p1.getY(), p2.getY()));
 		return new Rectangle(minX, minY, Math.max(1, maxX - minX + 1), Math.max(1, maxY - minY + 1));
+	}
+
+	/**
+	 * RuneLite's scene rasterizer culls triangles with the opposite screen
+	 * winding. Reusing that winding convention here prevents backfaces from
+	 * entering the software occlusion mask when the camera is inside scenery.
+	 */
+	static boolean isBackFace(Point p0, Point p1, Point p2)
+	{
+		if (p0 == null || p1 == null || p2 == null)
+		{
+			return true;
+		}
+
+		long abx = (long) p1.getX() - p0.getX();
+		long aby = (long) p1.getY() - p0.getY();
+		long acx = (long) p2.getX() - p0.getX();
+		long acy = (long) p2.getY() - p0.getY();
+		return (abx * acy) - (aby * acx) >= 0L;
 	}
 
 	public static boolean hasForwardVertex(double depth0, double depth1, double depth2)
@@ -1860,7 +1891,7 @@ public final class BillboardWorldOcclusionCollector
 		{
 			for (int i = 0; i < vertexCount; i += stride)
 			{
-				double depth = modelVertexDepth(part.localPoint, partBaseHeight(part), verticesX[i], verticesY[i], verticesZ[i]);
+				double depth = modelVertexDepth(part, verticesX[i], verticesY[i], verticesZ[i]);
 				if (Double.isFinite(depth))
 				{
 					furthest = Math.max(furthest, depth);
@@ -1869,7 +1900,7 @@ public final class BillboardWorldOcclusionCollector
 
 			if (stride > 1 && vertexCount > 0)
 			{
-				double depth = modelVertexDepth(part.localPoint, partBaseHeight(part), verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
+				double depth = modelVertexDepth(part, verticesX[vertexCount - 1], verticesY[vertexCount - 1], verticesZ[vertexCount - 1]);
 				if (Double.isFinite(depth))
 				{
 					furthest = Math.max(furthest, depth);
@@ -1896,6 +1927,10 @@ public final class BillboardWorldOcclusionCollector
 		if (shape == null || shape.getBounds().isEmpty() || part == null || part.localPoint == null || part.renderable == null)
 		{
 			return addWorldOccluder(shape, flatDepth, source);
+		}
+		if (cameraInsideWorldBounds(part))
+		{
+			return false;
 		}
 
 		int modelHeight = Math.max(0, part.renderable.getModelHeight());
@@ -1930,16 +1965,18 @@ public final class BillboardWorldOcclusionCollector
 		return true;
 	}
 
-	private double modelVertexDepth(LocalPoint base, int baseHeight, float vertexX, float vertexY, float vertexZ)
+	private double modelVertexDepth(ObjectRenderablePart part, float vertexX, float vertexY, float vertexZ)
 	{
 		if (!Float.isFinite(vertexX) || !Float.isFinite(vertexY) || !Float.isFinite(vertexZ))
 		{
 			return Double.NaN;
 		}
 
+		LocalPoint base = part.localPoint;
+		int baseHeight = partBaseHeight(part);
 		LocalPoint vertexLocalPoint = new LocalPoint(
-			(int) Math.round(base.getX() + vertexX),
-			(int) Math.round(base.getY() + vertexZ)
+			(int) Math.round(base.getX() + SceneryModelRotation.x(part.modelOrientation, vertexX, vertexZ)),
+			(int) Math.round(base.getY() + SceneryModelRotation.z(part.modelOrientation, vertexX, vertexZ))
 		);
 		return depthCalculator.cameraForwardDepth(vertexLocalPoint.getX(), vertexLocalPoint.getY(),
 			modelWorldHeight(baseHeight, vertexY));
@@ -1951,9 +1988,91 @@ public final class BillboardWorldOcclusionCollector
 			: tileHeightAt(part.localPoint.getX(), part.localPoint.getY(), part.plane);
 	}
 
+	private boolean cameraInsideWorldBounds(ObjectRenderablePart part)
+	{
+		if (part == null || part.localPoint == null)
+		{
+			return false;
+		}
+
+		double cameraX = cameraX();
+		double cameraY = cameraY();
+		double cameraZ = cameraZ();
+		if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ))
+		{
+			return false;
+		}
+
+		Model model = occlusionModel(part.renderable);
+		ModelGeometry geometry = modelGeometry(model);
+		double minX = -BillboardConstants.LOCAL_TILE_SIZE / 2.0d;
+		double maxX = BillboardConstants.LOCAL_TILE_SIZE / 2.0d;
+		double minY = -Math.max(1, part.renderable != null ? part.renderable.getModelHeight() : 0);
+		double maxY = 0.0d;
+		double minZ = minX;
+		double maxZ = maxX;
+		if (geometry != null && geometry.hasBounds)
+		{
+			minX = geometry.minX;
+			maxX = geometry.maxX;
+			minY = geometry.minY;
+			maxY = geometry.maxY;
+			minZ = geometry.minZ;
+			maxZ = geometry.maxZ;
+		}
+
+		return isCameraInsideWorldBounds(
+			cameraX, cameraY, cameraZ,
+			part.localPoint.getX(), part.localPoint.getY(), partBaseHeight(part), part.modelOrientation,
+			minX, maxX, minY, maxY, minZ, maxZ);
+	}
+
+	static boolean isCameraInsideWorldBounds(
+		double cameraX, double cameraY, double cameraZ,
+		double baseX, double baseY, double baseHeight, int orientation,
+		double minX, double maxX, double minY, double maxY, double minZ, double maxZ)
+	{
+		if (!Double.isFinite(cameraX) || !Double.isFinite(cameraY) || !Double.isFinite(cameraZ)
+			|| !Double.isFinite(baseX) || !Double.isFinite(baseY) || !Double.isFinite(baseHeight)
+			|| !Double.isFinite(minX) || !Double.isFinite(maxX) || !Double.isFinite(minY) || !Double.isFinite(maxY)
+			|| !Double.isFinite(minZ) || !Double.isFinite(maxZ))
+		{
+			return false;
+		}
+
+		int angle = orientation & 2047;
+		double sin = Perspective.SINEF[angle];
+		double cos = Perspective.COSINEF[angle];
+		double dx = cameraX - baseX;
+		double dy = cameraY - baseY;
+		double modelX = (dx * cos) - (dy * sin);
+		double modelZ = (dx * sin) + (dy * cos);
+		double modelY = cameraZ - baseHeight;
+		return modelX >= minX - CAMERA_INSIDE_EPSILON && modelX <= maxX + CAMERA_INSIDE_EPSILON
+			&& modelZ >= minZ - CAMERA_INSIDE_EPSILON && modelZ <= maxZ + CAMERA_INSIDE_EPSILON
+			&& modelY >= minY - CAMERA_INSIDE_EPSILON && modelY <= maxY + CAMERA_INSIDE_EPSILON;
+	}
+
 	private int tileHeightAt(int localX, int localY, int plane)
 	{
 		return Perspective.getTileHeight(client, new LocalPoint(localX, localY), plane);
+	}
+
+	private double cameraX()
+	{
+		// Perspective.localToCanvas uses integer camera coordinates on CPU and
+		// fixed-point coordinates on GPU; bounds checks must use the same side.
+		return client.isGpu() ? client.getCameraFpX() : client.getCameraX();
+	}
+
+	private double cameraY()
+	{
+		return client.isGpu() ? client.getCameraFpY() : client.getCameraY();
+	}
+
+	private double cameraZ()
+	{
+		return client.isGpu() ? client.getCameraFpZ() : client.getCameraZ();
 	}
 
 	private int occlusionInterestMargin()

@@ -8,6 +8,5 @@ public enum ClassifiedObjectType
 	PROJECTILE,
 	GROUND_ITEM,
 	OBJECT,
-	BOAT,
 	UNKNOWN
 }

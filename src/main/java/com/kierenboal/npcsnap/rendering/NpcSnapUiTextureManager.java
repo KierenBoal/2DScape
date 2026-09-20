@@ -16,13 +16,13 @@ public final class NpcSnapUiTextureManager
 	private final Client client;
 	private final IntFunction<SpriteSnapshot> spriteLoader;
 	private final Map<Integer, SpriteSnapshot> originalSprites = new HashMap<>();
-	private final Map<Integer, SpritePixels> bandedSpriteOverrides = new HashMap<>();
-	private final Map<Integer, SpritePixels> displacedSpriteOverrides = new HashMap<>();
-	private final Set<Integer> appliedSpriteOverrideIds = new HashSet<>();
+	private final Map<Integer, AppliedOverride> appliedSpriteOverrides = new HashMap<>();
+	private final Map<Integer, AppliedOverride> appliedWidgetOverrides = new HashMap<>();
 	private boolean uiBandingApplied;
 	private boolean uiBandingPending = true;
 	private int appliedUiBands = -1;
 	private double appliedUiQuality = -1.0d;
+	private boolean appliedCustomUis = true;
 
 	public NpcSnapUiTextureManager(Client client, IntFunction<SpriteSnapshot> spriteLoader)
 	{
@@ -37,8 +37,14 @@ public final class NpcSnapUiTextureManager
 
 	public void sync(boolean enabled, int bands, double quality)
 	{
+		sync(enabled, bands, quality, true);
+	}
+
+	public void sync(boolean enabled, int bands, double quality, boolean customUis)
+	{
 		boolean settingsMatch = uiBandingApplied == enabled
-			&& (!enabled || (appliedUiBands == bands && Double.compare(appliedUiQuality, quality) == 0));
+			&& (!enabled || (appliedUiBands == bands && Double.compare(appliedUiQuality, quality) == 0
+				&& appliedCustomUis == customUis));
 		if (!enabled)
 		{
 			if (!uiBandingPending && settingsMatch)
@@ -57,10 +63,15 @@ public final class NpcSnapUiTextureManager
 			uiBandingPending = false;
 		}
 
-		applyLoadedWidgets(bands, quality);
+		applyLoadedWidgets(bands, quality, customUis);
 	}
 
 	public void onWidgetLoaded(boolean enabled, int bands, double quality)
+	{
+		onWidgetLoaded(enabled, bands, quality, true);
+	}
+
+	public void onWidgetLoaded(boolean enabled, int bands, double quality, boolean customUis)
 	{
 		if (!enabled)
 		{
@@ -68,13 +79,13 @@ public final class NpcSnapUiTextureManager
 		}
 
 		uiBandingPending = true;
-		sync(true, bands, quality);
+		sync(true, bands, quality, customUis);
 	}
 
 	public void restore()
 	{
-		boolean hadOverrides = !appliedSpriteOverrideIds.isEmpty()
-			|| !bandedSpriteOverrides.isEmpty()
+		boolean hadOverrides = !appliedSpriteOverrides.isEmpty()
+			|| !appliedWidgetOverrides.isEmpty()
 			|| !originalSprites.isEmpty()
 			|| uiBandingApplied;
 		if (!hadOverrides)
@@ -84,32 +95,8 @@ public final class NpcSnapUiTextureManager
 			return;
 		}
 
-		Map<Integer, SpritePixels> spriteOverrides = client.getSpriteOverrides();
-		if (spriteOverrides != null)
-		{
-			for (Integer spriteId : appliedSpriteOverrideIds)
-			{
-				SpritePixels bandedOverride = bandedSpriteOverrides.get(spriteId);
-				if (spriteOverrides.get(spriteId) != bandedOverride)
-				{
-					continue;
-				}
-
-				SpritePixels displacedOverride = displacedSpriteOverrides.get(spriteId);
-				if (displacedOverride == null)
-				{
-					spriteOverrides.remove(spriteId);
-				}
-				else
-				{
-					spriteOverrides.put(spriteId, displacedOverride);
-				}
-			}
-		}
-
-		appliedSpriteOverrideIds.clear();
-		bandedSpriteOverrides.clear();
-		displacedSpriteOverrides.clear();
+		restoreSlots(client.getSpriteOverrides(), appliedSpriteOverrides);
+		restoreSlots(client.getWidgetSpriteOverrides(), appliedWidgetOverrides);
 		originalSprites.clear();
 		uiBandingApplied = false;
 		appliedUiBands = -1;
@@ -119,15 +106,15 @@ public final class NpcSnapUiTextureManager
 
 	public int getAppliedSpriteOverrideCount()
 	{
-		return appliedSpriteOverrideIds.size();
+		return appliedSpriteOverrides.size();
 	}
 
 	public int getAppliedWidgetOverrideCount()
 	{
-		return 0;
+		return appliedWidgetOverrides.size();
 	}
 
-	private void applyLoadedWidgets(int bands, double quality)
+	private void applyLoadedWidgets(int bands, double quality, boolean customUis)
 	{
 		Widget[] widgetRoots = client.getWidgetRoots();
 		if (widgetRoots == null)
@@ -140,19 +127,21 @@ public final class NpcSnapUiTextureManager
 		boolean changed = false;
 		for (Widget root : widgetRoots)
 		{
-			changed |= applyWidgetRecursive(root, bands, quality, visitedWidgets);
+			changed |= applyWidgetRecursive(root, bands, quality, customUis, visitedWidgets);
 		}
 
 		uiBandingApplied = true;
 		appliedUiBands = bands;
 		appliedUiQuality = quality;
+		appliedCustomUis = customUis;
 		if (changed)
 		{
 			resetWidgetSpriteCache();
 		}
 	}
 
-	private boolean applyWidgetRecursive(Widget widget, int bands, double quality, Set<Integer> visitedWidgets)
+	private boolean applyWidgetRecursive(Widget widget, int bands, double quality, boolean customUis,
+		Set<Integer> visitedWidgets)
 	{
 		if (widget == null || !visitedWidgets.add(widget.getId()))
 		{
@@ -160,35 +149,30 @@ public final class NpcSnapUiTextureManager
 		}
 
 		boolean changed = false;
-		int spriteId = widget.getSpriteId();
-		if (spriteId >= 0)
+		int widgetId = widget.getId();
+		Map<Integer, SpritePixels> widgetOverrides = client.getWidgetSpriteOverrides();
+		AppliedOverride widgetApplied = appliedWidgetOverrides.get(widgetId);
+		if (widgetOverrides != null && (widgetOverrides.get(widgetId) != null
+			|| (widgetApplied != null && widgetOverrides.get(widgetId) == widgetApplied.replacement)))
 		{
-			SpritePixels replacement = getOrCreateBandedSprite(spriteId, bands, quality);
-			if (replacement != null)
-			{
-				Map<Integer, SpritePixels> spriteOverrides = client.getSpriteOverrides();
-				if (spriteOverrides == null)
-				{
-					return false;
-				}
-
-				if (appliedSpriteOverrideIds.add(spriteId))
-				{
-					displacedSpriteOverrides.put(spriteId, spriteOverrides.get(spriteId));
-					spriteOverrides.put(spriteId, replacement);
-					changed = true;
-				}
-			}
+			changed |= applySlot(widgetOverrides, appliedWidgetOverrides, widgetId, widget.getSpriteId(),
+				bands, quality, customUis);
+		}
+		else if (widget.getSpriteId() >= 0)
+		{
+			changed |= applySlot(client.getSpriteOverrides(), appliedSpriteOverrides, widget.getSpriteId(),
+				widget.getSpriteId(), bands, quality, customUis);
 		}
 
-		changed |= visitChildren(widget.getChildren(), bands, quality, visitedWidgets);
-		changed |= visitChildren(widget.getDynamicChildren(), bands, quality, visitedWidgets);
-		changed |= visitChildren(widget.getStaticChildren(), bands, quality, visitedWidgets);
-		changed |= visitChildren(widget.getNestedChildren(), bands, quality, visitedWidgets);
+		changed |= visitChildren(widget.getChildren(), bands, quality, customUis, visitedWidgets);
+		changed |= visitChildren(widget.getDynamicChildren(), bands, quality, customUis, visitedWidgets);
+		changed |= visitChildren(widget.getStaticChildren(), bands, quality, customUis, visitedWidgets);
+		changed |= visitChildren(widget.getNestedChildren(), bands, quality, customUis, visitedWidgets);
 		return changed;
 	}
 
-	private boolean visitChildren(Widget[] children, int bands, double quality, Set<Integer> visitedWidgets)
+	private boolean visitChildren(Widget[] children, int bands, double quality, boolean customUis,
+		Set<Integer> visitedWidgets)
 	{
 		if (children == null)
 		{
@@ -198,38 +182,77 @@ public final class NpcSnapUiTextureManager
 		boolean changed = false;
 		for (Widget child : children)
 		{
-			changed |= applyWidgetRecursive(child, bands, quality, visitedWidgets);
+			changed |= applyWidgetRecursive(child, bands, quality, customUis, visitedWidgets);
 		}
 		return changed;
 	}
 
-	private SpritePixels getOrCreateBandedSprite(int spriteId, int bands, double quality)
+	private boolean applySlot(Map<Integer, SpritePixels> overrides, Map<Integer, AppliedOverride> applied,
+		int slotId, int spriteId, int bands, double quality, boolean customUis)
 	{
-		SpritePixels cached = bandedSpriteOverrides.get(spriteId);
-		if (cached != null)
+		if (overrides == null)
 		{
-			return cached;
+			return false;
 		}
-
-		SpriteSnapshot original = originalSprites.computeIfAbsent(spriteId, key -> spriteLoader.apply(key));
-		if (original == null || original.getPixels().length == 0)
+		AppliedOverride owned = applied.get(slotId);
+		SpritePixels current = overrides.get(slotId);
+		if (owned != null && current == owned.replacement)
 		{
-			return null;
+			return false;
 		}
-
-		SpritePixels banded = client.createSpritePixels(
-			NpcSnapColorBanding.bandSpritePixels(original.toResampledCanvasPixels(quality), bands),
-			original.getCanvasWidth(),
-			original.getCanvasHeight()
-		);
-
-		if (banded == null)
+		applied.remove(slotId);
+		SpriteSnapshot source = customUis && current != null
+			? SpriteSnapshot.of(current)
+			: originalSprites.computeIfAbsent(spriteId, key -> spriteLoader.apply(key));
+		if (source == null || source.getPixels().length == 0)
 		{
-			return null;
+			return false;
 		}
+		SpritePixels replacement = client.createSpritePixels(
+			NpcSnapColorBanding.bandSpritePixels(source.toResampledCanvasPixels(quality), bands),
+			source.getCanvasWidth(), source.getCanvasHeight());
+		if (replacement == null)
+		{
+			return false;
+		}
+		applied.put(slotId, new AppliedOverride(current, replacement));
+		overrides.put(slotId, replacement);
+		return true;
+	}
 
-		bandedSpriteOverrides.put(spriteId, banded);
-		return banded;
+	private static void restoreSlots(Map<Integer, SpritePixels> overrides, Map<Integer, AppliedOverride> applied)
+	{
+		if (overrides != null)
+		{
+			for (Map.Entry<Integer, AppliedOverride> entry : applied.entrySet())
+			{
+				AppliedOverride owned = entry.getValue();
+				if (overrides.get(entry.getKey()) == owned.replacement)
+				{
+					if (owned.displaced == null)
+					{
+						overrides.remove(entry.getKey());
+					}
+					else
+					{
+						overrides.put(entry.getKey(), owned.displaced);
+					}
+				}
+			}
+		}
+		applied.clear();
+	}
+
+	private static final class AppliedOverride
+	{
+		private final SpritePixels displaced;
+		private final SpritePixels replacement;
+
+		private AppliedOverride(SpritePixels displaced, SpritePixels replacement)
+		{
+			this.displaced = displaced;
+			this.replacement = replacement;
+		}
 	}
 
 	private void resetWidgetSpriteCache()

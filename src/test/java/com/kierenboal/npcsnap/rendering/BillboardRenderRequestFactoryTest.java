@@ -17,6 +17,7 @@ import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.gameval.SpotanimID;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -60,7 +61,7 @@ public class BillboardRenderRequestFactoryTest
 	}
 
 	@Test
-	public void graphicsObjectRequestClampsHeightAndKeepsFrameDebugIdentity()
+	public void graphicsObjectRequestUsesWorldHeightAndKeepsFrameDebugIdentity()
 	{
 		Model model = TestProxies.proxy(Model.class);
 		LocalPoint point = new LocalPoint(300, 400, worldView(1));
@@ -75,7 +76,7 @@ public class BillboardRenderRequestFactoryTest
 		BillboardRenderRequest request = factory().buildGraphicsObject(object);
 
 		assertSame(model, request.model);
-		assertEquals(0, request.verticalOffset);
+		assertEquals(20, request.verticalOffset);
 		assertEquals(88, request.animationId);
 		assertEquals(3, request.animationFrame);
 		assertEquals(VerticalAnchor.BOTTOM, request.verticalAnchor);
@@ -168,6 +169,29 @@ public class BillboardRenderRequestFactoryTest
 	}
 
 	@Test
+	public void bindingSpotAnimationsUseGroundContactAnchor()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		WorldView worldView = worldView(1);
+		Actor actor = TestProxies.proxy(Actor.class,
+			TestProxies.method("getLocalLocation", new LocalPoint(300, 400, worldView)),
+			TestProxies.method("getWorldView", worldView));
+
+		for (int id : new int[] {SpotanimID.BIND_IMPACT, SpotanimID.SNARE_IMPACT, SpotanimID.ENTANGLE_IMPACT})
+		{
+			ActorSpotAnim animation = TestProxies.proxy(ActorSpotAnim.class,
+				TestProxies.method("getId", id),
+				TestProxies.method("getHeight", 40),
+				TestProxies.method("getModel", model));
+
+			BillboardRenderRequest request = factory().buildActorSpotAnimation(animation, actor);
+
+			assertEquals("binding id=" + id, 0, request.verticalOffset);
+			assertEquals("binding id=" + id, VerticalAnchor.GROUND_CONTACT, request.verticalAnchor);
+		}
+	}
+
+	@Test
 	public void effectsAndProjectilesFollowTheMasterFrameRateSwitch()
 	{
 		Animation animation = TestProxies.proxy(Animation.class,
@@ -250,6 +274,7 @@ public class BillboardRenderRequestFactoryTest
 
 	private static WorldView worldView(int plane)
 	{
-		return TestProxies.proxy(WorldView.class, TestProxies.method("getPlane", plane));
+		return TestProxies.proxy(WorldView.class, TestProxies.method("getPlane", plane),
+			TestProxies.method("isTopLevel", true));
 	}
 }

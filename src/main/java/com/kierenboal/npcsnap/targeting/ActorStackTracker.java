@@ -9,13 +9,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.runelite.api.Actor;
+import net.runelite.api.coords.LocalPoint;
 
 public final class ActorStackTracker
 {
 	private static final int REQUIRED_TICK_ADVANCES = 2;
 	private final Map<OccupiedTileKey, Overlap> overlaps = new HashMap<>();
 
-	public Set<OccupiedTileKey> confirmedStackedTiles(Map<OccupiedTileKey, List<Actor>> actorsByTile, int tickCount)
+	public Set<OccupiedTileKey> confirmedStackedTiles(
+		Map<OccupiedTileKey, List<Actor>> actorsByTile,
+		Map<OccupiedTileKey, Actor> topActorsByTile,
+		int tickCount)
 	{
 		Set<OccupiedTileKey> observedStackedTiles = new HashSet<>();
 		Set<OccupiedTileKey> confirmed = new HashSet<>();
@@ -31,10 +35,24 @@ public final class ActorStackTracker
 				}
 
 				observedStackedTiles.add(tile);
+				Actor topActor = topActorsByTile != null ? topActorsByTile.get(tile) : null;
 				Overlap overlap = overlaps.get(tile);
-				if (overlap == null || !overlap.matches(actors) || tickCount < overlap.firstObservedTick)
+				if (overlap == null
+					|| !overlap.matches(actors)
+					|| !overlap.matchesTopActor(topActor)
+					|| tickCount < overlap.firstObservedTick)
 				{
-					overlaps.put(tile, new Overlap(actors, tickCount));
+					overlaps.put(tile, new Overlap(actors, topActor, tickCount));
+					continue;
+				}
+
+				if (overlap.topActorMoved())
+				{
+					// The actor stack is no longer stable as soon as the selected top
+					// actor's client-rendered position changes. Reset confirmation so
+					// lower actors become eligible in this same frame and the stack
+					// must settle again before it can be hidden.
+					overlaps.put(tile, new Overlap(actors, topActor, tickCount));
 					continue;
 				}
 
@@ -67,12 +85,22 @@ public final class ActorStackTracker
 	private static final class Overlap
 	{
 		private final Set<Actor> actors = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Actor topActor;
 		private final int firstObservedTick;
+		private final int lastTopX;
+		private final int lastTopY;
+		private final boolean hasTopLocation;
 
-		private Overlap(List<Actor> actors, int firstObservedTick)
+		private Overlap(List<Actor> actors, Actor topActor, int firstObservedTick)
 		{
 			this.actors.addAll(actors);
+			this.topActor = topActor;
 			this.firstObservedTick = firstObservedTick;
+
+			LocalPoint topLocation = topActor != null ? topActor.getLocalLocation() : null;
+			this.hasTopLocation = topLocation != null;
+			this.lastTopX = topLocation != null ? topLocation.getX() : 0;
+			this.lastTopY = topLocation != null ? topLocation.getY() : 0;
 		}
 
 		private boolean matches(List<Actor> currentActors)
@@ -90,6 +118,23 @@ public final class ActorStackTracker
 				}
 			}
 			return true;
+		}
+
+		private boolean matchesTopActor(Actor currentTopActor)
+		{
+			return topActor == currentTopActor;
+		}
+
+		private boolean topActorMoved()
+		{
+			if (!hasTopLocation || topActor == null)
+			{
+				return false;
+			}
+
+			LocalPoint currentLocation = topActor.getLocalLocation();
+			return currentLocation != null
+				&& (currentLocation.getX() != lastTopX || currentLocation.getY() != lastTopY);
 		}
 	}
 }

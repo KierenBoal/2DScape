@@ -47,6 +47,19 @@ public class BillboardCacheModelsTest
 	}
 
 	@Test
+	public void brightnessChangeInvalidatesPreview()
+	{
+		NpcSnapConfig config = config();
+		BillboardRenderRequest request = request(false, false);
+		BillboardCacheKey key = BillboardCacheKey.create(request, config, 2, 12, 75, 99, 101, 180);
+		CachedBillboard cached = new CachedBillboard(key,
+			new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
+
+		assertTrue(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request, config, 2, 75, 101, 180)));
+		assertFalse(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request, config, 2, 75, 101, 360)));
+	}
+
+	@Test
 	public void fullKeyEqualityIncludesTextureAndColorInputs()
 	{
 		NpcSnapConfig config = config();

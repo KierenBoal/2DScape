@@ -69,7 +69,7 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest build(BillboardTarget target, ObjectRenderablePart part)
 	{
-		if ((target.type != BillboardTargetType.TILE_OBJECT && target.type != BillboardTargetType.BOAT) || part == null)
+		if (target.type != BillboardTargetType.TILE_OBJECT || part == null)
 		{
 			return null;
 		}
@@ -90,7 +90,7 @@ public final class BillboardRenderRequestFactory
 		{
 			return null;
 		}
-		boolean lowProfile = target.type != BillboardTargetType.BOAT && isLowProfile(part.renderable, model);
+		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
 			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
@@ -144,18 +144,27 @@ public final class BillboardRenderRequestFactory
 
 	public BillboardRenderRequest buildActorSpotAnimation(ActorSpotAnim spotAnimation, Actor actor)
 	{
-		if (actor == null || actor.getLocalLocation() == null)
+		if (spotAnimation == null || actor == null || actor.getLocalLocation() == null)
+		{
+			return null;
+		}
+		LocalPoint localPoint = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor);
+		if (localPoint == null)
 		{
 			return null;
 		}
 		Model model = spotAnimation.getModel();
 		boolean lowProfile = isLowProfile(spotAnimation, model);
+		int plane = actor.getWorldView() != null && actor.getWorldView().isTopLevel()
+			? actor.getWorldView().getPlane()
+			: 0;
 		return request(
-			spotAnimation, model, actor.getLocalLocation(), actor.getWorldView().getPlane(),
-			Math.max(0, spotAnimation.getHeight()),
+			spotAnimation, model, localPoint,
+			plane,
+			BillboardEffectGeometry.actorSpotVerticalOffset(actor, spotAnimation),
 			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(lowProfile),
 			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1, false, false,
-			lowProfile, VerticalAnchor.BOTTOM,
+			lowProfile, BillboardEffectGeometry.actorSpotVerticalAnchor(spotAnimation),
 			NpcSnapDebug.FrameDebugInfo.of(spotAnimation.getId(), spotAnimation.getFrame(), spotAnimation.getFrame()));
 	}
 
@@ -179,7 +188,8 @@ public final class BillboardRenderRequestFactory
 		boolean lowProfile = isLowProfile(graphicsObject, model);
 		return request(
 			graphicsObject, model, graphicsObject.getLocation(), graphicsObject.getLevel(),
-			Math.max(0, graphicsObject.getZ()), orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
+			BillboardEffectGeometry.graphicsVerticalOffset(client, graphicsObject),
+			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
 			graphicsObject.getId(), snappedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), snappedFrame));
 	}

@@ -309,7 +309,6 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		billboardOverlay.prepareFrame(worldView);
-		billboardOverlay.maskDrawableBoatGeometry();
 	}
 
 	@Provides
@@ -388,7 +387,8 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
 	{
-		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
+		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(),
+			config.uiSpriteQuality(), config.applyToCustomUiTextures());
 	}
 
 	@Subscribe
@@ -683,6 +683,12 @@ public class NpcSnapPlugin extends Plugin
 				}
 
 				@Override
+				public void noteSceneActorDraw(Actor actor)
+				{
+					billboardOverlay.noteSceneActorDraw(actor);
+				}
+
+				@Override
 				public void observeTileObject(TileObject tileObject)
 				{
 					billboardOverlay.observeTileObject(tileObject);
@@ -692,12 +698,6 @@ public class NpcSnapPlugin extends Plugin
 				public boolean shouldHideRenderable(Renderable renderable)
 				{
 					return billboardOverlay.shouldHideRenderable(renderable);
-				}
-
-				@Override
-				public boolean shouldKeepRenderableInteraction(Renderable renderable)
-				{
-					return billboardOverlay.shouldKeepRenderableInteraction(renderable);
 				}
 
 				@Override
@@ -762,7 +762,8 @@ public class NpcSnapPlugin extends Plugin
 
 	private void syncUiTextureQuality()
 	{
-		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(), config.uiSpriteQuality());
+		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(),
+			config.uiSpriteQuality(), config.applyToCustomUiTextures());
 	}
 
 	private NpcSnapUiTextureManager ensureUiTextureManager()
@@ -824,7 +825,6 @@ public class NpcSnapPlugin extends Plugin
 	private void restoreFrameStateNow()
 	{
 		restoreNpcState();
-		billboardOverlay.restoreBoatGeometry();
 	}
 
 	private void seedCurrentSkillXp()

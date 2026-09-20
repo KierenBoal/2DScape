@@ -5,7 +5,6 @@ import com.kierenboal.npcsnap.NpcSnapConfig;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Projectile;
-import net.runelite.api.WorldEntity;
 
 public final class BillboardOrientationCalculator
 {
@@ -47,13 +46,6 @@ public final class BillboardOrientationCalculator
 	public int relativeGroundItemYaw()
 	{
 		return snappedYaw(cameraYaw());
-	}
-
-	public int relativeYaw(WorldEntity worldEntity)
-	{
-		int orientation = worldEntity != null ? worldEntity.getOrientation() : 0;
-		return snappedYaw(cameraYaw()
-			+ BillboardAngleUtils.angleToBillboardUnits(orientation, BillboardAngleUtils.ACTOR_FULL_CIRCLE));
 	}
 
 	public int relativePitch()

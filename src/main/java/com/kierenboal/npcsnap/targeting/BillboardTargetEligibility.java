@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.occlusion.BillboardPlaneUtils;
 import com.kierenboal.npcsnap.rendering.BillboardProjectileGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardEffectGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequestFactory;
 
@@ -78,7 +79,7 @@ public final class BillboardTargetEligibility
 	public boolean projectile(LocalPoint localPlayerLocation, Projectile projectile, Rectangle viewport)
 	{
 		LocalPoint location = BillboardProjectileGeometry.localPoint(projectile);
-		if (!hasEligibleLocation(localPlayerLocation, location, projectile.getFloor()) || projectile.getModel() == null)
+		if (!projectileInWorld(localPlayerLocation, projectile))
 		{
 			return false;
 		}
@@ -94,6 +95,13 @@ public final class BillboardTargetEligibility
 		return projectedOrInFront(projectile, request, viewport);
 	}
 
+	public boolean projectileInWorld(LocalPoint localPlayerLocation, Projectile projectile)
+	{
+		return projectile != null
+			&& projectile.getModel() != null
+			&& hasEligibleLocation(localPlayerLocation, BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor());
+	}
+
 	public boolean graphicsObject(LocalPoint localPlayerLocation, GraphicsObject object, Rectangle viewport)
 	{
 		LocalPoint location = object.getLocation();
@@ -102,7 +110,8 @@ public final class BillboardTargetEligibility
 			return false;
 		}
 
-		Point canvasPoint = Perspective.localToCanvas(client, location, object.getLevel(), Math.max(0, object.getZ()));
+		Point canvasPoint = Perspective.localToCanvas(client, location, object.getLevel(),
+			BillboardEffectGeometry.graphicsVerticalOffset(client, object));
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;
@@ -120,16 +129,17 @@ public final class BillboardTargetEligibility
 		}
 
 		LocalPoint localPlayerLocation = client.getLocalPlayer() != null ? client.getLocalPlayer().getLocalLocation() : null;
-		LocalPoint actorLocation = actor.getLocalLocation();
-		if (!hasEligibleLocation(localPlayerLocation, actorLocation, actor.getWorldView().getPlane())
+		LocalPoint actorLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor);
+		int plane = actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0;
+		if (!hasEligibleLocation(localPlayerLocation, actorLocation, plane)
 			|| spotAnimation.getModel() == null)
 		{
 			return false;
 		}
 
-		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + spotAnimation.getHeight());
+		int verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(actor, spotAnimation);
 		Point canvasPoint = Perspective.localToCanvas(
-			client, actorLocation, actor.getWorldView().getPlane(), verticalOffset + (spotAnimation.getModelHeight() / 2));
+			client, actorLocation, plane, verticalOffset + (spotAnimation.getModelHeight() / 2));
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;

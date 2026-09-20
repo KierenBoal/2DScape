@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.rendering;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.ObservedTileObject;
+import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
@@ -62,7 +63,7 @@ public final class BillboardDepthCalculator
 		return cameraDistance(
 			localPoint,
 			projectile.getFloor(),
-			-heightOffset - (projectile.getModelHeight() / 2.0));
+			heightOffset + (projectile.getModelHeight() / 2.0));
 	}
 
 	public double depth(GraphicsObject graphicsObject)
@@ -73,20 +74,27 @@ public final class BillboardDepthCalculator
 			return Double.NEGATIVE_INFINITY;
 		}
 
-		double verticalOffset = Math.max(0, graphicsObject.getZ()) + (graphicsObject.getModelHeight() / 2.0);
+		double verticalOffset = BillboardEffectGeometry.graphicsVerticalOffset(client, graphicsObject)
+			+ (graphicsObject.getModelHeight() / 2.0);
 		return cameraDistance(localPoint, graphicsObject.getLevel(), verticalOffset);
 	}
 
 	public double depth(ActorSpotAnim actorSpotAnim, Actor actor)
 	{
-		LocalPoint localPoint = actor != null ? actor.getLocalLocation() : null;
+		LocalPoint localPoint = actor != null
+			? WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor)
+			: null;
 		if (localPoint == null)
 		{
 			return Double.NEGATIVE_INFINITY;
 		}
 
-		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset() + actorSpotAnim.getHeight());
-		return cameraDistance(localPoint, actor.getWorldView().getPlane(), verticalOffset + (actorSpotAnim.getModelHeight() / 2.0));
+		double verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(actor, actorSpotAnim);
+		int plane = actor.getWorldView() != null && actor.getWorldView().isTopLevel()
+			? actor.getWorldView().getPlane()
+			: 0;
+		return cameraDistance(localPoint, plane,
+			verticalOffset + (actorSpotAnim.getModelHeight() / 2.0));
 	}
 
 	public double depth(TileItem item, GroundItemBillboard groundItem)
@@ -127,8 +135,18 @@ public final class BillboardDepthCalculator
 		double dx = localPoint.getX() - client.getCameraFpX();
 		double dy = localPoint.getY() - client.getCameraFpY();
 		double groundHeight = Perspective.getTileHeight(client, localPoint, plane);
-		double dz = (groundHeight + verticalOffset) - client.getCameraFpZ();
+		double dz = worldHeight(groundHeight, verticalOffset) - client.getCameraFpZ();
 		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
+	}
+
+	/**
+	 * Converts RuneLite's positive height offset (above the tile) to its world
+	 * z coordinate. RuneLite's world z axis increases downwards, so height is
+	 * subtracted from the tile height.
+	 */
+	public static double worldHeight(double tileHeight, double verticalOffset)
+	{
+		return tileHeight - verticalOffset;
 	}
 
 	public double cameraForwardDepth(LocalPoint localPoint, int plane, double verticalOffset)
@@ -138,7 +156,7 @@ public final class BillboardDepthCalculator
 			return Double.NaN;
 		}
 
-		double worldHeight = Perspective.getTileHeight(client, localPoint, plane) + verticalOffset;
+		double worldHeight = worldHeight(Perspective.getTileHeight(client, localPoint, plane), verticalOffset);
 		return cameraForwardDepth(localPoint.getX(), localPoint.getY(), worldHeight);
 	}
 
@@ -213,7 +231,7 @@ public final class BillboardDepthCalculator
 			return null;
 		}
 
-		double worldZ = Perspective.getTileHeight(client, localPoint, plane) - verticalOffset;
+		double worldZ = worldHeight(Perspective.getTileHeight(client, localPoint, plane), verticalOffset);
 		return projectCanvasPoint(localPoint.getX(), localPoint.getY(), worldZ);
 	}
 

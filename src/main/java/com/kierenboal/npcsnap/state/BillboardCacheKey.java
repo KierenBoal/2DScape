@@ -41,6 +41,20 @@ public final class BillboardCacheKey
 		int textureStateHash,
 		int animatedTextureOffsetStateHash)
 	{
+		return create(request, config, outlinePadding, colorBands, renderQuality,
+			textureStateHash, animatedTextureOffsetStateHash, config.billboardLightBoostPercent());
+	}
+
+	public static BillboardCacheKey create(
+		BillboardRenderRequest request,
+		NpcSnapConfig config,
+		int outlinePadding,
+		int colorBands,
+		int renderQuality,
+		int textureStateHash,
+		int animatedTextureOffsetStateHash,
+		int effectiveLightBoost)
+	{
 		return new BillboardCacheKey(
 			request.animationId,
 			request.animationFrame,
@@ -49,7 +63,7 @@ public final class BillboardCacheKey
 			request.relativeYaw,
 			request.relativePitch,
 			colorBands,
-			config.billboardLightBoostPercent(),
+			effectiveLightBoost,
 			outlinePadding,
 			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),

@@ -23,6 +23,7 @@ final class NpcSnapConfigChangeHandler
 		}
 
 		if ("enableUiTextureBanding".equals(key)
+			|| "applyToCustomUiTextures".equals(key)
 			|| "uiTextureColorBands".equals(key)
 			|| "uiSpriteQuality".equals(key))
 		{

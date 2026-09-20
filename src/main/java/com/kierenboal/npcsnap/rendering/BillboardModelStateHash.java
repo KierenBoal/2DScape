@@ -22,6 +22,10 @@ public final class BillboardModelStateHash
 		hash = sampleFloatArrayHash(hash, model.getVerticesY());
 		hash = sampleFloatArrayHash(hash, model.getVerticesZ());
 		hash = sampleByteArrayHash(hash, model.getFaceTransparencies());
+		hash = (31 * hash) + Byte.toUnsignedInt(model.getOverrideAmount());
+		hash = (31 * hash) + Byte.toUnsignedInt(model.getOverrideHue());
+		hash = (31 * hash) + Byte.toUnsignedInt(model.getOverrideSaturation());
+		hash = (31 * hash) + Byte.toUnsignedInt(model.getOverrideLuminance());
 		return hash;
 	}
 

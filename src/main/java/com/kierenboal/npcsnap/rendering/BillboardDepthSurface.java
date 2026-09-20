@@ -82,7 +82,7 @@ public final class BillboardDepthSurface
 			depthCalculator,
 			localPoint.getX(),
 			localPoint.getY(),
-			baseHeight + request.verticalOffset,
+			BillboardDepthCalculator.worldHeight(baseHeight, request.verticalOffset),
 			groundItem ? Math.max(1, request.renderable.getModelHeight()) : request.renderable.getModelHeight(),
 			groundItem || (!request.lowProfile && supportsVerticalPlaneOcclusion(request.model)),
 			sourceBounds,

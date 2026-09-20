@@ -38,6 +38,18 @@ public final class BillboardCachePreviewKey
 		int renderQuality,
 		int animatedTextureOffsetStateHash)
 	{
+		return create(request, config, outlinePadding, renderQuality,
+			animatedTextureOffsetStateHash, config.billboardLightBoostPercent());
+	}
+
+	public static BillboardCachePreviewKey create(
+		BillboardRenderRequest request,
+		NpcSnapConfig config,
+		int outlinePadding,
+		int renderQuality,
+		int animatedTextureOffsetStateHash,
+		int effectiveLightBoost)
+	{
 		return new BillboardCachePreviewKey(
 			request.animationId,
 			request.animationFrame,
@@ -46,7 +58,7 @@ public final class BillboardCachePreviewKey
 			request.relativeYaw,
 			request.relativePitch,
 			config.billboardColorBands(),
-			config.billboardLightBoostPercent(),
+			effectiveLightBoost,
 			outlinePadding,
 			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),

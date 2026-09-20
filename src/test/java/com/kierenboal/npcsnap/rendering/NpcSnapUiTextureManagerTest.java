@@ -152,6 +152,67 @@ public class NpcSnapUiTextureManagerTest
 	}
 
 	@Test
+	public void laterCustomSourceIsReprocessedAndRestored()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(375, 5));
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, id ->
+			NpcSnapUiTextureManager.SpriteSnapshot.of(new int[] {0x00AABBCC}, 1, 1));
+		manager.sync(true, 4, 100.0d, true);
+		SpritePixels laterCustom = spritePixels(new int[] {0x00112233}, 1, 1);
+		harness.spriteOverrides.put(5, laterCustom);
+
+		manager.sync(true, 4, 100.0d, true);
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(laterCustom.getPixels(), 4),
+			harness.spriteOverrides.get(5).getPixels());
+		manager.restore();
+		assertSame(laterCustom, harness.spriteOverrides.get(5));
+	}
+
+	@Test
+	public void customSpriteIsBandedThenModeSwitchUsesVanillaAndRestoresCustom()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(380, 5));
+		SpritePixels custom = spritePixels(new int[] {0x00112233}, 1, 1);
+		harness.spriteOverrides.put(5, custom);
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, id ->
+			NpcSnapUiTextureManager.SpriteSnapshot.of(new int[] {0x00AABBCC}, 1, 1));
+
+		manager.sync(true, 4, 100.0d, true);
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(custom.getPixels(), 4),
+			harness.spriteOverrides.get(5).getPixels());
+		manager.sync(true, 4, 100.0d, false);
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(new int[] {0x00AABBCC}, 4),
+			harness.spriteOverrides.get(5).getPixels());
+		manager.restore();
+		assertSame(custom, harness.spriteOverrides.get(5));
+	}
+
+	@Test
+	public void packedWidgetOverrideUsesItsOwnArtworkAndRestoresOnlyOwnedValue()
+	{
+		TestClientHarness harness = new TestClientHarness(widget(390, 5));
+		SpritePixels custom = spritePixels(new int[] {0x00112233}, 1, 1);
+		harness.widgetOverrides.put(390, custom);
+		NpcSnapUiTextureManager manager = new NpcSnapUiTextureManager(harness.client, id ->
+			NpcSnapUiTextureManager.SpriteSnapshot.of(new int[] {0x00AABBCC}, 1, 1));
+
+		manager.sync(true, 4, 100.0d, true);
+		assertEquals(1, manager.getAppliedWidgetOverrideCount());
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(custom.getPixels(), 4),
+			harness.widgetOverrides.get(390).getPixels());
+		manager.sync(true, 4, 100.0d, false);
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(new int[] {0x00AABBCC}, 4),
+			harness.widgetOverrides.get(390).getPixels());
+		manager.sync(true, 4, 100.0d, true);
+		assertArrayEquals(NpcSnapColorBanding.bandSpritePixels(custom.getPixels(), 4),
+			harness.widgetOverrides.get(390).getPixels());
+		SpritePixels replacementByOtherPlugin = spritePixels(new int[] {0x00010203}, 1, 1);
+		harness.widgetOverrides.put(390, replacementByOtherPlugin);
+		manager.restore();
+		assertSame(replacementByOtherPlugin, harness.widgetOverrides.get(390));
+	}
+
+	@Test
 	public void spriteSnapshotPreservesSpriteBoundsMetadata()
 	{
 		SpritePixels spritePixels = spritePixels(new int[] {0xFF010203}, 1, 1);

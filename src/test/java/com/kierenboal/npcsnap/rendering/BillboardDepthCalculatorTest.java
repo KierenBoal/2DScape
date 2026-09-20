@@ -15,6 +15,13 @@ import static org.junit.Assert.assertTrue;
 public class BillboardDepthCalculatorTest
 {
 	@Test
+	public void positiveHeightOffsetProjectsAboveTheTile()
+	{
+		assertEquals(60.0d, BillboardDepthCalculator.worldHeight(100.0d, 40.0d), 0.0d);
+		assertEquals(140.0d, BillboardDepthCalculator.worldHeight(100.0d, -40.0d), 0.0d);
+	}
+
+	@Test
 	public void canvasProjectionPreservesSubpixelCoordinates()
 	{
 		Client client = proxy(

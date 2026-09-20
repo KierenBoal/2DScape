@@ -8,6 +8,5 @@ public enum BillboardTargetType
 	PROJECTILE,
 	GRAPHICS_OBJECT,
 	GROUND_ITEM,
-	TILE_OBJECT,
-	BOAT
+	TILE_OBJECT
 }
