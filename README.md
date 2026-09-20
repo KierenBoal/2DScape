@@ -4,6 +4,8 @@
 
 2DScape is a 3D-to-2D downsampler that tries to show what Old School RuneScape might look like with RSC's graphics. It's all rendered as an overlay, with custom occlusion culling so the sprites actually sit in the world.
 
+**Heads up:** You need RuneLite's **GPU** plugin or **117 HD** enabled for 2DScape to render properly. Without a GPU renderer, it can't hide the original 3D models before drawing the 2D ones over them.
+
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
 ![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.png)

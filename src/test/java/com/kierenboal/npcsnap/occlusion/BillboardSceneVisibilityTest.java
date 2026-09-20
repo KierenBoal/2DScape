@@ -4,10 +4,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.Projection;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
@@ -147,15 +150,73 @@ public class BillboardSceneVisibilityTest
 	}
 
 	@Test
+	public void rendererSwitchDuringLoadingWaitsToInstallObserver()
+	{
+		TestClient client = new TestClient();
+		Renderer gpu = new Renderer();
+		Renderer hd = new Renderer();
+		client.callbacks = gpu;
+		AtomicReference<GameState> state = new AtomicReference<>(GameState.LOGGED_IN);
+		List<DrawCallbacks> writes = new ArrayList<>();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(
+			() -> client.callbacks, value -> { writes.add(value); client.callbacks = value; },
+			state::get, task -> task.getAsBoolean());
+
+		visibility.beginFrame();
+		assertSame(gpu, BillboardSceneVisibility.renderer(client.callbacks));
+		assertEquals(1, writes.size());
+		client.callbacks = hd;
+		state.set(GameState.LOADING);
+		visibility.beginFrame();
+		assertSame(hd, client.callbacks);
+		assertEquals(1, writes.size());
+		assertNull(visibility.snapshot(proxy(Scene.class)));
+
+		state.set(GameState.LOGGED_IN);
+		visibility.beginFrame();
+		assertNotSame(hd, client.callbacks);
+		assertEquals(2, writes.size());
+		assertSame(hd, BillboardSceneVisibility.renderer(client.callbacks));
+		Scene scene = proxy(Scene.class);
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of(42));
+		assertFalse(visibility.snapshot(scene).visible(1, 42));
+		visibility.stop();
+		assertSame(hd, client.callbacks);
+	}
+
+	@Test
+	public void stoppingDuringLoadingWaitsBeforeRestoringCallbacks()
+	{
+		TestClient client = new TestClient();
+		Renderer renderer = new Renderer();
+		client.callbacks = renderer;
+		AtomicReference<GameState> state = new AtomicReference<>(GameState.LOGGED_IN);
+		List<BooleanSupplier> queued = new ArrayList<>();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(
+			() -> client.callbacks, value -> client.callbacks = value, state::get, queued::add);
+
+		visibility.beginFrame();
+		DrawCallbacks wrapper = client.callbacks;
+		state.set(GameState.LOADING);
+		visibility.stop();
+		assertFalse(queued.get(0).getAsBoolean());
+		assertSame(wrapper, client.callbacks);
+		state.set(GameState.LOGGED_IN);
+		assertTrue(queued.get(0).getAsBoolean());
+		assertSame(renderer, client.callbacks);
+	}
+
+	@Test
 	public void stopDefersCallbackRestorationToTheClientThreadDispatcher()
 	{
 		TestClient client = new TestClient();
 		Renderer renderer = new Renderer();
 		client.callbacks = renderer;
-		List<Runnable> queued = new ArrayList<>();
+		List<BooleanSupplier> queued = new ArrayList<>();
 		BillboardSceneVisibility visibility = new BillboardSceneVisibility(
 			() -> client.callbacks,
 			value -> client.callbacks = value,
+			() -> GameState.LOGGED_IN,
 			queued::add);
 
 		visibility.beginFrame();
@@ -164,7 +225,7 @@ public class BillboardSceneVisibilityTest
 
 		assertSame(wrapper, client.callbacks);
 		assertEquals(1, queued.size());
-		queued.get(0).run();
+		assertTrue(queued.get(0).getAsBoolean());
 		assertSame(renderer, client.callbacks);
 	}
 

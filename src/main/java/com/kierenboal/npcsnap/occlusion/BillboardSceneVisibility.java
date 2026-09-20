@@ -3,12 +3,14 @@ package com.kierenboal.npcsnap.occlusion;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.experimental.Delegate;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.Projection;
 import net.runelite.api.Scene;
 import net.runelite.api.hooks.DrawCallbacks;
@@ -20,7 +22,8 @@ public final class BillboardSceneVisibility
 {
 	private final Supplier<DrawCallbacks> callbackReader;
 	private final Consumer<DrawCallbacks> callbackWriter;
-	private final Consumer<Runnable> clientThreadInvoker;
+	private final Supplier<GameState> gameStateReader;
+	private final Consumer<BooleanSupplier> clientThreadInvoker;
 	private final IdentityHashMap<Scene, Snapshot> snapshots = new IdentityHashMap<>();
 	private Observer observer;
 	private boolean enabled;
@@ -28,21 +31,23 @@ public final class BillboardSceneVisibility
 	@Inject
 	public BillboardSceneVisibility(Client client, ClientThread clientThread)
 	{
-		this(client::getDrawCallbacks, client::setDrawCallbacks, clientThread::invoke);
+		this(client::getDrawCallbacks, client::setDrawCallbacks, client::getGameState, clientThread::invoke);
 	}
 
 	BillboardSceneVisibility(Supplier<DrawCallbacks> reader, Consumer<DrawCallbacks> writer)
 	{
-		this(reader, writer, Runnable::run);
+		this(reader, writer, () -> GameState.LOGGED_IN, task -> task.getAsBoolean());
 	}
 
 	BillboardSceneVisibility(
 		Supplier<DrawCallbacks> reader,
 		Consumer<DrawCallbacks> writer,
-		Consumer<Runnable> clientThreadInvoker)
+		Supplier<GameState> gameStateReader,
+		Consumer<BooleanSupplier> clientThreadInvoker)
 	{
 		this.callbackReader = reader;
 		this.callbackWriter = writer;
+		this.gameStateReader = gameStateReader;
 		this.clientThreadInvoker = clientThreadInvoker;
 	}
 
@@ -55,13 +60,16 @@ public final class BillboardSceneVisibility
 		{
 			return;
 		}
-		// Renderer plugins can replace their callbacks when enabled or disabled.
-		// Never install a renderer on a software client that has no callbacks.
-		observer = active == null ? null : new Observer(active);
-		if (observer != null)
+		observer = null;
+		// 117 HD and GPU replace their callbacks while loading a scene. Changing
+		// them again during LOADING can make the renderer load the scene twice.
+		if (active == null || gameStateReader.get() != GameState.LOGGED_IN)
 		{
-			callbackWriter.accept(observer);
+			return;
 		}
+		Observer installedObserver = new Observer(active);
+		callbackWriter.accept(installedObserver);
+		observer = installedObserver;
 	}
 
 	public void stop()
@@ -69,16 +77,23 @@ public final class BillboardSceneVisibility
 		clientThreadInvoker.accept(this::stopNow);
 	}
 
-	private void stopNow()
+	private boolean stopNow()
 	{
 		enabled = false;
-		Observer installedObserver = observer;
-		observer = null;
 		snapshots.clear();
-		if (installedObserver != null && callbackReader.get() == installedObserver)
+		Observer installedObserver = observer;
+		if (installedObserver == null || callbackReader.get() != installedObserver)
 		{
-			callbackWriter.accept(installedObserver.delegate);
+			observer = null;
+			return true;
 		}
+		if (gameStateReader.get() == GameState.LOADING)
+		{
+			return false;
+		}
+		callbackWriter.accept(installedObserver.delegate);
+		observer = null;
+		return true;
 	}
 
 	Snapshot snapshot(Scene scene)

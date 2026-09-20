@@ -79,6 +79,7 @@ public class NpcSnapPlugin extends Plugin
 	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
 	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
+	private final RendererAvailabilityWarning rendererAvailabilityWarning = new RendererAvailabilityWarning();
 	private boolean pendingSkillXpSeed;
 	private Scene groundItemScene;
 	private NpcSnapUiTextureManager uiTextureManager;
@@ -130,6 +131,7 @@ public class NpcSnapPlugin extends Plugin
 	protected void startUp()
 	{
 		migrateOcclusionQuality();
+		rendererAvailabilityWarning.reset();
 		active = true;
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
@@ -198,6 +200,7 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("interaction state", billboardOverlay::clearInteractionState);
 		cleanupStep("skilling state", skillingActivityTracker::clear);
 		pendingSkillXpSeed = false;
+		rendererAvailabilityWarning.reset();
 		cleanupStep("animation state", animationFrameSnapper::clear);
 		cleanupStep("debug frame state", debug::clearFrameStates);
 		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
@@ -349,6 +352,13 @@ public class NpcSnapPlugin extends Plugin
 	public void onGameTick(GameTick gameTick)
 	{
 		loginXpDropGuard.advanceTick();
+		if (rendererAvailabilityWarning.shouldWarn(
+			client.getGameState() == GameState.LOGGED_IN && config.enable2dBillboardSprites(),
+			client.getDrawCallbacks() != null))
+		{
+			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
+				"ERROR: Enable RuneLite's GPU plugin or 117 HD. 2DScape needs a GPU renderer to hide the original 3D models.", null);
+		}
 		billboardOverlay.clearStaleInteraction(client.getLocalPlayer(), client.getTickCount());
 		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
 		{
