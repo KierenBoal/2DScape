@@ -18,7 +18,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.awt.Color;
-import java.nio.file.Path;
 import javax.inject.Inject;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
@@ -64,12 +63,12 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
-import net.runelite.client.util.LinkBrowser;
 
 @Slf4j
 @PluginDescriptor(
 	name = "2DScape",
-	description = "Janky RuneScape Classic inspired graphics"
+	description = "Janky RuneScape Classic inspired graphics",
+	internalName = "2dscape"
 )
 public class NpcSnapPlugin extends Plugin
 	implements Hooks.RenderableDrawListener
@@ -408,8 +407,6 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
-		addExportFolderMenuEntry(event);
-
 		if (!config.enableShiftRightClickExportPng())
 		{
 			return;
@@ -468,7 +465,7 @@ public class NpcSnapPlugin extends Plugin
 				"The local player is no longer available for export.", null);
 			return;
 		}
-		billboardPngExporter.export(batch);
+		billboardPngExporter.export(batch, this::getPluginDirectory);
 	}
 
 	private static boolean isEquipmentTab(MenuEntry entry)
@@ -481,26 +478,6 @@ public class NpcSnapPlugin extends Plugin
 		return widgetId == InterfaceID.Toplevel.STONE4
 			|| widgetId == InterfaceID.ToplevelOsrsStretch.STONE4
 			|| widgetId == InterfaceID.ToplevelPreEoc.STONE4;
-	}
-
-	private void addExportFolderMenuEntry(MenuEntryAdded event)
-	{
-		Path directory = billboardPngExporter.getLatestExportDirectory();
-		if (directory == null)
-		{
-			return;
-		}
-		String target = BillboardExportPaths.stripTags(event.getTarget());
-		if (!target.contains(directory.toString()))
-		{
-			return;
-		}
-		client.createMenuEntry(-1)
-			.setOption("Open folder")
-			.setTarget(event.getTarget())
-			.setType(MenuAction.RUNELITE)
-			.setForceLeftClick(true)
-			.onClick(ignored -> LinkBrowser.open(directory.toString()));
 	}
 
 	private static String exportMenuKey(MenuEntry entry)
@@ -522,7 +499,7 @@ public class NpcSnapPlugin extends Plugin
 				"That render target is no longer available for export.", null);
 			return;
 		}
-		billboardPngExporter.export(batch);
+		billboardPngExporter.export(batch, this::getPluginDirectory);
 	}
 
 	private static boolean isExportableMenuEntry(MenuEntry entry)

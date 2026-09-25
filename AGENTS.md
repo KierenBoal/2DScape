@@ -23,7 +23,7 @@
 ## API Usage
 
 - Use `net.runelite.api.gameval` package constants — `ItemID`, `InterfaceID`, `ObjectID`, etc. Never hardcode magic numbers when gameval constants can be used instead.
-- Use `LinkBrowser` to open URLs, not `java.awt.Desktop`
+- Do not use `LinkBrowser` or `java.awt.Desktop` to open URLs or folders; both are restricted for this plugin.
 - When looking up Widgets, pass the component ID from gamevals (eg `client.getWidget(InterfaceID.DomEndLevelUi.LOOT_VALUE)`) - do not manually combine interface + component child IDs.
 - Use of Java reflection is forbidden.
 
@@ -36,9 +36,9 @@
 
 ## File I/O
 
-- Only read/write files inside the `.runelite` directory. Create a subdirectory for your plugin (e.g. `.runelite/your-plugin-name/`) if you need to store data on disk.
-- Use `RuneLite.RUNELITE_DIR` to get the path.
-- Alternatively, use `JFileChooser` for user-initiated file operations.
+- Perform all plugin file I/O through RuneLite's `Filepath` API, rooted at `Plugin#getPluginDirectory()`.
+- Do not construct a root with `Filepath.Unchecked` in production code; it prevents automatic Plugin Hub review.
+- Use `Filepath.Chooser` for user-initiated file selection.
 
 ## Config
 

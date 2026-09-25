@@ -1,9 +1,8 @@
 package com.kierenboal.npcsnap.export;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import net.runelite.client.util.Filepath;
 
 public final class BillboardExportPaths
 {
@@ -16,7 +15,7 @@ public final class BillboardExportPaths
 	public static String sanitizeName(String name, String fallback)
 	{
 		String value = stripTags(name);
-		value = value.replaceAll("[\\\\/:*?\"<>|]", " ").trim().replaceAll("\\s+", "_");
+		value = value.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|~]", " ").trim().replaceAll("\\s+", "_");
 		value = value.replaceAll("[. ]+$", "");
 		return value.isEmpty() ? fallback : value;
 	}
@@ -26,42 +25,44 @@ public final class BillboardExportPaths
 		return value == null ? "" : value.replaceAll("<[^>]*>", "");
 	}
 
-	public static Path uniqueExportDirectory(Path root, LocalDateTime time, String name)
+	public static Filepath uniqueExportDirectory(Filepath root, LocalDateTime time, String name)
 	{
-		Path candidate = root.resolve(TIMESTAMP.format(time) + "_" + name);
+		Filepath candidate = root.joinSegment(TIMESTAMP.format(time) + "_" + name);
 		return unique(candidate);
 	}
 
-	public static Path unique(Path candidate)
+	public static Filepath unique(Filepath candidate)
 	{
-		if (!Files.exists(candidate))
+		if (!candidate.exists())
 		{
 			return candidate;
 		}
+		Filepath parent = candidate.getParent();
 		for (int suffix = 2; ; suffix++)
 		{
-			Path next = candidate.resolveSibling(candidate.getFileName() + "_" + suffix);
-			if (!Files.exists(next))
+			Filepath next = parent.joinSegment(candidate.getFileName() + "_" + suffix);
+			if (!next.exists())
 			{
 				return next;
 			}
 		}
 	}
 
-	public static Path uniquePng(Path candidate)
+	public static Filepath uniquePng(Filepath candidate)
 	{
-		if (!Files.exists(candidate))
+		if (!candidate.exists())
 		{
 			return candidate;
 		}
-		String filename = candidate.getFileName().toString();
+		String filename = candidate.getFileName();
 		String base = filename.toLowerCase().endsWith(".png")
 			? filename.substring(0, filename.length() - 4)
 			: filename;
+		Filepath parent = candidate.getParent();
 		for (int suffix = 2; ; suffix++)
 		{
-			Path next = candidate.resolveSibling(base + "_" + suffix + ".png");
-			if (!Files.exists(next))
+			Filepath next = parent.joinSegment(base + "_" + suffix + ".png");
+			if (!next.exists())
 			{
 				return next;
 			}

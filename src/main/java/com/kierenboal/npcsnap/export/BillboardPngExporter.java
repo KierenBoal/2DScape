@@ -5,9 +5,9 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.OutputStream;
 import java.time.LocalDateTime;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.imageio.ImageIO;
@@ -16,9 +16,9 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
-import net.runelite.client.RuneLite;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.util.ColorUtil;
+import net.runelite.client.util.Filepath;
 
 @Slf4j
 @Singleton
@@ -27,7 +27,6 @@ public class BillboardPngExporter
 	private final Client client;
 	private final ClientThread clientThread;
 	private ExecutorService executor;
-	private volatile Path latestExportDirectory;
 
 	@Inject
 	public BillboardPngExporter(Client client, ClientThread clientThread)
@@ -49,7 +48,7 @@ public class BillboardPngExporter
 		}
 	}
 
-	public void export(BillboardExportBatch batch)
+	public void export(BillboardExportBatch batch, Callable<Filepath> rootProvider)
 	{
 		ExecutorService current;
 		synchronized (this)
@@ -57,7 +56,7 @@ public class BillboardPngExporter
 			start();
 			current = executor;
 		}
-		current.execute(() -> write(batch));
+		current.execute(() -> write(batch, rootProvider));
 	}
 
 	public synchronized void shutDown()
@@ -69,20 +68,15 @@ public class BillboardPngExporter
 		}
 	}
 
-	public Path getLatestExportDirectory()
+	private void write(BillboardExportBatch batch, Callable<Filepath> rootProvider)
 	{
-		return latestExportDirectory;
-	}
-
-	private void write(BillboardExportBatch batch)
-	{
-		Path directory = null;
+		Filepath directory = null;
 		try
 		{
-			Path root = RuneLite.RUNELITE_DIR.toPath().resolve("2dscape");
-			Files.createDirectories(root);
+			Filepath root = rootProvider.call();
+			root.createDirectories();
 			directory = BillboardExportPaths.uniqueExportDirectory(root, LocalDateTime.now(), batch.name);
-			Files.createDirectory(directory);
+			directory.createDirectory();
 			for (BillboardExportFrame frame : batch.frames)
 			{
 				if (Thread.currentThread().isInterrupted())
@@ -91,14 +85,16 @@ public class BillboardPngExporter
 				}
 				String filename = batch.name + "_Pitch" + frame.pitch + "_Yaw" + frame.yaw
 					+ "_frame" + frame.animationFrame + ".png";
-				Path output = BillboardExportPaths.uniquePng(directory.resolve(filename));
-				if (!ImageIO.write(frame.image, "PNG", output.toFile()))
+				Filepath output = BillboardExportPaths.uniquePng(directory.joinSegment(filename));
+				try (OutputStream outputStream = output.openOutputStream())
 				{
-					throw new IOException("No PNG writer is available");
+					if (!ImageIO.write(frame.image, "PNG", outputStream))
+					{
+						throw new IOException("No PNG writer is available");
+					}
 				}
 			}
-			Path completedDirectory = directory;
-			latestExportDirectory = completedDirectory;
+			Filepath completedDirectory = directory;
 			boolean copied = copyToClipboard(completedDirectory.toString());
 			log.debug("Exported {} billboard PNGs to {}", batch.frames.size(), completedDirectory);
 			String displayName = ColorUtil.wrapWithColorTag(batch.name.replace('_', ' '), Color.WHITE);

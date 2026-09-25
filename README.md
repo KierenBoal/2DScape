@@ -31,6 +31,8 @@ Get a skilling XP drop and a little retro bubble pops up above your character, j
 
 Want to make a sprite sheet? Turn on **Enable shift right-click export PNG** in the config, then Shift-right-click a player, NPC, or pet and choose **Export sprite**. Shift-right-click your equipment tab to export yourself. The plugin saves the angles and animation frames as transparent PNGs, ready to put into a 2D sprite sheet for a game lol that'd be so sick if someone used it to make the art for a game.
 
+Exports are saved in RuneLite's `plugin-data/2dscape` directory. The in-game message shows and copies the export folder path.
+
 **Note**: These sprites are generated in real time by rasterizing the triangles from Jagex's Old School RuneScapes in-game models. They aren't hand drawn; they're calculated on the fly with 2D rasterization and a bunch of 3D math. So if you export sprites, keep in mind whatever licensing Jaggy Baggy requiers.
 
 ---
