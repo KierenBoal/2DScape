@@ -1,10 +1,10 @@
 package com.kierenboal.npcsnap.features;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
+import com.kierenboal.npcsnap.targeting.BillboardWorldViewVisibility;
 
 import java.awt.AlphaComposite;
 import java.awt.Color;
-import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
@@ -12,6 +12,7 @@ import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.geom.Path2D;
+import java.awt.geom.AffineTransform;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,8 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	private static final int VIEWPORT_MARGIN = 8;
 	private static final int WOBBLE_POINTS = 48;
 	private static final double WOBBLE_AMOUNT = 1.6d;
+	private static final double REFERENCE_CAMERA_SCALE = 1024.0d;
+	private static final double ZOOM_SCALE_EXPONENT = 0.2d;
 
 	private final Client client;
 	private final NpcSnapConfig config;
@@ -58,9 +61,9 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	private final SkillingBubbleAnimation animation;
 	private final Map<Skill, BufferedImage> skillImages = new EnumMap<>(Skill.class);
 	private volatile boolean active;
+	private final BillboardWorldViewVisibility worldViewVisibility;
 
-	@Inject
-	private SkillingThoughtBubbleOverlay(
+	SkillingThoughtBubbleOverlay(
 		Client client,
 		NpcSnapConfig config,
 		SkillingActivityTracker skillingActivityTracker,
@@ -68,7 +71,21 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		SkillIconManager skillIconManager
 	)
 	{
+		this(client, config, skillingActivityTracker, spriteManager, skillIconManager, null);
+	}
+
+	@Inject
+	SkillingThoughtBubbleOverlay(
+		Client client,
+		NpcSnapConfig config,
+		SkillingActivityTracker skillingActivityTracker,
+		SpriteManager spriteManager,
+		SkillIconManager skillIconManager,
+		BillboardWorldViewVisibility worldViewVisibility
+	)
+	{
 		this.client = client;
+		this.worldViewVisibility = worldViewVisibility;
 		this.config = config;
 		this.skillingActivityTracker = skillingActivityTracker;
 		this.spriteManager = spriteManager;
@@ -88,7 +105,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		}
 
 		Player player = client.getLocalPlayer();
-		if (player == null)
+		if (player == null || (worldViewVisibility != null && !worldViewVisibility.isVisible(player)))
 		{
 			return null;
 		}
@@ -129,11 +146,40 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 			return null;
 		}
 
-		int zOffset = Math.max(0, player.getAnimationHeightOffset()) + player.getModelHeight() + HEAD_GAP;
+		int zOffset = player.getAnimationHeightOffset() + player.getModelHeight() + HEAD_GAP;
 		return Perspective.localToCanvas(client, localPoint, player.getWorldView().getPlane(), zOffset);
 	}
 
-	private void drawBubble(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills, long nowMillis, float alpha)
+	void drawBubble(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills, long nowMillis, float alpha)
+	{
+		// Follow zoom more gently than the sprite, keeping the projected head anchor
+		// fixed. Scaling the graphics also scales icons, trails, strokes and wobble.
+		AffineTransform bubbleTransform = bubbleTransform(anchor, client.getScale());
+		Graphics2D bubbleGraphics = (Graphics2D) graphics.create();
+		try
+		{
+			bubbleGraphics.transform(bubbleTransform);
+			drawBubbleAtReferenceScale(bubbleGraphics, player, anchor, activeSkills, nowMillis, alpha, bubbleTransform);
+		}
+		finally
+		{
+			bubbleGraphics.dispose();
+		}
+	}
+
+	static AffineTransform bubbleTransform(Point anchor, int cameraScale)
+	{
+		// Retain about 87% at zoom 512 and 79% at zoom 315.
+		double scale = cameraScale > 0
+			? Math.pow(cameraScale / REFERENCE_CAMERA_SCALE, ZOOM_SCALE_EXPONENT) : 1.0d;
+		AffineTransform transform = AffineTransform.getTranslateInstance(anchor.getX(), anchor.getY());
+		transform.scale(scale, scale);
+		transform.translate(-anchor.getX(), -anchor.getY());
+		return transform;
+	}
+
+	private void drawBubbleAtReferenceScale(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills,
+		long nowMillis, float alpha, AffineTransform bubbleTransform)
 	{
 		int iconCount = activeSkills.size();
 		int iconsWidth = (iconCount * ICON_SIZE) + ((iconCount - 1) * ICON_GAP);
@@ -141,14 +187,12 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		int bubbleHeight = MIN_BUBBLE_SIZE;
 		double time = nowMillis / 1000.0d;
 		float introProgress = animation.introProgress(activeSkills, nowMillis);
-		BubblePlacement restingPlacement = chooseBubblePlacement(player, anchor, bubbleWidth, bubbleHeight);
+		BubblePlacement restingPlacement = chooseBubblePlacement(player, anchor, bubbleWidth, bubbleHeight, bubbleTransform);
 		BubblePlacement animatedPlacement = interpolatePlacement(anchor, restingPlacement, bubbleWidth, bubbleHeight, introProgress);
 		int bubbleX = animatedPlacement.x + (int) Math.round(Math.sin(time * 1.2d) * 1.2d);
 		int bubbleY = animatedPlacement.y + (int) Math.round(Math.cos(time * 1.0d) * 0.8d);
 		Shape bubbleShape = createWobblyOval(bubbleX, bubbleY, bubbleWidth, bubbleHeight, time);
 
-		Composite originalComposite = graphics.getComposite();
-		Object originalAntialiasing = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
 
@@ -172,8 +216,6 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 			iconX += ICON_SIZE + ICON_GAP;
 		}
 
-		graphics.setComposite(originalComposite);
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, originalAntialiasing);
 	}
 
 	private static void drawContainedImage(Graphics2D graphics, BufferedImage image, int x, int y, int maxWidth, int maxHeight)
@@ -193,14 +235,15 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		graphics.drawImage(image, drawX, drawY, drawWidth, drawHeight, null);
 	}
 
-	private BubblePlacement chooseBubblePlacement(Player player, Point anchor, int bubbleWidth, int bubbleHeight)
+	private BubblePlacement chooseBubblePlacement(Player player, Point anchor, int bubbleWidth, int bubbleHeight,
+		AffineTransform bubbleTransform)
 	{
 		int facingSide = projectedFacingSide(player, anchor);
 		int screenRoomSide = anchor.getX() < client.getViewportXOffset() + (client.getViewportWidth() / 2) ? 1 : -1;
 		BubblePlacement left = candidatePlacement(anchor, bubbleWidth, bubbleHeight, -1);
 		BubblePlacement right = candidatePlacement(anchor, bubbleWidth, bubbleHeight, 1);
-		double leftScore = placementScore(left, -1, facingSide, screenRoomSide, player);
-		double rightScore = placementScore(right, 1, facingSide, screenRoomSide, player);
+		double leftScore = placementScore(left, -1, facingSide, screenRoomSide, player, bubbleTransform);
+		double rightScore = placementScore(right, 1, facingSide, screenRoomSide, player, bubbleTransform);
 		return rightScore > leftScore ? right : left;
 	}
 
@@ -220,7 +263,8 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		return new BubblePlacement(centerX - (bubbleWidth / 2), centerY - (bubbleHeight / 2), bubbleWidth, bubbleHeight);
 	}
 
-	private double placementScore(BubblePlacement placement, int side, int facingSide, int screenRoomSide, Player player)
+	private double placementScore(BubblePlacement placement, int side, int facingSide, int screenRoomSide, Player player,
+		AffineTransform bubbleTransform)
 	{
 		double score = 0.0d;
 		if (side == facingSide)
@@ -238,10 +282,11 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 			Math.max(0, client.getViewportWidth() - (VIEWPORT_MARGIN * 2)),
 			Math.max(0, client.getViewportHeight() - (VIEWPORT_MARGIN * 2))
 		);
-		score -= overflowAmount(placement.bounds, viewport) * 3.0d;
+		Rectangle screenBounds = bubbleTransform.createTransformedShape(placement.bounds).getBounds();
+		score -= overflowAmount(screenBounds, viewport) * 3.0d;
 
 		Shape hull = player.getConvexHull();
-		if (hull != null && hull.getBounds().intersects(placement.bounds))
+		if (hull != null && hull.getBounds().intersects(screenBounds))
 		{
 			score -= 100.0d;
 		}
@@ -261,7 +306,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		int dx = Perspective.SINE[orientation] * FACING_PROBE_DISTANCE / 65536;
 		int dy = Perspective.COSINE[orientation] * FACING_PROBE_DISTANCE / 65536;
 		LocalPoint facingPoint = new LocalPoint(localPoint.getX() + dx, localPoint.getY() + dy, player.getWorldView());
-		int zOffset = Math.max(0, player.getAnimationHeightOffset()) + player.getModelHeight() + HEAD_GAP;
+		int zOffset = player.getAnimationHeightOffset() + player.getModelHeight() + HEAD_GAP;
 		Point projectedFacing = Perspective.localToCanvas(client, facingPoint, player.getWorldView().getPlane(), zOffset);
 		if (projectedFacing == null)
 		{
@@ -349,7 +394,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		return path;
 	}
 
-	private BufferedImage getSkillImage(Skill skill)
+	BufferedImage getSkillImage(Skill skill)
 	{
 		return skillImages.computeIfAbsent(skill, this::loadSkillImage);
 	}

@@ -691,7 +691,7 @@ public class NpcSnapPlugin extends Plugin
 
 	private void applyAnimationFrameSnap(Actor actor)
 	{
-		if (!config.enableAnimationFrameSnapping())
+		if (!billboardOverlay.isActorWorldViewVisible(actor) || !config.enableAnimationFrameSnapping())
 		{
 			return;
 		}

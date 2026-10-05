@@ -64,7 +64,39 @@ public final class BillboardDepthSurface
 		return INVALID;
 	}
 
+	public static BillboardDepthSurface from(BillboardDepthCalculator depthCalculator, PreparedBillboardDraw draw, double baseHeight)
+	{
+		return draw == null ? invalid() : from(depthCalculator, draw.request, draw.sourceBounds, draw.bounds,
+			baseHeight, draw.modelHeight, draw.supportsWorldOcclusion);
+	}
+
 	public static BillboardDepthSurface from(BillboardDepthCalculator depthCalculator, BillboardRenderRequest request, Rectangle sourceBounds, Rectangle drawBounds, double baseHeight)
+	{
+		return from(depthCalculator, request, sourceBounds, drawBounds, baseHeight,
+			modelHeight(request), supportsWorldOcclusion(request));
+	}
+
+	static int modelHeight(BillboardRenderRequest request)
+	{
+		if (request == null || request.renderable == null)
+		{
+			return 0;
+		}
+		int height = request.renderable.getModelHeight();
+		return request.renderable instanceof TileItem ? Math.max(1, height) : Math.max(0, height);
+	}
+
+	static boolean supportsWorldOcclusion(BillboardRenderRequest request)
+	{
+		// Ground-item sprites use the same camera-facing depth plane as actors,
+		// even when their source model is flat or reports zero height.
+		return request != null && (request.renderable instanceof TileItem
+			|| (!request.lowProfile && supportsVerticalPlaneOcclusion(request.model)));
+	}
+
+	private static BillboardDepthSurface from(BillboardDepthCalculator depthCalculator,
+		BillboardRenderRequest request, Rectangle sourceBounds, Rectangle drawBounds, double baseHeight,
+		int modelHeight, boolean supportsWorldOcclusion)
 	{
 		if (depthCalculator == null || request == null || request.localPoint == null || request.renderable == null || sourceBounds == null
 			|| sourceBounds.width <= 0 || sourceBounds.height <= 0 || drawBounds == null || drawBounds.width <= 0 || drawBounds.height <= 0 || !Double.isFinite(baseHeight))
@@ -73,16 +105,13 @@ public final class BillboardDepthSurface
 		}
 
 		LocalPoint localPoint = request.localPoint;
-		// Ground-item sprites use the same camera-facing depth plane as actors,
-		// even when their source model is flat or reports zero height.
-		boolean groundItem = request.renderable instanceof TileItem;
 		return new BillboardDepthSurface(
 			depthCalculator,
 			localPoint.getX(),
 			localPoint.getY(),
 			BillboardDepthCalculator.worldHeight(baseHeight, request.verticalOffset),
-			groundItem ? Math.max(1, request.renderable.getModelHeight()) : request.renderable.getModelHeight(),
-			groundItem || (!request.lowProfile && supportsVerticalPlaneOcclusion(request.model)),
+			modelHeight,
+			supportsWorldOcclusion,
 			sourceBounds,
 			drawBounds
 		);

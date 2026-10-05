@@ -20,7 +20,7 @@ public class NpcSnapConfigTest
 	public void resizeThresholdHasDefaultRangeAndPositionBelowFrameLimiting()
 		throws NoSuchMethodException
 	{
-		assertEquals(10, config.redrawOnClickboxResizePercent());
+		assertEquals(50, config.redrawOnClickboxResizePercent());
 		ConfigItem item = NpcSnapConfig.class.getMethod("redrawOnClickboxResizePercent").getAnnotation(ConfigItem.class);
 		Range range = NpcSnapConfig.class.getMethod("redrawOnClickboxResizePercent").getAnnotation(Range.class);
 		assertEquals("Redraw on clickbox resize", item.name());

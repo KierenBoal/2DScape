@@ -29,6 +29,15 @@ import static org.junit.Assert.assertTrue;
 public class BillboardRenderRequestFactoryTest
 {
 	@Test
+	public void actorRequestsPreserveSignedSubmersionOffsets()
+	{
+		Actor actor = TestProxies.proxy(Actor.class,
+			TestProxies.method("getWorldView", worldView(0)),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)),
+			TestProxies.method("getAnimationHeightOffset", -80));
+		assertEquals(-80, factory().buildActor(actor).verticalOffset);
+	}
+	@Test
 	public void groundItemRequestUsesTrackedLocationQuantityAndGroundOrientation()
 	{
 		BillboardRenderRequestFactory factory = factory();

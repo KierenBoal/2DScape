@@ -98,12 +98,18 @@ public class AnimationFrameSnapper
 		{
 			track.start(animationId, frame);
 		}
+		else if (frame < track.lastFrame)
+		{
+			// A real loop/restart may return to a lower frame; a resize redraw may not.
+			track.renderedFrameFloor = -1;
+		}
 
+		long accumulatedFrame = hasPartialLoop(metadata) ? accumulateActorFrame(track, metadata, frame) : frame;
 		if (!deterministicLooping && hasPartialLoop(metadata))
 		{
-			long accumulatedFrame = accumulateActorFrame(track, metadata, frame);
 			long scheduledFrame = accumulatedFrame / frameInterval(visibleFrameCount) * frameInterval(visibleFrameCount);
-			int renderedFrame = animationFrameAt(metadata, scheduledFrame);
+			int renderedFrame = scheduledFrame <= track.renderedAccumulatedFrameFloor
+				? track.renderedAccumulatedFrame : animationFrameAt(metadata, scheduledFrame);
 			if (logAnimationData)
 			{
 				log.debug("Billboard animation: actor={}, track={}, animation={}, rawFrame={}, totalFrames={}, frameStep={}, loopStart={}, detectedLoopReset={}, deterministic={}, frameInterval={}, accumulatedFrame={}, scheduledFrame={}, renderedFrame={}",
@@ -115,6 +121,7 @@ public class AnimationFrameSnapper
 		}
 
 		int normalizedFrame = snap(metadata, frame, visibleFrameCount, deterministicLooping, false, false);
+		normalizedFrame = Math.max(normalizedFrame, track.renderedFrameFloor);
 		if (logAnimationData)
 		{
 			log.debug("Billboard animation: actor={}, track={}, animation={}, rawFrame={}, totalFrames={}, frameStep={}, loopStart={}, detectedLoopReset={}, deterministic={}, visibleFrames={}, renderedFrame={}",
@@ -123,6 +130,27 @@ public class AnimationFrameSnapper
 		}
 		track.lastFrame = frame;
 		return normalizedFrame;
+	}
+
+	/** Called only after a resize-forced sprite has successfully captured the live pose. */
+	public void commitActorLivePose(Actor actor, int animationId, int animationFrame, int poseAnimationId, int poseFrame)
+	{
+		ActorAnimationState state = actorAnimationStates.get(actor);
+		if (state != null)
+		{
+			commitLiveTrack(state.action, animationId, animationFrame);
+			commitLiveTrack(state.pose, poseAnimationId, poseFrame);
+		}
+	}
+
+	private void commitLiveTrack(AnimationTrack track, int animationId, int frame)
+	{
+		if (animationId >= 0 && frame >= 0 && track.animationId == animationId && track.lastFrame == frame)
+		{
+			track.renderedFrameFloor = frame;
+			track.renderedAccumulatedFrameFloor = track.accumulatedFrame;
+			track.renderedAccumulatedFrame = frame;
+		}
 	}
 
 	public int snapFrame(Animation animation, int frame, boolean enabled, int visibleFrameCount)
@@ -306,12 +334,17 @@ public class AnimationFrameSnapper
 		private int animationId = -1;
 		private int lastFrame = -1;
 		private long accumulatedFrame;
+		private int renderedFrameFloor = -1;
+		private long renderedAccumulatedFrameFloor = -1;
+		private int renderedAccumulatedFrame = -1;
 
 		private void start(int animationId, int frame)
 		{
 			this.animationId = animationId;
 			lastFrame = -1;
 			accumulatedFrame = frame;
+			renderedFrameFloor = -1;
+			renderedAccumulatedFrameFloor = -1;
 		}
 
 		private void reset()
@@ -319,6 +352,8 @@ public class AnimationFrameSnapper
 			animationId = -1;
 			lastFrame = -1;
 			accumulatedFrame = 0;
+			renderedFrameFloor = -1;
+			renderedAccumulatedFrameFloor = -1;
 		}
 	}
 }

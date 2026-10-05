@@ -81,6 +81,16 @@ public class ActorBillboardBoundsTest
 		assertFalse(sampler.sample(actor, initial).exceedsResizeThreshold(displayed, 10));
 		assertTrue(sampler.sample(actor, model(70, 50, true)).exceedsResizeThreshold(displayed, 10));
 		assertTrue(sampler.sample(actor, model(50, 70, true)).exceedsResizeThreshold(displayed, 10));
+		// A box-only trigger does not need to fetch/project all hull vertices.
+		Model resizedBox = proxy(Model.class, method("getAABB", proxy(AABB.class,
+			method("getExtremeX", 70), method("getExtremeY", 50), method("getExtremeZ", 10), method("getCenterY", -50))),
+			com.kierenboal.npcsnap.TestProxies.methodSupplier("getVerticesX", () ->
+			{
+				throw new AssertionError("An independent box trigger must skip hull projection");
+			}));
+		assertTrue(sampler.sampleForResize(actor, resizedBox, displayed, 10).exceedsResizeThreshold(displayed, 10));
+		// An unchanged box must still check the hull independently.
+		assertTrue(sampler.sampleForResize(actor, model(70, 50, true), displayed, 10).exceedsResizeThreshold(displayed, 10));
 		// Missing AABB does not prevent the independent hull check.
 		assertTrue(sampler.sample(actor, model(70, 50, false)).exceedsResizeThreshold(displayed, 10));
 		assertNull(sampler.sample(actor, null));

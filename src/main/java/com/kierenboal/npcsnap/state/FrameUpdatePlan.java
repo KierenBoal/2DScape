@@ -1,10 +1,13 @@
 package com.kierenboal.npcsnap.state;
 
+import java.util.EnumSet;
+
 public final class FrameUpdatePlan
 {
 	public final double qualityScale;
 	public final boolean forceHoverInteractionRedraw;
 	public final boolean forceActorResizeRedraw;
+	public final EnumSet<BillboardRedrawReason> redrawReasons = EnumSet.noneOf(BillboardRedrawReason.class);
 	public final BillboardUpdateState updateState;
 	public final UpdateHeuristicSnapshot snapshot;
 	public final int gameCycle;
@@ -40,6 +43,14 @@ public final class FrameUpdatePlan
 		this.qualityScale = qualityScale;
 		this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
 		this.forceActorResizeRedraw = forceActorResizeRedraw;
+		if (forceHoverInteractionRedraw)
+		{
+			redrawReasons.add(BillboardRedrawReason.INTERACTION_CHANGE);
+		}
+		if (forceActorResizeRedraw)
+		{
+			redrawReasons.add(BillboardRedrawReason.ACTOR_RESIZE);
+		}
 		this.updateState = updateState;
 		this.snapshot = snapshot;
 		this.gameCycle = gameCycle;

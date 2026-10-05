@@ -5,9 +5,14 @@ import com.kierenboal.npcsnap.rendering.BillboardDepthSurface;
 import com.kierenboal.npcsnap.rendering.BillboardFrameBuffer;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
+import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
+import com.kierenboal.npcsnap.rendering.VerticalAnchor;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Polygon;
 import net.runelite.api.Client;
+import net.runelite.api.Model;
+import net.runelite.api.Renderable;
+import net.runelite.api.coords.LocalPoint;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
@@ -24,6 +29,55 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardOcclusionMaskTest
 {
+	@Test
+	public void cachedSpriteOcclusionDoesNotAlternateWhenAnotherEntityReusesTheModel()
+	{
+		float[] vertexY = {0, 0, -100, -100};
+		Model shared = proxy(Model.class, method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}), method("getVerticesY", vertexY),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+		Renderable actor = proxy(Renderable.class, method("getModelHeight", 100));
+		Client client = proxy(Client.class, method("getCameraFpY", -1000f),
+			method("get3dZoom", 512), method("getViewportHeight", 8));
+		BillboardDepthCalculator depth = new BillboardDepthCalculator(client);
+		BufferedImage sprite = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+		for (int y = 0; y < 8; y++)
+		{
+			for (int x = 0; x < 8; x++) { sprite.setRGB(x, y, 0xFF804020); }
+		}
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+			draw -> BillboardDepthSurface.from(depth, draw, 0));
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.LOW, BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
+		{
+			for (int frame = 0; frame < 6; frame++)
+			{
+				vertexY[2] = vertexY[3] = -100;
+				BillboardRenderRequest request = new BillboardRenderRequest(actor, shared, new LocalPoint(0, 0),
+					0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+				PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
+					new BillboardRenderResult(new Rectangle(0, 0, 8, 8), sprite, new Rectangle(-20, -100, 40, 100)), 1);
+				// A later animated entity/scenery lookup overwrites the shared backing arrays.
+				// The displayed sprite and its mask have not changed between these frames.
+				vertexY[2] = vertexY[3] = frame % 2 == 0 ? -100 : -1;
+				mask.prepare(Arrays.asList(
+					new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 4, 8), 20f, "opaque leaf"),
+					new BillboardOcclusionMask.Occluder(new Rectangle(4, 0, 4, 8), 20f, "translucent leaf", 128, 0x102030)),
+					quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, 0, 0, 8, 8, null, null);
+				buffer.begin(8, 8);
+				buffer.blit(draw, 0, 0, 8, 8, false);
+				assertEquals("Opaque leaf at " + quality + " frame " + frame, 0, buffer.image().getRGB(1, 1));
+				assertEquals("Translucent leaf at " + quality + " frame " + frame,
+					mask.tintPixel(6, 1, 1000, 0xFF804020), buffer.image().getRGB(6, 1));
+				buffer.begin(8, 8);
+				buffer.blit(draw, 0, 0, 8, 8, true);
+				assertEquals(new java.awt.Color(255, 32, 32, 150).getRGB(), buffer.image().getRGB(1, 1));
+				assertEquals(0xFF804020, sprite.getRGB(1, 1));
+			}
+		}
+	}
+
 	@Test
 	public void billboardCanIgnoreItsOwnWorldObjectOccluder()
 	{

@@ -8,7 +8,9 @@
 
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
-Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players update their sprite early when their model bounding box or hull width or height changes significantly. It defaults to **10%**; set it to **0%** to disable the check. Resize redraws still respect the per-frame drawing budget.
+Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players update their sprite early when their model bounding box or hull width or height changes significantly. It defaults to **50%**; set it to **0%** to disable the check. Resize redraws still respect the per-frame drawing budget.
+
+After a resize redraw captures a live pose, normal frame snapping holds that pose until it catches up, avoiding backward jumps. **Show sprite redraws** in Debug displays the reasons inside each redrawn sprite, separated by commas when several changes caused the redraw.
 
 ![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.png)
 
@@ -23,11 +25,12 @@ Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players 
 - Large crowds render well on average hardware, there are config options to reduce how much occlusion culling and how much billboards can update per frame, so you can configure this for a toaster if performance is ever an issue
 - Special attacks work too including their graphics
 - All Spells work, so yes, the Ice Barrage blocks show up as 2D.
-- Sailing partially works, just doesn't work on boat hulls, maybe I'll look into this in the future, crew and Sailing NPCs still render.
+- Sailing partially works; boat hulls still use the normal renderer. Crew sprites and effects follow their parent boat's overlap visibility and Entity Hider's boat settings.
+- NPC sprites extending below their tile surface are clipped there, so submerged NPCs stay under the water without shifting their sprites.
 
 ![Retro skilling bubbles](md_imgs/skilling_bubbles.png)
 
-Get a skilling XP drop and a little retro bubble pops up above your character, just like in RSC.
+Get a skilling XP drop and a little retro bubble pops up above your character, just like in RSC. The bubble, icons, and trailing puffs shrink gently with camera zoom, using 1024 as their normal-size reference and retaining about 87% of that size at 512 and 79% at 315.
 
 ![Exported sprite frames](md_imgs/sprite_export.png)
 

@@ -265,6 +265,12 @@ public final class BillboardWorldOcclusionCollector
 		debugLastLoggedCycle = gameCycle;
 		log.debug("Billboard adaptive occlusion {}", occlusionMask.drainDebugStats());
 		log.debug("Billboard renderer visibility at collection {}", collectedVisibility);
+		WorldView worldView = client.getTopLevelWorldView();
+		if (worldView != null)
+		{
+			log.debug("Billboard occlusion scene base=({},{}) plane={} worldView={} instance={}",
+				worldView.getBaseX(), worldView.getBaseY(), worldView.getPlane(), worldView.getId(), worldView.isInstance());
+		}
 		log.debug("Billboard scenery model inputs directModels={} unavailableModels={} hiddenFaces={} opaqueFaces={} partialTransparencyFaces={} fullyTransparentFaces={}",
 			debugDirectModels, debugUnavailableModels, debugHiddenFaces, debugOpaqueFaces, debugPartiallyTransparentFaces, debugFullyTransparentFaces);
 		log.debug(

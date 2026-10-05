@@ -411,7 +411,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Mark sprites on the frame when the plugin redraws their picture.", section = debugSection, position = 4)
+	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Mark sprites when their picture is redrawn and show the comma-separated redraw reasons inside.", section = debugSection, position = 4)
 	default boolean debugShowFrameRedraws()
 	{
 		return false;

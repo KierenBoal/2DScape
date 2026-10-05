@@ -116,7 +116,7 @@ public final class BillboardRenderRequestFactory
 		return request(
 			actor, model, mainWorldLocation,
 			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
-			Math.max(0, actor.getAnimationHeightOffset()),
+			actor.getAnimationHeightOffset(),
 			orientationCalculator.relativeYaw(actor,
 				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor)),
 			orientationCalculator.relativePitch(actor),

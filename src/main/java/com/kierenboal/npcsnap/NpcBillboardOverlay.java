@@ -16,6 +16,7 @@ import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
 import com.kierenboal.npcsnap.occlusion.BillboardWorldOcclusionCollector;
 import com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility;
+import com.kierenboal.npcsnap.occlusion.BillboardNpcSurfaceOcclusion;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 import com.kierenboal.npcsnap.rendering.BillboardAngleUtils;
@@ -50,6 +51,7 @@ import com.kierenboal.npcsnap.state.BillboardCacheKey;
 import com.kierenboal.npcsnap.state.BillboardCachePreviewKey;
 import com.kierenboal.npcsnap.state.BillboardCacheStore;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+import com.kierenboal.npcsnap.state.BillboardRedrawReason;
 import com.kierenboal.npcsnap.state.BillboardUpdateQueue;
 import com.kierenboal.npcsnap.state.BillboardUpdateScheduler;
 import com.kierenboal.npcsnap.state.BillboardUpdateScore;
@@ -77,6 +79,7 @@ import com.kierenboal.npcsnap.targeting.ObservedTileObject;
 import com.kierenboal.npcsnap.targeting.ObservedTileObjectBuilder;
 import com.kierenboal.npcsnap.targeting.OccupiedTileKey;
 import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
+import com.kierenboal.npcsnap.targeting.BillboardWorldViewVisibility;
 
 import java.awt.Color;
 import java.awt.Dimension;
@@ -137,6 +140,7 @@ class NpcBillboardOverlay extends Overlay
 	private final ItemManager itemManager;
 	private final NpcSnapConfig config;
 	private final NpcSnapDebug debug;
+	private final AnimationFrameSnapper animationFrameSnapper;
 	private final BillboardDepthCalculator depthCalculator;
 	private final BillboardWorldOcclusionCollector worldOcclusionCollector;
 	private WorldView occlusionWorldView;
@@ -158,6 +162,7 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<BillboardTargetKey, FrameUpdatePlan> frameUpdatePlans = new HashMap<>();
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<Actor> forceActorResizeRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Map<Actor, Boolean> actorResizeObservations = new IdentityHashMap<>();
 	private final ActorBillboardBounds.Sampler actorBoundsSampler;
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask(performanceMetrics);
@@ -178,15 +183,23 @@ class NpcBillboardOverlay extends Overlay
 	private int lastSkewDebugCameraPitch = Integer.MIN_VALUE;
 	private int lastSkewDebugCameraYaw = Integer.MIN_VALUE;
 	private volatile boolean active;
+	private final BillboardWorldViewVisibility worldViewVisibility;
 
-	@Inject
 	NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper, BillboardSceneVisibility sceneVisibility)
 	{
+		this(client, itemManager, config, debug, animationFrameSnapper, sceneVisibility, null);
+	}
+
+	@Inject
+	NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, AnimationFrameSnapper animationFrameSnapper, BillboardSceneVisibility sceneVisibility, BillboardWorldViewVisibility worldViewVisibility)
+	{
 		this.client = client;
+		this.worldViewVisibility = worldViewVisibility;
 		this.actorBoundsSampler = new ActorBillboardBounds.Sampler(client);
 		this.itemManager = itemManager;
 		this.config = config;
 		this.debug = debug;
+		this.animationFrameSnapper = animationFrameSnapper;
 		this.depthCalculator = new BillboardDepthCalculator(client);
 		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, performanceMetrics, log, sceneVisibility);
 		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
@@ -269,6 +282,10 @@ class NpcBillboardOverlay extends Overlay
 	void setActive(boolean active)
 	{
 		this.active = active;
+		if (!active && worldViewVisibility != null)
+		{
+			worldViewVisibility.clear();
+		}
 	}
 
 	private void drawPerformanceMetrics(Graphics2D graphics)
@@ -354,6 +371,7 @@ class NpcBillboardOverlay extends Overlay
 		frameUpdatePlans.clear();
 		forceHoverInteractionRedraws.clear();
 		forceActorResizeRedraws.clear();
+		actorResizeObservations.clear();
 	}
 
 	void clearTileObjects()
@@ -377,11 +395,17 @@ class NpcBillboardOverlay extends Overlay
 	{
 		billboardCache.clear();
 		forceActorResizeRedraws.clear();
+		actorResizeObservations.clear();
+	}
+
+	boolean isActorWorldViewVisible(Actor actor)
+	{
+		return worldViewVisibility == null || worldViewVisibility.isVisible(actor);
 	}
 
 	boolean shouldForceActorResizeRedraw(Actor actor)
 	{
-		if (!config.enable2dBillboardSprites() || !config.enableAnimationFrameSnapping()
+		if (!isActorWorldViewVisible(actor) || !config.enable2dBillboardSprites() || !config.enableAnimationFrameSnapping()
 			|| config.redrawOnClickboxResizePercent() <= 0)
 		{
 			return false;
@@ -391,9 +415,29 @@ class NpcBillboardOverlay extends Overlay
 		{
 			return false;
 		}
+		Boolean observedResize = actorResizeObservations.get(actor);
+		if (observedResize != null)
+		{
+			return observedResize;
+		}
 		// Called before the actor's action/pose frames are snapped for this render.
-		ActorBillboardBounds current = sampleActorBounds(actor, null);
-		if (current != null && current.exceedsResizeThreshold(cached.actorBounds, config.redrawOnClickboxResizePercent()))
+		ActorBillboardBounds current;
+		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Measure actor resize"))
+		{
+			try
+			{
+				current = actorBoundsSampler.sampleForResize(actor, actor.getModel(), cached.actorBounds,
+					config.redrawOnClickboxResizePercent());
+			}
+			catch (RuntimeException ex)
+			{
+				log.debug("Unable to measure actor sprite bounds", ex);
+				current = null;
+			}
+		}
+		boolean resized = current != null && current.exceedsResizeThreshold(cached.actorBounds, config.redrawOnClickboxResizePercent());
+		actorResizeObservations.put(actor, resized);
+		if (resized)
 		{
 			forceActorResizeRedraws.add(actor);
 			return true;
@@ -445,7 +489,12 @@ class NpcBillboardOverlay extends Overlay
 
 	void beginFrame()
 	{
+		if (worldViewVisibility != null)
+		{
+			worldViewVisibility.beginFrame();
+		}
 		forceActorResizeRedraws.clear();
+		actorResizeObservations.clear();
 		performanceMetrics.beginFrame(config.debugPerformanceMetrics());
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Begin frame"))
 		{
@@ -886,6 +935,11 @@ class NpcBillboardOverlay extends Overlay
 
 	private void renderTarget(BillboardTarget target, int paintOrder, List<PreparedBillboardDraw> preparedDraws)
 	{
+		Actor owner = targetOwnerActor(target);
+		if (owner != null && !isActorWorldViewVisible(owner))
+		{
+			return;
+		}
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Per-target billboard render"))
 		{
 			if (target.type == BillboardTargetType.GROUND_ITEM && config.useInventorySpritesForGroundItems())
@@ -918,7 +972,8 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			isReadyToRedrawDebug(target);
-			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder));
+			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder, null,
+				BillboardNpcSurfaceOcclusion.firstOccludedRow(client, depthCalculator, request)));
 		}
 	}
 
@@ -947,7 +1002,9 @@ class NpcBillboardOverlay extends Overlay
 		CachedBillboard cached = billboardCache.get(item);
 		if (cached == null || !cached.key.equals(cacheKey) || !cached.bounds.equals(bounds))
 		{
+			Set<BillboardRedrawReason> reasons = BillboardRedrawReason.cacheChanges(cached, cacheKey, bounds, nowMillis);
 			cached = new CachedBillboard(cacheKey, bounds, prepareGroundItemSprite(inventorySprite, request), nowMillis);
+			cached.markDebugFrameRedrawn(reasons);
 			billboardCache.put(item, cached);
 		}
 
@@ -1092,7 +1149,8 @@ class NpcBillboardOverlay extends Overlay
 			cached != null && cached.consumeDebugFrameRedrawn(),
 			cached != null && cached.consumeDebugFrameInvalidated(),
 			cached != null ? cached.consumeDebugFrameInvalidatedColor() : null,
-			cached != null ? cached.stateDebugInfo() : null
+			cached != null ? cached.stateDebugInfo() : null,
+			cached != null ? cached.consumeDebugRedrawReasons() : Collections.emptySet()
 		);
 		debug.drawBillboardDebugForeground(graphics, renderDebug);
 	}
@@ -1295,7 +1353,7 @@ class NpcBillboardOverlay extends Overlay
 
 		BillboardRenderRequest request = draw.request;
 		double baseHeight = tileHeightAt(request.localPoint.getX(), request.localPoint.getY(), request.plane);
-		return BillboardDepthSurface.from(depthCalculator, request, draw.sourceBounds, draw.bounds, baseHeight);
+		return BillboardDepthSurface.from(depthCalculator, draw, baseHeight);
 	}
 
 	private List<BillboardTarget> getVisibleTargets(WorldView worldView)
@@ -1305,7 +1363,11 @@ class NpcBillboardOverlay extends Overlay
 		List<BillboardTarget> visibleTargets = new ArrayList<>(activeRenderableTargets.size() + visibility.activeTileObjects.size());
 		for (BillboardTarget target : activeRenderableTargets.values())
 		{
-			visibleTargets.add(target);
+			Actor owner = targetOwnerActor(target);
+			if (owner == null || isActorWorldViewVisible(owner))
+			{
+				visibleTargets.add(target);
+			}
 		}
 
 		for (TileObject tileObject : visibility.activeTileObjects)
@@ -2162,7 +2224,7 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (WorldView nested : topLevel.worldViews())
 			{
-				if (nested != null)
+				if (nested != null && (worldViewVisibility == null || worldViewVisibility.isVisible(nested)))
 				{
 					appendOrderedIdentityDistinct(nested.players(), players, seen);
 				}
@@ -2176,7 +2238,7 @@ class NpcBillboardOverlay extends Overlay
 		LocalPoint point = WorldViewLocationResolver.toMainWorld(topLevel, player);
 		return point == null ? Double.NEGATIVE_INFINITY : depthCalculator.cameraDistance(
 			point, player.getWorldView().isTopLevel() ? player.getWorldView().getPlane() : 0,
-			Math.max(0, player.getAnimationHeightOffset()) + (player.getModelHeight() / 2.0));
+			player.getAnimationHeightOffset() + (player.getModelHeight() / 2.0));
 	}
 
 	private List<NPC> allNpcs(WorldView topLevel)
@@ -2188,7 +2250,7 @@ class NpcBillboardOverlay extends Overlay
 		{
 			for (WorldView nested : topLevel.worldViews())
 			{
-				if (nested != null)
+				if (nested != null && (worldViewVisibility == null || worldViewVisibility.isVisible(nested)))
 				{
 					appendOrderedIdentityDistinct(nested.npcs(), npcs, seen);
 				}
@@ -2197,7 +2259,7 @@ class NpcBillboardOverlay extends Overlay
 		return npcs;
 	}
 
-	private static <T> void appendOrderedIdentityDistinct(
+	private <T extends Actor> void appendOrderedIdentityDistinct(
 		Iterable<? extends T> source,
 		List<T> destination,
 		Set<T> seen)
@@ -2209,7 +2271,7 @@ class NpcBillboardOverlay extends Overlay
 
 		for (T value : source)
 		{
-			if (value != null && seen.add(value))
+			if (value != null && isActorWorldViewVisible(value) && seen.add(value))
 			{
 				destination.add(value);
 			}
@@ -3113,6 +3175,10 @@ class NpcBillboardOverlay extends Overlay
 						);
 						cacheInvalidated = updatePlan.isForcedRedraw()
 							|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
+						if (cacheInvalidated)
+						{
+							updatePlan.redrawReasons.addAll(BillboardRedrawReason.cacheChanges(cached, cacheKey, imageBounds, nowMillis));
+						}
 						if (!cacheInvalidated && cached != null)
 						{
 							cached.touch(nowMillis);
@@ -3137,8 +3203,15 @@ class NpcBillboardOverlay extends Overlay
 								&& config.enableAnimationFrameSnapping() && config.redrawOnClickboxResizePercent() > 0
 								? sampleActorBounds((Actor) renderable, model) : null;
 							cached = new CachedBillboard(cacheKey, imageBounds, sourceBounds, rendered, nowMillis, actorBounds);
-							cached.markDebugFrameRedrawn();
+							cached.markDebugFrameRedrawn(updatePlan.redrawReasons);
 							billboardCache.put(renderable, cached);
+							if (renderable instanceof Actor && updatePlan.forceActorResizeRedraw)
+							{
+								animationFrameSnapper.commitActorLivePose((Actor) renderable, request.animationId,
+									request.animationFrame, request.poseAnimationId, request.poseAnimationFrame);
+								actorResizeObservations.remove(renderable);
+								forceActorResizeRedraws.remove(renderable);
+							}
 							spriteRedrawn = true;
 							updatePlanSucceeded = true;
 						}

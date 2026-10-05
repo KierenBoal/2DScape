@@ -14,6 +14,9 @@ public final class PreparedBillboardDraw
 	public final Rectangle sourceBounds;
 	public final BillboardDrawGeometry geometry;
 	public final TileObject occlusionIgnoredTileObject;
+	public final int surfaceOcclusionRow;
+	public final int modelHeight;
+	public final boolean supportsWorldOcclusion;
 
 	public PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
 	{
@@ -26,6 +29,16 @@ public final class PreparedBillboardDraw
 		int paintOrder,
 		TileObject occlusionIgnoredTileObject)
 	{
+		this(request, result, paintOrder, occlusionIgnoredTileObject, Integer.MAX_VALUE);
+	}
+
+	public PreparedBillboardDraw(
+		BillboardRenderRequest request,
+		BillboardRenderResult result,
+		int paintOrder,
+		TileObject occlusionIgnoredTileObject,
+		int surfaceOcclusionRow)
+	{
 		this.request = request;
 		this.result = result;
 		this.paintOrder = paintOrder;
@@ -34,6 +47,12 @@ public final class PreparedBillboardDraw
 		this.sourceBounds = result != null ? result.sourceBounds : null;
 		this.geometry = result != null ? result.geometry : null;
 		this.occlusionIgnoredTileObject = occlusionIgnoredTileObject;
+		this.surfaceOcclusionRow = surfaceOcclusionRow;
+		// Animated models can reuse their model and vertex buffers on the next
+		// getModel() call. Capture these scalars before preparing other entities
+		// or gathering scenery; compositing must not reclassify overwritten data.
+		this.modelHeight = BillboardDepthSurface.modelHeight(request);
+		this.supportsWorldOcclusion = modelHeight > 0 && BillboardDepthSurface.supportsWorldOcclusion(request);
 	}
 }
 

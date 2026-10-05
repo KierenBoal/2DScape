@@ -179,6 +179,29 @@ public class BillboardDepthSurfaceTest
 	}
 
 	@Test
+	public void preparedFlatSpriteCannotAcquireOcclusionFromALaterUprightModel()
+	{
+		float[] y = {0, 0, -1, -1};
+		Model model = proxy(Model.class, method("getVerticesCount", 4),
+			method("getVerticesX", new float[] {-20, 20, 20, -20}), method("getVerticesY", y),
+			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
+		java.util.concurrent.atomic.AtomicInteger height = new java.util.concurrent.atomic.AtomicInteger(100);
+		Renderable renderable = proxy(Renderable.class,
+			com.kierenboal.npcsnap.TestProxies.methodSupplier("getModelHeight", height::get));
+		BillboardRenderRequest request = new BillboardRenderRequest(renderable, model, new LocalPoint(0, 0),
+			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+		Rectangle bounds = new Rectangle(0, 0, 10, 10);
+		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
+			new BillboardRenderResult(bounds, null, bounds), 1);
+		y[2] = y[3] = -100;
+		height.set(0);
+		BillboardDepthSurface surface = BillboardDepthSurface.from(new BillboardDepthCalculator(client(0, 2048)), draw, 0);
+		assertFalse(surface.supportsWorldOcclusion());
+		assertEquals(100, draw.modelHeight);
+		assertTrue(Double.isFinite(surface.depthAtRow(10, 5)));
+	}
+
+	@Test
 	public void requestProfileControlsWorldOcclusionIndependentlyOfGeometry()
 	{
 		Model flat = proxy(Model.class,

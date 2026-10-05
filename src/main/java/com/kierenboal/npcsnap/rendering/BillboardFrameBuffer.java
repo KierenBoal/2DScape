@@ -70,6 +70,12 @@ public final class BillboardFrameBuffer
 		int clipTop = Math.max(draw.bounds.y, viewportY);
 		int clipRight = Math.min(draw.bounds.x + draw.bounds.width, viewportX + viewportWidth);
 		int clipBottom = Math.min(draw.bounds.y + draw.bounds.height, viewportY + viewportHeight);
+		if (!drawOccludedPixels)
+		{
+			// The water/ground plane is one row cutoff for this NPC. Skip entire
+			// submerged rows before any per-pixel depth or alpha work.
+			clipBottom = Math.min(clipBottom, draw.surfaceOcclusionRow);
+		}
 		if (clipLeft >= clipRight || clipTop >= clipBottom)
 		{
 			return;
@@ -113,6 +119,7 @@ public final class BillboardFrameBuffer
 			// sampling at every slope, including zero. Compute the shear once per row.
 			int rowLeft = geometry.rowLeftAt(y);
 			int clippedRow = y - clipTop;
+			boolean belowSurface = y >= draw.surfaceOcclusionRow;
 			boolean rowHasOcclusion = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
 			long rowOcclusionStart = measureOcclusion && rowHasOcclusion ? System.nanoTime() : 0L;
 			BillboardOcclusionMask.CellResult cachedSampleResult = BillboardOcclusionMask.CellResult.VISIBLE;
@@ -136,6 +143,11 @@ public final class BillboardFrameBuffer
 				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
 				if (sourceAlpha == 0)
 				{
+					continue;
+				}
+				if (belowSurface)
+				{
+					pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(pixels[destinationIndex], DEBUG_OCCLUDED_PIXEL);
 					continue;
 				}
 

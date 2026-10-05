@@ -61,6 +61,11 @@ public final class ActorBillboardBounds
 
 		public ActorBillboardBounds sample(Actor actor, Model model)
 		{
+			return sampleForResize(actor, model, null, 0);
+		}
+
+		public ActorBillboardBounds sampleForResize(Actor actor, Model model, ActorBillboardBounds displayed, int percent)
+		{
 			LocalPoint location = actor.getLocalLocation();
 			WorldView view = actor.getWorldView();
 			if (model == null || location == null || view == null || !view.contains(location))
@@ -69,24 +74,7 @@ public final class ActorBillboardBounds
 			}
 			int orientation = Math.floorMod(actor.getCurrentOrientation(), BillboardAngleUtils.BILLBOARD_FULL_CIRCLE);
 			int height = Perspective.getFootprintTileHeight(client, location, view.getPlane(), actor.getFootprintSize())
-				- Math.max(0, actor.getAnimationHeightOffset());
-			Rectangle hull = null;
-			float[] x = model.getVerticesX();
-			float[] y = model.getVerticesY();
-			float[] z = model.getVerticesZ();
-			if (x != null && y != null && z != null)
-			{
-				int count = Math.min(model.getVerticesCount(), Math.min(x.length, Math.min(y.length, z.length)));
-				if (count > 0)
-				{
-					ensureCapacity(count);
-					Perspective.modelToCanvas(client, view, count, location.getX(), location.getY(), height,
-						orientation, x, z, y, canvasX, canvasY);
-					// The bounds of a convex hull equal the extrema of its projected vertices.
-					hull = projectedBounds(count);
-				}
-			}
-
+				- actor.getAnimationHeightOffset();
 			Rectangle box = null;
 			AABB aabb = model.getAABB(orientation);
 			if (aabb != null)
@@ -102,6 +90,28 @@ public final class ActorBillboardBounds
 				Perspective.modelToCanvas(client, view, 8, location.getX(), location.getY(), height,
 					0, cornersX, cornersY, cornersZ, canvasX, canvasY);
 				box = projectedBounds(8);
+			}
+			// Eight corners can already prove a resize. Only project the complete
+			// vertex set when the model box has not triggered it independently.
+			if (displayed != null && percent > 0 && resized(box, displayed.modelBounds, Math.min(100, percent) / 100.0d))
+			{
+				return new ActorBillboardBounds(box, null);
+			}
+			Rectangle hull = null;
+			float[] x = model.getVerticesX();
+			float[] y = model.getVerticesY();
+			float[] z = model.getVerticesZ();
+			if (x != null && y != null && z != null)
+			{
+				int count = Math.min(model.getVerticesCount(), Math.min(x.length, Math.min(y.length, z.length)));
+				if (count > 0)
+				{
+					ensureCapacity(count);
+					Perspective.modelToCanvas(client, view, count, location.getX(), location.getY(), height,
+						orientation, x, z, y, canvasX, canvasY);
+					// The bounds of a convex hull equal the extrema of its projected vertices.
+					hull = projectedBounds(count);
+				}
 			}
 			return new ActorBillboardBounds(box, hull);
 		}

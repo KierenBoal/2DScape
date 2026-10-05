@@ -64,7 +64,7 @@ public final class BillboardTargetEligibility
 			return true;
 		}
 
-		int verticalOffset = Math.max(0, actor.getAnimationHeightOffset());
+		int verticalOffset = actor.getAnimationHeightOffset();
 		Point canvasPoint = Perspective.localToCanvas(
 			client, actorLocation, actorPlane, verticalOffset + (actor.getModelHeight() / 2));
 		if (isInside(viewport, canvasPoint))

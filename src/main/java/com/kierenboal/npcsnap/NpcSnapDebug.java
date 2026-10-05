@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+import com.kierenboal.npcsnap.state.BillboardRedrawReason;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -12,6 +13,7 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -125,6 +127,11 @@ public class NpcSnapDebug
 			graphics.setColor(frameRedrawColor(renderDebug));
 			graphics.drawRect(bounds.x + (size / 2), bounds.y + (size / 2), bounds.width - size, bounds.height - size);
 			graphics.setStroke(stroke);
+			String reasons = BillboardRedrawReason.format(renderDebug.redrawReasons);
+			if (!reasons.isEmpty())
+			{
+				drawRedrawReasons(graphics, reasons, bounds);
+			}
 		}
 
 		if (config.debugDrawBillboardPaintOrder())
@@ -412,14 +419,83 @@ public class NpcSnapDebug
 		graphics.setFont(oldFont);
 	}
 
+	private void drawRedrawReasons(Graphics2D graphics, String reasons, Rectangle bounds)
+	{
+		if (bounds.width <= 8 || bounds.height <= 8)
+		{
+			return;
+		}
+		Font font = graphics.getFont().deriveFont(Font.BOLD, 12.0f);
+		String[] lines;
+		int textHeight;
+		do
+		{
+			FontMetrics metrics = graphics.getFontMetrics(font);
+			lines = wrapReasonText(reasons, metrics, bounds.width - 8);
+			textHeight = lines.length * metrics.getHeight();
+			if (textHeight <= bounds.height - 8 || font.getSize() <= 7)
+			{
+				break;
+			}
+			font = font.deriveFont(font.getSize2D() - 1.0f);
+		}
+		while (true);
+		Graphics2D labelGraphics = (Graphics2D) graphics.create();
+		try
+		{
+			labelGraphics.clipRect(bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 4);
+			drawCenteredTextBlock(labelGraphics, lines, bounds.x + bounds.width / 2,
+				bounds.y + Math.max(4, (bounds.height - textHeight) / 2), font);
+		}
+		finally
+		{
+			labelGraphics.dispose();
+		}
+	}
+
+	static String[] wrapReasonText(String text, FontMetrics metrics, int maxWidth)
+	{
+		List<String> lines = new ArrayList<>();
+		String line = "";
+		for (String word : text.split(" "))
+		{
+			String candidate = line.isEmpty() ? word : line + " " + word;
+			if (!line.isEmpty() && metrics.stringWidth(candidate) > maxWidth)
+			{
+				lines.add(line);
+				line = "";
+			}
+			while (metrics.stringWidth(word) > maxWidth && word.length() > 1)
+			{
+				int end = word.length() - 1;
+				while (end > 1 && metrics.stringWidth(word.substring(0, end)) > maxWidth)
+				{
+					end--;
+				}
+				lines.add(word.substring(0, end));
+				word = word.substring(end);
+			}
+			line = line.isEmpty() ? word : line + " " + word;
+		}
+		if (!line.isEmpty())
+		{
+			lines.add(line);
+		}
+		return lines.toArray(new String[0]);
+	}
+
 	private void drawCenteredTextBlock(Graphics2D graphics, String[] lines, int centerX, int topY)
+	{
+		drawCenteredTextBlock(graphics, lines, centerX, topY, graphics.getFont().deriveFont(Font.BOLD, 12.0f));
+	}
+
+	private void drawCenteredTextBlock(Graphics2D graphics, String[] lines, int centerX, int topY, Font font)
 	{
 		if (lines == null || lines.length == 0)
 		{
 			return;
 		}
 
-		Font font = graphics.getFont().deriveFont(Font.BOLD, 12.0f);
 		Font oldFont = graphics.getFont();
 		graphics.setFont(font);
 		FontMetrics metrics = graphics.getFontMetrics();
@@ -464,6 +540,7 @@ public class NpcSnapDebug
 		private final boolean readyToRedraw;
 		private final Color readyToRedrawColor;
 		private final StateDebugInfo stateDebugInfo;
+		private final Collection<BillboardRedrawReason> redrawReasons;
 
 		private RenderDebug(
 			BillboardDrawGeometry geometry,
@@ -471,7 +548,8 @@ public class NpcSnapDebug
 			boolean frameRedrawn,
 			boolean readyToRedraw,
 			Color readyToRedrawColor,
-			StateDebugInfo stateDebugInfo
+			StateDebugInfo stateDebugInfo,
+			Collection<BillboardRedrawReason> redrawReasons
 		)
 		{
 			this.geometry = geometry;
@@ -481,6 +559,7 @@ public class NpcSnapDebug
 			this.readyToRedraw = readyToRedraw;
 			this.readyToRedrawColor = readyToRedrawColor;
 			this.stateDebugInfo = stateDebugInfo;
+			this.redrawReasons = redrawReasons;
 		}
 
 		static RenderDebug forGeometry(
@@ -489,9 +568,10 @@ public class NpcSnapDebug
 			boolean spriteRedrawn,
 			boolean readyToRedraw,
 			Color readyToRedrawColor,
-			StateDebugInfo stateDebugInfo)
+			StateDebugInfo stateDebugInfo,
+			Collection<BillboardRedrawReason> redrawReasons)
 		{
-			return new RenderDebug(geometry, paintOrder, spriteRedrawn, readyToRedraw, readyToRedrawColor, stateDebugInfo);
+			return new RenderDebug(geometry, paintOrder, spriteRedrawn, readyToRedraw, readyToRedrawColor, stateDebugInfo, redrawReasons);
 		}
 	}
 

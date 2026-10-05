@@ -95,11 +95,13 @@ public final class BillboardOcclusionDebugSampler
 				float worldDepth = occlusionMask.depthAt(canvasX, canvasY, draw.occlusionIgnoredTileObject);
 				float bias = occlusionMask.occlusionDepthBias();
 				double margin = point.depth - (worldDepth + bias);
-				int transmittance = occlusionMask.transmittanceAt(canvasX, canvasY, point.depth, draw.occlusionIgnoredTileObject);
+				boolean enabled = depthSurface.supportsWorldOcclusion();
+				int transmittance = enabled
+					? occlusionMask.transmittanceAt(canvasX, canvasY, point.depth, draw.occlusionIgnoredTileObject) : 255;
 				samples.add(format(
 					draw, canvasX, canvasY, sourceX, sourceY, sourceAlpha, point,
 					worldDepth, occlusionMask.sourceAt(canvasX, canvasY, draw.occlusionIgnoredTileObject), bias, margin,
-					transmittance));
+					transmittance, enabled));
 			}
 		}
 	}
@@ -121,15 +123,16 @@ public final class BillboardOcclusionDebugSampler
 		String worldSource,
 		float bias,
 		double worldDepthMargin,
-		int transmittance)
+		int transmittance,
+		boolean worldOcclusionEnabled)
 	{
 		BillboardRenderRequest request = draw.request;
 		String target = request != null && request.renderable != null ? request.renderable.getClass().getSimpleName() : "-";
 		return String.format(
 			Locale.ROOT,
-			"{target=%s canvas=(%d,%d) src=(%d,%d) alpha=%d draw=%s sourceBounds=%s modelH=%d local=(%d,%d) h=%s xOff=%s zOff=%s billboardDepth=%s worldDepth=%s worldSource=%s bias=%s worldDepthMargin=%s transmittance=%d occluded=%s}",
+			"{target=%s canvas=(%d,%d) src=(%d,%d) alpha=%d draw=%s sourceBounds=%s modelH=%d worldOcclusionEnabled=%s local=(%d,%d) h=%s xOff=%s zOff=%s billboardDepth=%s worldDepth=%s worldSource=%s bias=%s worldDepthMargin=%s transmittance=%d occluded=%s}",
 			target, canvasX, canvasY, sourceX, sourceY, sourceAlpha, draw.bounds, draw.sourceBounds,
-			request != null && request.renderable != null ? request.renderable.getModelHeight() : -1,
+			draw.modelHeight, worldOcclusionEnabled,
 			point.localX, point.localY, decimal(point.height), decimal(point.horizontalOffset),
 			decimal(point.verticalOffset), decimal(point.depth), decimal(worldDepth),
 			worldSource == null ? "-" : worldSource, decimal(bias), decimal(worldDepthMargin), transmittance, transmittance == 0);

@@ -5,6 +5,10 @@ import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
 
 public final class CachedBillboard implements TimedCacheEntry
 {
@@ -17,6 +21,7 @@ public final class CachedBillboard implements TimedCacheEntry
 	private long lastRedrawMillis;
 	private boolean dirty;
 	private boolean debugFrameRedrawn;
+	private Set<BillboardRedrawReason> debugRedrawReasons = Collections.singleton(BillboardRedrawReason.INITIAL_DRAW);
 	private boolean debugFrameInvalidated;
 	private java.awt.Color debugFrameInvalidatedColor;
 	private NpcSnapDebug.StateDebugInfo stateDebugInfo;
@@ -110,8 +115,11 @@ public final class CachedBillboard implements TimedCacheEntry
 		return wasDirty;
 	}
 
-	public void markDebugFrameRedrawn()
+	public void markDebugFrameRedrawn(Collection<BillboardRedrawReason> reasons)
 	{
+		EnumSet<BillboardRedrawReason> capturedReasons = EnumSet.noneOf(BillboardRedrawReason.class);
+		capturedReasons.addAll(reasons);
+		debugRedrawReasons = Collections.unmodifiableSet(capturedReasons);
 		debugFrameRedrawn = true;
 		debugFrameInvalidated = false;
 		debugFrameInvalidatedColor = null;
@@ -122,6 +130,13 @@ public final class CachedBillboard implements TimedCacheEntry
 		boolean wasRedrawn = debugFrameRedrawn;
 		debugFrameRedrawn = false;
 		return wasRedrawn;
+	}
+
+	public Set<BillboardRedrawReason> consumeDebugRedrawReasons()
+	{
+		Set<BillboardRedrawReason> reasons = debugRedrawReasons;
+		debugRedrawReasons = Collections.emptySet();
+		return reasons;
 	}
 
 	public void markDebugFrameInvalidated()

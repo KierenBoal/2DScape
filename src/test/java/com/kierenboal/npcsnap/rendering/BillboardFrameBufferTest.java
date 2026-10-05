@@ -12,6 +12,59 @@ import static org.junit.Assert.assertEquals;
 public class BillboardFrameBufferTest
 {
 	@Test
+	public void surfaceOcclusionSkipsLowerRowsWithoutMovingOrCroppingTheCachedImage()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(1, 4);
+		BufferedImage source = image(1, 4, new int[] {0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF});
+		Rectangle bounds = new Rectangle(10, 20, 1, 4);
+		BillboardRenderResult result = new BillboardRenderResult(bounds, source, new Rectangle(0, 0, 1, 4));
+		buffer.blit(new PreparedBillboardDraw(null, result, 1, null, 22), 10, 20, 1, 4, false);
+		assertEquals(0xFFFF0000, buffer.image().getRGB(0, 0));
+		assertEquals(0xFF00FF00, buffer.image().getRGB(0, 1));
+		assertEquals(0, buffer.image().getRGB(0, 2));
+		assertEquals(0, buffer.image().getRGB(0, 3));
+		assertEquals(0xFF0000FF, source.getRGB(0, 2));
+		assertEquals(new Rectangle(10, 20, 1, 4), result.bounds);
+		// A shallower NPC/cutoff can retain three quarters of the same sprite.
+		buffer.begin(1, 4);
+		buffer.blit(new PreparedBillboardDraw(null, result, 1, null, 23), 10, 20, 1, 4, false);
+		assertEquals(0xFF0000FF, buffer.image().getRGB(0, 2));
+		assertEquals(0, buffer.image().getRGB(0, 3));
+	}
+
+	@Test
+	public void fullySubmergedSpritesDoNotHideFartherSpritesOrWritePaintOrder()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(1, 1);
+		PreparedBillboardDraw submerged = new PreparedBillboardDraw(null,
+			new BillboardRenderResult(new Rectangle(0, 0, 1, 1), image(1, 1, new int[] {0xFFFF0000}), new Rectangle(1, 1)),
+			10, null, 0);
+		buffer.blit(submerged, 0, 0, 1, 1, false);
+		buffer.blit(draw(image(1, 1, new int[] {0xFF0000FF}), new Rectangle(0, 0, 1, 1), 5), 0, 0, 1, 1, false);
+		assertEquals(0xFF0000FF, buffer.image().getRGB(0, 0));
+	}
+
+	@Test
+	public void surfaceOcclusionHonorsShearAndTheExistingOccludedPixelDebugMode()
+	{
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(3, 2);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.sheared(
+			new Rectangle(0, 0, 2, 2), 1.0d, 0.0d, 2.0d, 1.0d, 0.0d);
+		BufferedImage source = image(2, 2, new int[] {0xFFFF0000, 0xFFFF0000, 0xFFFF0000, 0xFFFF0000});
+		PreparedBillboardDraw submerged = new PreparedBillboardDraw(null,
+			new BillboardRenderResult(geometry, source, new Rectangle(2, 2)), 1, null, 1);
+		buffer.blit(submerged, 0, 0, 3, 2, false);
+		assertEquals(0xFFFF0000, buffer.image().getRGB(1, 0));
+		assertEquals(0, buffer.image().getRGB(0, 1));
+		buffer.begin(3, 2);
+		buffer.blit(submerged, 0, 0, 3, 2, true);
+		assertEquals(new java.awt.Color(255, 32, 32, 150).getRGB(), buffer.image().getRGB(0, 1));
+		assertEquals(0, buffer.image().getRGB(2, 1));
+	}
+	@Test
 	public void blitsOpaqueAndTransparentPixelsIntoViewportBuffer()
 	{
 		BillboardFrameBuffer buffer = buffer();
