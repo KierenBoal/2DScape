@@ -7,6 +7,25 @@ import static org.junit.Assert.assertTrue;
 public class BillboardUpdateScoreTest
 {
 	@Test
+	public void resizePrioritySitsBetweenInteractionAndOrdinaryStateChanges()
+	{
+		BillboardUpdateState state = new BillboardUpdateState(1d);
+		UpdateHeuristicSnapshot initial = snapshot(100d);
+		state.observe(initial);
+		state.advance(1, 1, 1d, initial, 1);
+		UpdateHeuristicSnapshot changed = new UpdateHeuristicSnapshot(100d, 2, 2, 99, 2, 2, true);
+		double ordinary = BillboardUpdateScore.compute(false, false, false, true, true, true, true, true,
+			state, changed, 100, 0);
+		double resize = BillboardUpdateScore.compute(true, false, true, false, false, false, false, false,
+			state, initial, 2, 100);
+		double changedResize = BillboardUpdateScore.compute(false, false, true, true, true, true, true, true,
+			state, changed, 100, 0);
+		double interaction = BillboardUpdateScore.compute(true, true, false, false, false, false, false, false,
+			state, initial, 2, 100);
+		assertTrue(resize > ordinary);
+		assertTrue(interaction > changedResize);
+	}
+	@Test
 	public void uncachedAndInteractionTargetsOutrankOrdinaryCachedTargets()
 	{
 		double cached = score(true, false, false, false, false, false, false, 0);

@@ -19,7 +19,29 @@ public final class BillboardUpdateScore
 		int gameCycle,
 		int queueIndex)
 	{
+		return compute(hasCachedBillboard, forceInteractionRedraw, false, targetIsPriorityActor,
+			targetIsLocalPlayer, ownerIsLocalPlayer, ownerIsPriorityActor, actorSpotAnimation,
+			state, snapshot, gameCycle, queueIndex);
+	}
+
+	public static double compute(
+		boolean hasCachedBillboard,
+		boolean forceInteractionRedraw,
+		boolean forceActorResizeRedraw,
+		boolean targetIsPriorityActor,
+		boolean targetIsLocalPlayer,
+		boolean ownerIsLocalPlayer,
+		boolean ownerIsPriorityActor,
+		boolean actorSpotAnimation,
+		BillboardUpdateState state,
+		UpdateHeuristicSnapshot snapshot,
+		int gameCycle,
+		int queueIndex)
+	{
+		// Separate priority bands keep resize updates above ordinary state changes,
+		// and interaction updates above resize updates even when both models change.
 		double score = hasCachedBillboard ? 0.0d : 10_000.0d;
+		score += forceInteractionRedraw ? 1_000_000.0d : forceActorResizeRedraw ? 100_000.0d : 0.0d;
 		if (forceInteractionRedraw)
 		{
 			score += 50_000.0d;

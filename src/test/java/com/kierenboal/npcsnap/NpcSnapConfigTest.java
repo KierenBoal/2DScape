@@ -6,6 +6,7 @@ import com.kierenboal.npcsnap.occlusion.BillboardOcclusionComposition;
 import java.awt.Color;
 import org.junit.Test;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -14,6 +15,23 @@ import static org.junit.Assert.assertTrue;
 public class NpcSnapConfigTest
 {
 	private final NpcSnapConfig config = new NpcSnapConfig() { };
+
+	@Test
+	public void resizeThresholdHasDefaultRangeAndPositionBelowFrameLimiting()
+		throws NoSuchMethodException
+	{
+		assertEquals(10, config.redrawOnClickboxResizePercent());
+		ConfigItem item = NpcSnapConfig.class.getMethod("redrawOnClickboxResizePercent").getAnnotation(ConfigItem.class);
+		Range range = NpcSnapConfig.class.getMethod("redrawOnClickboxResizePercent").getAnnotation(Range.class);
+		assertEquals("Redraw on clickbox resize", item.name());
+		assertEquals("redrawOnClickboxResizePercent", item.keyName());
+		assertEquals(NpcSnapConfig.snappingSection, item.section());
+		assertEquals(1, item.position());
+		assertEquals(0, range.min());
+		assertEquals(100, range.max());
+		assertEquals(0, NpcSnapConfig.class.getMethod("enableAnimationFrameSnapping").getAnnotation(ConfigItem.class).position());
+		assertEquals(2, NpcSnapConfig.class.getMethod("animationFrameCount").getAnnotation(ConfigItem.class).position());
+	}
 
 	@Test
 	public void defaultsEnableTheCoreLocalRenderingFeatures()

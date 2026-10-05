@@ -7,6 +7,7 @@ import com.kierenboal.npcsnap.features.SkillingThoughtBubbleOverlay;
 import com.kierenboal.npcsnap.export.BillboardExportBatch;
 import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.export.BillboardPngExporter;
+import com.kierenboal.npcsnap.export.BillboardObjectExportTarget;
 import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
@@ -432,11 +433,14 @@ public class NpcSnapPlugin extends Plugin
 		{
 			return;
 		}
+		BillboardObjectExportTarget objectTarget = source.getActor() == null
+			&& !BillboardHoverInteractionResolver.isGroundItemAction(source.getType())
+			? BillboardObjectExportTarget.snapshot(client, source) : null;
 		client.createMenuEntry(-1)
 			.setOption("Export sprite")
 			.setTarget(source.getTarget())
 			.setType(MenuAction.RUNELITE)
-			.onClick(ignored -> exportBillboard(source));
+			.onClick(ignored -> exportBillboard(source, objectTarget));
 	}
 
 	private void addLocalPlayerExportMenuEntry()
@@ -486,13 +490,14 @@ public class NpcSnapPlugin extends Plugin
 		{
 			return "actor:" + System.identityHashCode(entry.getActor());
 		}
-		return entry.getIdentifier() + ":" + entry.getParam0() + ":" + entry.getParam1()
+		return entry.getWorldViewId() + ":" + entry.getIdentifier() + ":" + entry.getParam0() + ":" + entry.getParam1()
 			+ ":" + (BillboardHoverInteractionResolver.isGroundItemAction(entry.getType()) ? "item" : "object");
 	}
 
-	private void exportBillboard(MenuEntry source)
+	private void exportBillboard(MenuEntry source, BillboardObjectExportTarget objectTarget)
 	{
-		BillboardExportBatch batch = billboardOverlay.captureExport(source);
+		BillboardExportBatch batch = objectTarget != null
+			? billboardOverlay.captureExport(objectTarget) : billboardOverlay.captureExport(source);
 		if (batch == null)
 		{
 			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
@@ -705,6 +710,13 @@ public class NpcSnapPlugin extends Plugin
 		int snappedPoseFrame = animationFrameSnapper.snapActorAnimationFrame(
 			actor, actor.getPoseAnimation(), originalPoseFrame, actionFrameCount,
 			config.deterministicAnimationLooping(), true, config.logBillboardAnimationData());
+		if (billboardOverlay.shouldForceActorResizeRedraw(actor))
+		{
+			// Still advance both snapper tracks above, but capture the live pose when
+			// the geometry differs substantially from the currently displayed sprite.
+			snappedAnimationFrame = originalAnimationFrame;
+			snappedPoseFrame = originalPoseFrame;
+		}
 		debug.recordActorFrames(actor, actor.getAnimation(), originalAnimationFrame, snappedAnimationFrame, originalPoseFrame, snappedPoseFrame);
 
 		if (snappedAnimationFrame == originalAnimationFrame && snappedPoseFrame == originalPoseFrame)

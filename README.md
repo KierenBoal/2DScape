@@ -8,6 +8,8 @@
 
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
+Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players update their sprite early when their model bounding box or hull width or height changes significantly. It defaults to **10%**; set it to **0%** to disable the check. Resize redraws still respect the per-frame drawing budget.
+
 ![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.png)
 
 - NPCs, Players, Pets and even thralls become Doom-style camera-facing billboards
@@ -29,7 +31,7 @@ Get a skilling XP drop and a little retro bubble pops up above your character, j
 
 ![Exported sprite frames](md_imgs/sprite_export.png)
 
-Want to make a sprite sheet? Turn on **Enable shift right-click export PNG** in the config, then Shift-right-click a player, NPC, or pet and choose **Export sprite**. Shift-right-click your equipment tab to export yourself. The plugin saves the angles and animation frames as transparent PNGs, ready to put into a 2D sprite sheet for a game lol that'd be so sick if someone used it to make the art for a game.
+Want to make a sprite sheet? Turn on **Enable shift right-click export PNG** in the config, then Shift-right-click a player, NPC, pet, or world object and choose **Export sprite**. World objects can be exported even with their billboard setting disabled. Shift-right-click your equipment tab to export yourself. The plugin saves the angles and animation frames as transparent PNGs, ready to put into a 2D sprite sheet for a game lol that'd be so sick if someone used it to make the art for a game.
 
 Exports are saved in RuneLite's `plugin-data/2dscape` directory. The in-game message shows and copies the export folder path.
 

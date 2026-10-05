@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.NpcSnapDebug;
+import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -11,6 +12,7 @@ public final class CachedBillboard implements TimedCacheEntry
 	public final Rectangle bounds;
 	public final Rectangle contentBounds;
 	public final BufferedImage image;
+	public final ActorBillboardBounds actorBounds;
 	private long lastUsedMillis;
 	private long lastRedrawMillis;
 	private boolean dirty;
@@ -31,10 +33,22 @@ public final class CachedBillboard implements TimedCacheEntry
 		BufferedImage image,
 		long lastUsedMillis)
 	{
+		this(key, bounds, contentBounds, image, lastUsedMillis, null);
+	}
+
+	public CachedBillboard(
+		BillboardCacheKey key,
+		Rectangle bounds,
+		Rectangle contentBounds,
+		BufferedImage image,
+		long lastUsedMillis,
+		ActorBillboardBounds actorBounds)
+	{
 		this.key = key;
 		this.bounds = new Rectangle(bounds);
 		this.contentBounds = new Rectangle(contentBounds);
 		this.image = image;
+		this.actorBounds = actorBounds;
 		this.lastUsedMillis = lastUsedMillis;
 		this.lastRedrawMillis = lastUsedMillis;
 		this.dirty = true;

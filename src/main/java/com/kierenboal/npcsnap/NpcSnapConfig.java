@@ -40,28 +40,35 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
+	@Range(min = 0, max = 100)
+	@ConfigItem(keyName = "redrawOnClickboxResizePercent", name = "Redraw on clickbox resize", description = "Redraw an NPC or player immediately when its model or hull width or height changes by more than this percentage. 0 disables the check.", section = snappingSection, position = 1)
+	default int redrawOnClickboxResizePercent()
+	{
+		return 50;
+	}
+
 	@Range(min = 1, max = 120)
-	@ConfigItem(keyName = "animationFrameCount", name = "Frame rate", description = "How many animation updates to show each second. Lower numbers look choppier.", section = snappingSection, position = 1)
+	@ConfigItem(keyName = "animationFrameCount", name = "Frame rate", description = "How many animation updates to show each second. Lower numbers look choppier.", section = snappingSection, position = 2)
 	default int animationFrameCount()
 	{
 		return 4;
 	}
 
-	@ConfigItem(keyName = "enableRotationSnapping", name = "Limit rotation angles", description = "Make sprites turn through a small number of set directions.", section = snappingSection, position = 2)
+	@ConfigItem(keyName = "enableRotationSnapping", name = "Limit rotation angles", description = "Make sprites turn through a small number of set directions.", section = snappingSection, position = 3)
 	default boolean enableRotationSnapping()
 	{
 		return true;
 	}
 
 	@Range(min = 1, max = 32)
-	@ConfigItem(keyName = "numberOfPitchRotationAngles", name = "Number of pitch rotation angles", description = "How many up-and-down directions a sprite can face.", section = snappingSection, position = 3)
+	@ConfigItem(keyName = "numberOfPitchRotationAngles", name = "Number of pitch rotation angles", description = "How many up-and-down directions a sprite can face.", section = snappingSection, position = 4)
 	default int numberOfPitchRotationAngles()
 	{
 		return 1;
 	}
 
 	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "numberOfRotationAngles", name = "Number of yaw rotation angles", description = "How many left-and-right directions a sprite can face.", section = snappingSection, position = 4)
+	@ConfigItem(keyName = "numberOfRotationAngles", name = "Number of yaw rotation angles", description = "How many left-and-right directions a sprite can face.", section = snappingSection, position = 5)
 	default int numberOfYawRotationAngles()
 	{
 		return 4;

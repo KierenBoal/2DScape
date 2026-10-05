@@ -4,6 +4,7 @@ public final class FrameUpdatePlan
 {
 	public final double qualityScale;
 	public final boolean forceHoverInteractionRedraw;
+	public final boolean forceActorResizeRedraw;
 	public final BillboardUpdateState updateState;
 	public final UpdateHeuristicSnapshot snapshot;
 	public final int gameCycle;
@@ -21,14 +22,35 @@ public final class FrameUpdatePlan
 		double fullQualityScale,
 		int minimumAnimatedRedrawInterval)
 	{
+		this(qualityScale, forceHoverInteractionRedraw, false, updateState, snapshot,
+			gameCycle, baseRefreshInterval, fullQualityScale, minimumAnimatedRedrawInterval);
+	}
+
+	public FrameUpdatePlan(
+		double qualityScale,
+		boolean forceHoverInteractionRedraw,
+		boolean forceActorResizeRedraw,
+		BillboardUpdateState updateState,
+		UpdateHeuristicSnapshot snapshot,
+		int gameCycle,
+		int baseRefreshInterval,
+		double fullQualityScale,
+		int minimumAnimatedRedrawInterval)
+	{
 		this.qualityScale = qualityScale;
 		this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
+		this.forceActorResizeRedraw = forceActorResizeRedraw;
 		this.updateState = updateState;
 		this.snapshot = snapshot;
 		this.gameCycle = gameCycle;
 		this.baseRefreshInterval = baseRefreshInterval;
 		this.fullQualityScale = fullQualityScale;
 		this.minimumAnimatedRedrawInterval = minimumAnimatedRedrawInterval;
+	}
+
+	public boolean isForcedRedraw()
+	{
+		return forceHoverInteractionRedraw || forceActorResizeRedraw;
 	}
 
 	public void markRedrawSucceeded()
