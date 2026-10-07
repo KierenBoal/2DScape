@@ -26,17 +26,8 @@ public final class BillboardDepthCalculator
 
 	public double depth(Projectile projectile)
 	{
-		LocalPoint localPoint = BillboardProjectileGeometry.localPoint(projectile);
-		if (localPoint == null)
-		{
-			return Double.NEGATIVE_INFINITY;
-		}
-
-		int heightOffset = BillboardProjectileGeometry.verticalOffset(client, projectile);
-		return cameraDistance(
-			localPoint,
-			projectile.getFloor(),
-			heightOffset + (projectile.getModelHeight() / 2.0));
+		// Use the same flight origin as the sprite, independent of animated height.
+		return cameraDistance(projectile.getX(), projectile.getY(), projectile.getZ());
 	}
 
 	public double depth(GraphicsObject graphicsObject)
@@ -93,7 +84,9 @@ public final class BillboardDepthCalculator
 				continue;
 			}
 
-			double distance = cameraDistance(part.localPoint, part.plane, part.renderable.getModelHeight() / 2.0);
+			// Sort scenery by its fixed world origin, independently of the live
+			// animated height while a previously captured sprite is displayed.
+			double distance = cameraDistance(part.localPoint, part.plane, 0);
 			if (distance < nearest)
 			{
 				nearest = distance;
@@ -105,10 +98,15 @@ public final class BillboardDepthCalculator
 
 	public double cameraDistance(LocalPoint localPoint, int plane, double verticalOffset)
 	{
-		double dx = localPoint.getX() - client.getCameraFpX();
-		double dy = localPoint.getY() - client.getCameraFpY();
 		double groundHeight = Perspective.getTileHeight(client, localPoint, plane);
-		double dz = worldHeight(groundHeight, verticalOffset) - client.getCameraFpZ();
+		return cameraDistance(localPoint.getX(), localPoint.getY(), worldHeight(groundHeight, verticalOffset));
+	}
+
+	private double cameraDistance(double localX, double localY, double worldZ)
+	{
+		double dx = localX - client.getCameraFpX();
+		double dy = localY - client.getCameraFpY();
+		double dz = worldZ - client.getCameraFpZ();
 		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
 	}
 

@@ -381,6 +381,12 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "ignoreCameraAwareRotation", name = "Ignore camera aware rotation", description = "Use camera yaw alone as the viewing direction for NPC and player sprites, ignoring the camera's position relative to each actor.", section = retroSection, position = 13)
+	default boolean ignoreCameraAwareRotation()
+	{
+		return false;
+	}
+
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
 	{

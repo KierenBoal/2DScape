@@ -74,22 +74,21 @@ public final class BillboardRenderRequestFactory
 			return null;
 		}
 
-		DynamicObject dynamicObject = part.renderable instanceof DynamicObject ? (DynamicObject) part.renderable : null;
-		int originalFrame = dynamicObject != null ? dynamicObject.getAnimFrame() : -1;
-		int snappedFrame = dynamicObject != null
-			? snapFrame(dynamicObject.getAnimation(), originalFrame, config.enableAnimationFrameSnapping())
-			: -1;
-		int animationId = dynamicObject != null && dynamicObject.getAnimation() != null
-			? dynamicObject.getAnimation().getId()
-			: target.tileObject.getId();
-		NpcSnapDebug.FrameDebugInfo frameDebugInfo = snappedFrame >= 0
-			? NpcSnapDebug.FrameDebugInfo.of(animationId, originalFrame, snappedFrame)
-			: null;
 		Model model = safeModel(part.renderable);
 		if (model == null)
 		{
 			return null;
 		}
+		DynamicObject dynamicObject = part.renderable instanceof DynamicObject ? (DynamicObject) part.renderable : null;
+		int originalFrame = dynamicObject != null ? dynamicObject.getAnimFrame() : -1;
+		// DynamicObject has no public frame setter. Its model is the live frame;
+		// the sprite update scheduler holds that capture for the configured interval.
+		int animationId = dynamicObject != null && dynamicObject.getAnimation() != null
+			? dynamicObject.getAnimation().getId()
+			: target.tileObject.getId();
+		NpcSnapDebug.FrameDebugInfo frameDebugInfo = originalFrame >= 0
+			? NpcSnapDebug.FrameDebugInfo.of(animationId, originalFrame, originalFrame)
+			: null;
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return request(
 			part.renderable, model, part.localPoint, part.plane, 0,
@@ -97,7 +96,7 @@ public final class BillboardRenderRequestFactory
 			// still carried on the request for depth/occlusion decisions, but it must
 			// not activate the ground-item minimum pitch here.
 			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
-			animationId, snappedFrame, -1, -1, -1, false, false, lowProfile,
+			animationId, originalFrame, -1, -1, -1, false, false, lowProfile,
 			VerticalAnchor.BOTTOM, frameDebugInfo);
 	}
 
@@ -117,8 +116,8 @@ public final class BillboardRenderRequestFactory
 			actor, model, mainWorldLocation,
 			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
 			actor.getAnimationHeightOffset(),
-			orientationCalculator.relativeYaw(actor,
-				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor)),
+			orientationCalculator.relativeActorBodyYaw(actor,
+				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor), mainWorldLocation),
 			orientationCalculator.relativePitch(actor),
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
 			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
@@ -180,7 +179,7 @@ public final class BillboardRenderRequestFactory
 			projectile, model, BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor(),
 			BillboardProjectileGeometry.verticalOffset(client, projectile),
 			orientationCalculator.relativeYaw(projectile), orientationCalculator.relativePitch(lowProfile),
-			projectile.getId(), snappedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.CENTER,
+			projectile.getId(), snappedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM,
 			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), snappedFrame));
 	}
 

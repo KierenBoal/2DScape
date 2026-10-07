@@ -78,14 +78,13 @@ public final class BillboardTargetEligibility
 
 	public boolean projectile(LocalPoint localPlayerLocation, Projectile projectile, Rectangle viewport)
 	{
-		LocalPoint location = BillboardProjectileGeometry.localPoint(projectile);
 		if (!projectileInWorld(localPlayerLocation, projectile))
 		{
 			return false;
 		}
 
 		Point canvasPoint = Perspective.localToCanvas(
-			client, location, projectile.getFloor(), BillboardProjectileGeometry.verticalOffset(client, projectile));
+			client, (int) projectile.getX(), (int) projectile.getY(), (int) Math.round(projectile.getZ()));
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;

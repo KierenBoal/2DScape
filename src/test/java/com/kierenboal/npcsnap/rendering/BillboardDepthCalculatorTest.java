@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.rendering;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
+import net.runelite.api.Projectile;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
@@ -14,6 +15,20 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardDepthCalculatorTest
 {
+	@Test
+	public void projectileDistanceUsesFractionalFlightOriginWithoutModelHeightOrTerrain()
+	{
+		Client client = proxy(Client.class, method("getCameraFpX", 100.0f),
+			method("getCameraFpY", 200.0f), method("getCameraFpZ", -100.0f));
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+		for (int modelHeight : new int[] {0, 20, 400})
+		{
+			Projectile projectile = proxy(Projectile.class, method("getX", 100.5d),
+				method("getY", 203.0d), method("getZ", -104.0d), method("getModelHeight", modelHeight));
+			assertEquals(Math.sqrt(25.25d), calculator.depth(projectile), 1e-10d);
+		}
+	}
+
 	@Test
 	public void positiveHeightOffsetProjectsAboveTheTile()
 	{

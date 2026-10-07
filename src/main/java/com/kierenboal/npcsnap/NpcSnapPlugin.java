@@ -59,6 +59,7 @@ import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.DrawManager;
@@ -80,6 +81,7 @@ public class NpcSnapPlugin extends Plugin
 	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private final RendererAvailabilityWarning rendererAvailabilityWarning = new RendererAvailabilityWarning();
+	private final NpcSnapChangelog changelog = new NpcSnapChangelog();
 	private boolean pendingSkillXpSeed;
 	private Scene groundItemScene;
 	private NpcSnapUiTextureManager uiTextureManager;
@@ -133,6 +135,7 @@ public class NpcSnapPlugin extends Plugin
 		migrateOcclusionQuality();
 		rendererAvailabilityWarning.reset();
 		active = true;
+		changelog.requestCheck();
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
 		migrateLegacyRetroOverheadConfig();
@@ -351,6 +354,10 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
+		changelog.check(active && client.getGameState() == GameState.LOGGED_IN,
+			() -> configManager.getConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY),
+			message -> client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape", message, null),
+			version -> configManager.setConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY, version));
 		loginXpDropGuard.advanceTick();
 		if (rendererAvailabilityWarning.shouldWarn(
 			client.getGameState() == GameState.LOGGED_IN && config.enable2dBillboardSprites(),
@@ -375,6 +382,7 @@ public class NpcSnapPlugin extends Plugin
 		clearGroundItemState();
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
+			changelog.requestCheck();
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = true;
 			loginXpDropGuard.onLoggedIn();
@@ -390,6 +398,12 @@ public class NpcSnapPlugin extends Plugin
 			ensureUiTextureManager().restore();
 			ensureUiTextureManager().markDirty();
 		}
+	}
+
+	@Subscribe
+	public void onProfileChanged(ProfileChanged profileChanged)
+	{
+		changelog.requestCheck();
 	}
 
 	@Subscribe

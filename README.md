@@ -8,14 +8,21 @@
 
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
+On your first login after an update, 2DScape prints a header such as `2DScape (v1.0.2):`, followed by one `* change` chat line per semicolon-separated entry. Each entry is at most 80 characters, excluding the bullet prefix. Your last seen version is saved per RuneLite configuration profile; a missing or invalid value starts at `1.0.0`, so new users see both `1.0.1` and `1.0.2` once. To add a release, append its semicolon-separated changes to `NpcSnapChangelog` and update `runelite-plugin.properties`; Gradle reads its version from that file. Editing an already-seen release does not replay it.
+
 Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players update their sprite early when their model bounding box or hull width or height changes significantly. It defaults to **50%**; set it to **0%** to disable the check. Resize redraws still respect the per-frame drawing budget.
 
+Animated world-object sprites also follow **Frame rate** when **Limit frame rate** is enabled. RuneLite exposes their current animation frame without a setter, so 2DScape holds each captured sprite until the next update instead of changing the object's native animation frame. This requires world-object sprites to be enabled.
+
 After a resize redraw captures a live pose, normal frame snapping holds that pose until it catches up, avoiding backward jumps. **Show sprite redraws** in Debug displays the reasons inside each redrawn sprite, separated by commas when several changes caused the redraw.
+
+NPC and player sprites use the camera's position relative to each actor to choose their facing angle, with the existing rotation and combat snapping settings still applied. **Ignore camera aware rotation** in Retro restores the previous camera-yaw-only viewing direction; it is unchecked by default. This works independently of **Ignore projection skew correction**. See [camera-aware rotation notes](docs/camera-aware-rotation.md) for the calculation and implementation details.
 
 ![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.png)
 
 - NPCs, Players, Pets and even thralls become Doom-style camera-facing billboards
 - Projectiles and effects are also rendered in 2D
+- Projectile sprites follow the client's current flight position, preserving its arc and launch/impact heights without extra offsets from the animated projectile model.
 - Even Ground items (stuff on the floor) are rendered in 2D, just at a slightly higher angle for visibility
 - You can also enable world objects being converted to 2D, it's really stupid
 

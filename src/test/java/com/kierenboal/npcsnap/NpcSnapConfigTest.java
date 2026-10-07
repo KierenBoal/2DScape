@@ -45,6 +45,7 @@ public class NpcSnapConfigTest
 		assertFalse(config.deterministicAnimationLooping());
 		assertFalse(config.useRetroOverheads());
 		assertFalse(config.ignoreProjectionSkewCorrection());
+		assertFalse(config.ignoreCameraAwareRotation());
 		assertFalse(config.logBillboardAnimationData());
 		assertFalse(config.enableShiftRightClickExportPng());
 	}

@@ -15,10 +15,25 @@ import java.util.HashSet;
 import java.util.Set;
 import net.runelite.api.Model;
 import net.runelite.api.Renderable;
+import net.runelite.api.Animation;
+import net.runelite.api.DynamicObject;
 import org.junit.Test;
 
 public class BillboardUpdateModelsTest
 {
+	@Test
+	public void objectCadenceRequiresAnActiveAnimationAndAnEnabledLimit()
+	{
+		ObjectRenderablePart animated = new ObjectRenderablePart(TestProxies.proxy(DynamicObject.class,
+			TestProxies.method("getAnimation", TestProxies.proxy(Animation.class))), null, 0);
+		ObjectRenderablePart idle = new ObjectRenderablePart(TestProxies.proxy(DynamicObject.class), null, 0);
+		ObjectRenderablePart stationary = new ObjectRenderablePart(renderable(), null, 0);
+		assertTrue(BillboardUpdateScheduler.usesTileObjectAnimationCadence(Arrays.asList(stationary, animated), true));
+		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(Arrays.asList(stationary, animated), false));
+		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(Arrays.asList(stationary, idle), true));
+		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(null, true));
+	}
+
 	@Test
 	public void attachedAndDetachedEffectsUseAnimationCadenceWhenEnabled()
 	{

@@ -5,17 +5,23 @@ import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
+import com.kierenboal.npcsnap.targeting.BillboardTarget;
+import com.kierenboal.npcsnap.targeting.ObservedTileObjectBuilder;
 import com.kierenboal.npcsnap.TestProxies;
 
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Animation;
 import net.runelite.api.Client;
+import net.runelite.api.DynamicObject;
+import net.runelite.api.GameObject;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Model;
 import net.runelite.api.Projectile;
 import net.runelite.api.TileItem;
 import net.runelite.api.WorldView;
+import net.runelite.api.WorldEntity;
+import net.runelite.api.IndexedObjectSet;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.gameval.SpotanimID;
 import org.junit.Test;
@@ -28,6 +34,57 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardRenderRequestFactoryTest
 {
+	@Test
+	public void worldObjectRequestReportsTheLiveFrameActuallyCapturedByGetModel()
+	{
+		java.util.concurrent.atomic.AtomicInteger frame = new java.util.concurrent.atomic.AtomicInteger(4);
+		Model model = TestProxies.proxy(Model.class);
+		Animation animation = TestProxies.proxy(Animation.class,
+			TestProxies.method("getId", 88), TestProxies.method("getNumFrames", 10));
+		DynamicObject renderable = TestProxies.proxy(DynamicObject.class,
+			TestProxies.method("getAnimation", animation), TestProxies.methodSupplier("getAnimFrame", frame::get),
+			TestProxies.methodSupplier("getModel", () -> { frame.set(5); return model; }));
+		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getId", 1),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)),
+			TestProxies.method("getRenderable", renderable));
+		BillboardTarget target = BillboardTarget.forTileObject(ObservedTileObjectBuilder.build(object), 100.0d);
+		BillboardRenderRequest request = factory(true, animation).build(target, target.observedTileObject.parts.get(0));
+		assertSame(model, request.model);
+		assertEquals(88, request.animationId);
+		assertEquals(5, request.animationFrame);
+	}
+
+	@Test
+	public void nestedActorBodyUsesMainWorldViewingRayAndOwningEntityOrientation()
+	{
+		WorldView nested = TestProxies.proxy(WorldView.class);
+		WorldView top = worldView(0);
+		LocalPoint mainLocation = new LocalPoint(1000, 1000, top);
+		WorldEntity owner = TestProxies.proxy(WorldEntity.class, TestProxies.method("getWorldView", nested),
+			TestProxies.method("getOrientation", 512), TestProxies.method("transformToMainWorld", mainLocation));
+		WorldView main = TestProxies.proxy(WorldView.class, TestProxies.method("isTopLevel", true),
+			TestProxies.method("worldEntities", TestProxies.proxy(IndexedObjectSet.class,
+				TestProxies.methodSupplier("iterator", () -> java.util.Collections.singletonList(owner).iterator()))));
+		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", nested),
+			TestProxies.method("getLocalLocation", new LocalPoint(200, 300, nested)), TestProxies.method("getCurrentOrientation", 256));
+		Client client = TestProxies.proxy(Client.class, TestProxies.method("getTopLevelWorldView", main));
+		for (boolean ignore : new boolean[] {false, true})
+		{
+			NpcSnapConfig config = new NpcSnapConfig()
+			{
+				@Override public boolean enableRotationSnapping() { return false; }
+				@Override public boolean ignoreCameraAwareRotation() { return ignore; }
+			};
+			BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
+				new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+				new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
+			BillboardRenderRequest request = factory.buildActor(actor);
+			assertSame(mainLocation, request.localPoint);
+			assertEquals(ignore ? 6144 : 4096, request.relativeYaw);
+			assertEquals(2048, factory.buildActorSpotAnimation(TestProxies.proxy(ActorSpotAnim.class), actor).relativeYaw);
+		}
+	}
+
 	@Test
 	public void actorRequestsPreserveSignedSubmersionOffsets()
 	{
@@ -114,6 +171,7 @@ public class BillboardRenderRequestFactoryTest
 		assertEquals(-BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, graphicsRequest.relativePitch);
 		assertTrue(projectileRequest.lowProfile);
 		assertEquals(-BillboardAngleUtils.GROUND_ITEM_MIN_PITCH, projectileRequest.relativePitch);
+		assertEquals(VerticalAnchor.BOTTOM, projectileRequest.verticalAnchor);
 	}
 
 	@Test

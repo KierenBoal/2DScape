@@ -164,3 +164,4 @@ New high-end PvM boss plugins are not accepted as a blanket policy.
 
 ## Bonus Instructions
 - Stop offering to run RuneLite for me, I will run it myself.
+- Whenever a notable change is made, update NpcSnapChangelog.java, to include the changelog. There is an 80 character limit so you may need to squeeze it in. The version number can be found in `runelite-plugin.properties`.

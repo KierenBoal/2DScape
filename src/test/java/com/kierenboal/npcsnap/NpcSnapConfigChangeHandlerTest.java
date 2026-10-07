@@ -41,6 +41,19 @@ public class NpcSnapConfigChangeHandlerTest
 		counters.assertCounts(0, 1);
 	}
 
+	@Test
+	public void cameraAwareRotationChangesOnlyClearBillboardCache()
+	{
+		Counters counters = new Counters();
+		NpcSnapConfigChangeHandler handler = counters.handler();
+		handler.handle("other", "ignoreCameraAwareRotation");
+		counters.assertCounts(0, 0);
+		handler.handle("npc-snap", "ignoreCameraAwareRotation");
+		counters.assertCounts(0, 1);
+		handler.handle("npc-snap", "ignoreCameraAwareRotation");
+		counters.assertCounts(0, 2);
+	}
+
 	private static final class Counters
 	{
 		private final AtomicInteger uiDirty = new AtomicInteger();

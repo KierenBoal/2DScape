@@ -170,6 +170,12 @@ public final class BillboardWorldOcclusionCollector
 
 	public void collectTerrainOccluders(WorldView worldView, List<TraceTarget> traceTargets, BillboardOcclusionQuality quality, Set<Renderable> renderedSceneRenderables)
 	{
+		collectTerrainOccluders(worldView, traceTargets, quality, renderedSceneRenderables, Collections.emptySet());
+	}
+
+	public void collectTerrainOccluders(WorldView worldView, List<TraceTarget> traceTargets, BillboardOcclusionQuality quality,
+		Set<Renderable> renderedSceneRenderables, Set<TileObject> billboardedObjects)
+	{
 		if (quality == BillboardOcclusionQuality.OFF || interestBounds == null || worldView == null || traceTargets == null || traceTargets.isEmpty())
 		{
 			return;
@@ -238,7 +244,8 @@ public final class BillboardWorldOcclusionCollector
 						currentPlane,
 						quality,
 						visitedObjects,
-						renderedSceneRenderables);
+						renderedSceneRenderables,
+						billboardedObjects);
 				}
 			}
 		}
@@ -672,7 +679,8 @@ public final class BillboardWorldOcclusionCollector
 		int currentPlane,
 		BillboardOcclusionQuality quality,
 		Set<TileObject> visitedObjects,
-		Set<Renderable> renderedSceneRenderables)
+		Set<Renderable> renderedSceneRenderables,
+		Set<TileObject> billboardedObjects)
 	{
 		Tile tile = candidate != null ? candidate.tile : null;
 		if (tile == null)
@@ -680,8 +688,8 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		collectSceneTileObjectOccluder(tile.getWallObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables);
-		collectSceneTileObjectOccluder(tile.getDecorativeObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables);
+		collectSceneTileObjectOccluder(tile.getWallObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables, billboardedObjects);
+		collectSceneTileObjectOccluder(tile.getDecorativeObject(), candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables, billboardedObjects);
 		GameObject[] gameObjects = tile.getGameObjects();
 		if (gameObjects == null)
 		{
@@ -690,7 +698,7 @@ public final class BillboardWorldOcclusionCollector
 
 		for (GameObject gameObject : gameObjects)
 		{
-			collectSceneTileObjectOccluder(gameObject, candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables);
+			collectSceneTileObjectOccluder(gameObject, candidate, scene, currentPlane, quality, visitedObjects, renderedSceneRenderables, billboardedObjects);
 		}
 	}
 
@@ -701,9 +709,16 @@ public final class BillboardWorldOcclusionCollector
 		int currentPlane,
 		BillboardOcclusionQuality quality,
 		Set<TileObject> visitedObjects,
-		Set<Renderable> renderedSceneRenderables)
+		Set<Renderable> renderedSceneRenderables,
+		Set<TileObject> billboardedObjects)
 	{
 		if (tileObject == null || candidate == null || !visitedObjects.add(tileObject))
+		{
+			return;
+		}
+		// The sprite replaces this object's 3D geometry for every billboard,
+		// not just for its own pixels. Skip model and fallback hull checks alike.
+		if (billboardedObjects.contains(tileObject))
 		{
 			return;
 		}

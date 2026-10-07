@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.state;
 import com.kierenboal.npcsnap.rendering.BillboardRenderQuality;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
+import net.runelite.api.DynamicObject;
 
 public final class BillboardUpdateScheduler
 {
@@ -15,6 +16,23 @@ public final class BillboardUpdateScheduler
 		return frameLimitingEnabled && (type == BillboardTargetType.PROJECTILE
 			|| type == BillboardTargetType.GRAPHICS_OBJECT
 			|| type == BillboardTargetType.ACTOR_SPOT_ANIM);
+	}
+
+	public static boolean usesTileObjectAnimationCadence(Iterable<ObjectRenderablePart> parts, boolean frameLimitingEnabled)
+	{
+		if (!frameLimitingEnabled || parts == null)
+		{
+			return false;
+		}
+		for (ObjectRenderablePart part : parts)
+		{
+			if (part != null && part.renderable instanceof DynamicObject
+				&& ((DynamicObject) part.renderable).getAnimation() != null)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static double initialQualityScale(boolean hasCachedBillboard, double fullQualityScale, int nearPriorityIndex, int maxDrawsPerFrame)

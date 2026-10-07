@@ -16,7 +16,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.Collections;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.HeadIcon;
@@ -40,7 +39,6 @@ public final class ActorOverheadRenderer
 	private final RetroChatRenderer chatRenderer = new RetroChatRenderer();
 	private final Map<Actor, List<TrackedHitsplat>> hitsplats = new IdentityHashMap<>();
 	private final Map<Actor, AnchorState> anchors = new IdentityHashMap<>();
-	private final Set<Actor> drawableActors = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Map<Long, BufferedImage> sprites = new java.util.HashMap<>();
 
 	public ActorOverheadRenderer(Client client, NpcSnapConfig config)
@@ -128,7 +126,6 @@ public final class ActorOverheadRenderer
 	{
 		hitsplats.remove(actor);
 		anchors.remove(actor);
-		drawableActors.remove(actor);
 	}
 
 	public void clear()
@@ -141,24 +138,14 @@ public final class ActorOverheadRenderer
 	{
 		hitsplats.clear();
 		anchors.clear();
-		drawableActors.clear();
 	}
 
 	public void updateDrawableActors(Set<Actor> current)
 	{
-		List<Actor> removed = new ArrayList<>();
-		for (Actor actor : drawableActors)
-		{
-			if (!current.contains(actor))
-			{
-				removed.add(actor);
-			}
-		}
-		for (Actor actor : removed)
-		{
-			clear(actor);
-		}
-		drawableActors.addAll(current);
+		// A culled or temporarily unavailable sprite is not an actor despawn.
+		// Reset its positioning, but keep hits until RuneLite's expiry cycle.
+		anchors.keySet().retainAll(current);
+		expireHitsplats(client.getGameCycle());
 	}
 
 	public void render(Graphics2D graphics, List<PreparedBillboardDraw> draws)
@@ -168,12 +155,12 @@ public final class ActorOverheadRenderer
 			clearTrackedOverheadState();
 			return;
 		}
+		expireHitsplats(client.getGameCycle());
 		if (graphics == null || draws == null || draws.isEmpty())
 		{
 			return;
 		}
 
-		expireHitsplats(client.getGameCycle());
 		List<Rectangle> occupiedChatBounds = new ArrayList<>();
 		for (PreparedBillboardDraw draw : draws)
 		{
@@ -185,7 +172,7 @@ public final class ActorOverheadRenderer
 			Actor actor = (Actor) draw.request.renderable;
 			if (!shouldReplace(actor))
 			{
-				clear(actor);
+				anchors.remove(actor);
 				continue;
 			}
 			Point anchor = draw.geometry != null

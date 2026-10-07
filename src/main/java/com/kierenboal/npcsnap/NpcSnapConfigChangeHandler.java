@@ -30,7 +30,8 @@ final class NpcSnapConfigChangeHandler
 			markUiTexturesDirty.run();
 		}
 
-		if ("useInventorySpritesForGroundItems".equals(key))
+		if ("useInventorySpritesForGroundItems".equals(key)
+			|| "ignoreCameraAwareRotation".equals(key))
 		{
 			clearBillboardCache.run();
 		}

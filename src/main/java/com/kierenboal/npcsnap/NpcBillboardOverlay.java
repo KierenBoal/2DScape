@@ -1288,12 +1288,18 @@ class NpcBillboardOverlay extends Overlay
 					// the actual draws so their outer pixels receive scenery occlusion too.
 					worldOcclusionCollector.clearInterest();
 					Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
+					Set<TileObject> billboardedObjects = Collections.newSetFromMap(new IdentityHashMap<>());
 					for (PreparedBillboardDraw draw : preparedDraws)
 					{
 						worldOcclusionCollector.addInterest(draw.bounds, viewportBounds);
+						if (draw.occlusionIgnoredTileObject != null)
+						{
+							billboardedObjects.add(draw.occlusionIgnoredTileObject);
+						}
 					}
 					worldOcclusionCollector.collectTerrainOccluders(occlusionWorldView, occlusionTraceTargets,
-						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderables.previousSnapshot());
+						BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), sceneRenderables.previousSnapshot(),
+						billboardedObjects);
 				}
 				try (BillboardPerformanceMetrics.Timer maskTimer = performanceMetrics.time("Build occlusion mask"))
 				{
@@ -1398,7 +1404,7 @@ class NpcBillboardOverlay extends Overlay
 				previewBounds,
 				target.getRenderPriority(),
 				target.priorityGroupSortKey(),
-				previewBounds != null ? previewBounds.y + previewBounds.height : Integer.MAX_VALUE,
+				sortBottomY(target, previewBounds),
 				target.getDepth(),
 				target.type == BillboardTargetType.PROJECTILE,
 				target.targetKey.stableSortOrder()
@@ -1406,6 +1412,29 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return BillboardPaintOrder.sort(entries);
+	}
+
+	int sortBottomY(BillboardTarget target, Rectangle previewBounds)
+	{
+		if (isCompositeObjectTarget(target) && target.observedTileObject != null)
+		{
+			// Sprite bottoms include projecting roofs, padding and animated vertices.
+			// Use the object's world anchor so redraws cannot swap overlapping sprites.
+			int anchorY = Integer.MIN_VALUE;
+			for (ObjectRenderablePart part : target.observedTileObject.parts)
+			{
+				BillboardCanvasPoint anchor = depthCalculator.projectCanvasPoint(part.localPoint, part.plane, 0);
+				if (anchor != null && Double.isFinite(anchor.y))
+				{
+					anchorY = Math.max(anchorY, (int) Math.round(anchor.y));
+				}
+			}
+			if (anchorY != Integer.MIN_VALUE)
+			{
+				return anchorY;
+			}
+		}
+		return previewBounds != null ? previewBounds.y + previewBounds.height : Integer.MAX_VALUE;
 	}
 
 	private Rectangle buildSortPreviewBounds(BillboardTarget target)
@@ -1821,12 +1850,12 @@ class NpcBillboardOverlay extends Overlay
 
 			boolean forceHoverInteractionRedraw = shouldForceHoverInteractionRedraw(target);
 			boolean forceActorResizeRedraw = forceActorResizeRedraws.contains(target.renderable);
-			boolean cadenceControlledEffect = isCadenceControlledEffect(target);
+			boolean cadenceControlledTarget = isCadenceControlledTarget(target);
 			UpdateHeuristicSnapshot snapshot = buildUpdateHeuristicSnapshot(target);
 			BillboardUpdateState updateState = billboardUpdateStates.computeIfAbsent(key, ignored -> new BillboardUpdateState(renderQualityScale()));
 			boolean bypassCadence = forceHoverInteractionRedraw || forceActorResizeRedraw
 				|| !targetHasCachedBillboard(target);
-			if (!cadenceControlledEffect)
+			if (!cadenceControlledTarget)
 			{
 				bypassCadence = bypassCadence
 					|| updateState.hasPositionChangedSinceRedraw(snapshot)
@@ -1843,7 +1872,7 @@ class NpcBillboardOverlay extends Overlay
 
 			double qualityScale = updateState.qualityScale;
 			if (!forceHoverInteractionRedraw && !forceActorResizeRedraw
-				&& !cadenceControlledEffect
+				&& !cadenceControlledTarget
 				&& !needsBillboardRedraw(target, qualityScale))
 			{
 				updateState.defer(gameCycle, baseRefreshInterval);
@@ -2709,7 +2738,7 @@ class NpcBillboardOverlay extends Overlay
 			return buildTileObjectHeuristicSnapshot(target);
 		}
 
-		if (isCadenceControlledEffect(target))
+		if (isCadenceControlledTarget(target))
 		{
 			return UpdateHeuristicSnapshot.cadencedProjectile(target.getDepth());
 		}
@@ -2727,10 +2756,12 @@ class NpcBillboardOverlay extends Overlay
 		);
 	}
 
-	private boolean isCadenceControlledEffect(BillboardTarget target)
+	private boolean isCadenceControlledTarget(BillboardTarget target)
 	{
-		return target != null && BillboardUpdateScheduler.usesAnimationCadence(
-			target.type, config.enableAnimationFrameSnapping());
+		return target != null && (BillboardUpdateScheduler.usesAnimationCadence(
+			target.type, config.enableAnimationFrameSnapping())
+			|| (target.observedTileObject != null && BillboardUpdateScheduler.usesTileObjectAnimationCadence(
+				target.observedTileObject.parts, config.enableAnimationFrameSnapping())));
 	}
 
 	private UpdateHeuristicSnapshot buildTileObjectHeuristicSnapshot(BillboardTarget target)
@@ -3301,26 +3332,37 @@ class NpcBillboardOverlay extends Overlay
 		return new Rectangle(drawX, drawY, targetWidth, targetHeight);
 	}
 
-	private BillboardDrawGeometry buildDrawGeometry(
+	BillboardDrawGeometry buildDrawGeometry(
 		BillboardRenderRequest request,
 		Renderable renderable,
 		Rectangle billboardBounds,
 		Rectangle contentBounds)
 	{
 		boolean actor = renderable instanceof Actor;
-		BillboardCanvasPoint base = actor
+		// Scenery and items must keep the cached sprite's scale independent of
+		// mutable model height. Effects retain their specialized anchors below.
+		boolean modelOrigin = !(renderable instanceof Projectile)
+			&& !(renderable instanceof ActorSpotAnim) && !(renderable instanceof GraphicsObject);
+		BillboardCanvasPoint base = modelOrigin
 			? depthCalculator.projectCanvasPoint(request.localPoint, request.plane, request.verticalOffset)
 			: null;
-		Rectangle drawRect = base != null
-			? BillboardGeometryUtils.projectedDrawBounds(billboardBounds, base, client.getScale())
-			: buildLegacyDrawRect(request, renderable, billboardBounds);
+		double canvasScale = client.getScale();
+		if (renderable instanceof TileItem && config.useInventorySpritesForGroundItems())
+		{
+			canvasScale *= inventoryGroundItemZoomScale();
+		}
+		Rectangle drawRect = renderable instanceof Projectile
+			? BillboardProjectileGeometry.drawBounds(depthCalculator, (Projectile) renderable, billboardBounds, client.getScale())
+			: modelOrigin
+				? BillboardGeometryUtils.projectedDrawBounds(billboardBounds, base, canvasScale)
+				: buildLegacyDrawRect(request, renderable, billboardBounds);
 		if (drawRect == null)
 		{
 			return null;
 		}
 		if (request.verticalAnchor == VerticalAnchor.GROUND_CONTACT)
 		{
-			Point groundPoint = actor && base != null
+			Point groundPoint = base != null
 				? new Point((int) Math.round(base.x), (int) Math.round(base.y))
 				: Perspective.localToCanvas(client, request.localPoint, request.plane, request.verticalOffset);
 			drawRect = alignGroundContact(drawRect, billboardBounds, contentBounds, groundPoint);
@@ -3401,10 +3443,6 @@ class NpcBillboardOverlay extends Overlay
 		if (targetHeight <= 0)
 		{
 			targetHeight = fallbackDrawHeight(projectedModelCanvasBounds(request));
-		}
-		if (config.useInventorySpritesForGroundItems() && renderable instanceof TileItem)
-		{
-			targetHeight = BillboardGeometryUtils.scaledSize(targetHeight, inventoryGroundItemZoomScale());
 		}
 		int targetWidth = BillboardGeometryUtils.aspectWidth(billboardBounds, targetHeight);
 		Point anchorPoint = drawAnchorPoint(request, basePoint, centerPoint, topPoint);

@@ -51,8 +51,14 @@ public final class PreparedBillboardDraw
 		// Animated models can reuse their model and vertex buffers on the next
 		// getModel() call. Capture these scalars before preparing other entities
 		// or gathering scenery; compositing must not reclassify overwritten data.
-		this.modelHeight = BillboardDepthSurface.modelHeight(request);
-		this.supportsWorldOcclusion = modelHeight > 0 && BillboardDepthSurface.supportsWorldOcclusion(request);
+		boolean worldObjectSprite = occlusionIgnoredTileObject != null;
+		// A world-object sprite always uses a camera-facing depth plane. Its live
+		// animation can be flat or have stale/zero height while an upright cached
+		// sprite is displayed; those frames must not bypass scenery occlusion.
+		int liveHeight = BillboardDepthSurface.modelHeight(request);
+		this.modelHeight = worldObjectSprite ? Math.max(1, liveHeight) : liveHeight;
+		this.supportsWorldOcclusion = worldObjectSprite
+			|| (modelHeight > 0 && BillboardDepthSurface.supportsWorldOcclusion(request));
 	}
 }
 

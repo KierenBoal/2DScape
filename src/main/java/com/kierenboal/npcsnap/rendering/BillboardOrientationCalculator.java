@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.NpcSnapConfig;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Projectile;
+import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardOrientationCalculator
 {
@@ -41,6 +42,35 @@ public final class BillboardOrientationCalculator
 	public int relativeYaw(Projectile projectile)
 	{
 		return snappedYaw(cameraYaw() + projectileYaw(projectile));
+	}
+
+	/** Body-only correction: spot animations and exported angles retain their existing yaw. */
+	public int relativeActorBodyYaw(Actor actor, int actorOrientation, LocalPoint mainWorldLocation)
+	{
+		int yaw = actorBodyRawYaw(actorOrientation, mainWorldLocation);
+		return shouldCombatSnap(actor) ? BillboardAngleUtils.combatYaw(yaw) : snappedYaw(yaw);
+	}
+
+	public int actorBodyRawYaw(int actorOrientation, LocalPoint mainWorldLocation)
+	{
+		int viewYaw = cameraYaw();
+		if (!config.ignoreCameraAwareRotation() && mainWorldLocation != null)
+		{
+			double cameraX = client.isGpu() ? client.getCameraFpX() : client.getCameraX();
+			double cameraY = client.isGpu() ? client.getCameraFpY() : client.getCameraY();
+			double dx = mainWorldLocation.getX() - cameraX;
+			double dy = mainWorldLocation.getY() - cameraY;
+			if (Double.isFinite(dx) && Double.isFinite(dy) && Math.hypot(dx, dy) > 1.0d)
+			{
+				// Camera right = x*cos(yaw) + y*sin(yaw), so the viewing
+				// direction that centers this actor has yaw = atan2(-dx, dy).
+				viewYaw = Math.floorMod((int) Math.round(Math.atan2(-dx, dy)
+					* BillboardAngleUtils.BILLBOARD_FULL_CIRCLE / (2.0d * Math.PI)),
+					BillboardAngleUtils.BILLBOARD_FULL_CIRCLE);
+			}
+		}
+		return Math.floorMod(viewYaw + BillboardAngleUtils.angleToBillboardUnits(actorOrientation,
+			BillboardAngleUtils.ACTOR_FULL_CIRCLE), BillboardAngleUtils.BILLBOARD_FULL_CIRCLE);
 	}
 
 	public int relativeGroundItemYaw()

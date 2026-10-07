@@ -191,9 +191,9 @@ public class ActorOverheadRendererTest
 	}
 
 	@Test
-	public void billboardRemovalResetsAnchorAndHitsplats()
+	public void temporaryBillboardRemovalResetsAnchorButPreservesHitsUntilNativeExpiry()
 	{
-		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class));
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true));
 		NPC actor = TestProxies.proxy(NPC.class);
 		Hitsplat hitsplat = TestProxies.proxy(Hitsplat.class,
 			TestProxies.method("getDisappearsOnGameCycle", 100));
@@ -202,8 +202,47 @@ public class ActorOverheadRendererTest
 		renderer.updateDrawableActors(Collections.singleton(actor));
 
 		renderer.updateDrawableActors(Collections.emptySet());
-		assertEquals(0, renderer.trackedHitsplatCount(actor, 1));
+		assertEquals(1, renderer.trackedHitsplatCount(actor, 1));
 		assertEquals(new Point(60, 0), renderer.resolveAnchor(actor, new Rectangle(40, 0, 40, 100)));
+		renderer.updateDrawableActors(Collections.singleton(actor));
+		assertEquals(1, renderer.trackedHitsplatCount(actor, 99));
+		assertEquals(0, renderer.trackedHitsplatCount(actor, 100));
+	}
+
+	@Test
+	public void hiddenActorsHitsExpireWithoutExtendingTheirLifetimeOnReturn()
+	{
+		java.util.concurrent.atomic.AtomicInteger cycle = new java.util.concurrent.atomic.AtomicInteger(10);
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class,
+			TestProxies.methodSupplier("getGameCycle", cycle::get)), config(true));
+		NPC actor = TestProxies.proxy(NPC.class);
+		renderer.recordHitsplat(actor, TestProxies.proxy(Hitsplat.class,
+			TestProxies.method("getDisappearsOnGameCycle", 100)));
+		renderer.updateDrawableActors(Collections.singleton(actor));
+		cycle.set(50);
+		renderer.updateDrawableActors(Collections.emptySet());
+		assertEquals(1, renderer.trackedHitsplatCount(actor, cycle.get()));
+		cycle.set(100);
+		renderer.render(null, Collections.emptyList());
+		renderer.updateDrawableActors(Collections.singleton(actor));
+		assertEquals(0, renderer.trackedHitsplatCount(actor, cycle.get()));
+	}
+
+	@Test
+	public void actorDespawnAndFullClearStillDiscardActiveHitsImmediately()
+	{
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true));
+		NPC first = TestProxies.proxy(NPC.class);
+		NPC second = TestProxies.proxy(NPC.class);
+		Hitsplat hit = TestProxies.proxy(Hitsplat.class,
+			TestProxies.method("getDisappearsOnGameCycle", 100));
+		renderer.recordHitsplat(first, hit);
+		renderer.recordHitsplat(second, hit);
+		renderer.clear(first);
+		assertEquals(0, renderer.trackedHitsplatCount(first, 1));
+		assertEquals(1, renderer.trackedHitsplatCount(second, 1));
+		renderer.clear();
+		assertEquals(0, renderer.trackedHitsplatCount(second, 1));
 	}
 
 	@Test
