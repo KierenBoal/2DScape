@@ -11,7 +11,6 @@ final class NpcSnapChangelog
 {
 	static final String LAST_SEEN_VERSION_KEY = "lastSeenVersion";
 	static final String BASELINE_VERSION = "1.0.0";
-	static final int MAX_CHANGE_LENGTH = 80;
 	private static final List<Release> RELEASES = List.of(
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
 		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
@@ -124,9 +123,9 @@ final class NpcSnapChangelog
 				.map(String::trim)
 				.filter(entry -> !entry.isEmpty())
 				.collect(Collectors.toList());
-			if (entries.isEmpty() || entries.stream().anyMatch(entry -> entry.length() > MAX_CHANGE_LENGTH))
+			if (entries.isEmpty())
 			{
-				throw new IllegalArgumentException("Each changelog entry must contain 1 to 80 characters");
+				throw new IllegalArgumentException("Changelog must contain at least one change");
 			}
 			this.version = version;
 			this.changes = List.copyOf(entries);

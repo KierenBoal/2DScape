@@ -22,16 +22,9 @@ public class NpcSnapChangelogTest
 		assertEquals(List.of(
 			"2DScape (v1.0.1):", "* World object exports fixed", "* boat hiding", "* XP bubble scaling", "* occlusion edge fixes",
 			"2DScape (v1.0.2):", "* Improved rotation calculation with camera location", "* Version system added",
-			"* Projectile arc and height rendering fixed", "* Billboarded world objects no longer clip other sprites", "* World object occlusion and overlapping sprite ordering stabilized", "* Optional actor world-plane projection fits sprites to live bounds", "* Actor world-plane sprites now face the camera on yaw", "2DScape (v1.0.3):", "* Improved click accuracy mode in Rendering config: better clickboxes, less RSC", "* Retro hitsplats now respect damage types, colours, shapes and max hits", "* Undocumented hitsplats use stable pastel shapes without adjacent repeats", "* Retro hitsplats persist for at least two game ticks"), memory.messages);
+			"* Projectile arc and height rendering fixed", "* Billboarded world objects no longer clip other sprites", "* World object occlusion and overlapping sprite ordering stabilized", "* Optional actor world-plane projection fits sprites to live bounds", "* Actor world-plane sprites now face the camera on yaw", "2DScape (v1.0.3):", "* Improved click accuracy mode in Rendering config (less RSC, better accuracy though)", "* Retro hitsplats now respect damage types and max hits."), memory.messages);
 		assertEquals("1.0.3", memory.version);
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
-		for (String message : memory.messages)
-		{
-			if (message.startsWith("* "))
-			{
-				assertTrue(message.substring(2).length() <= 80);
-			}
-		}
+		assertEquals(expectedAnnounceEvents(memory.messages.size()), memory.events);
 	}
 
 	@Test
@@ -39,10 +32,10 @@ public class NpcSnapChangelogTest
 	{
 		Memory baseline = new Memory("1.0.0");
 		baseline.check(new NpcSnapChangelog(), true);
-		assertEquals(18, baseline.messages.size());
+		assertEquals(16, baseline.messages.size());
 		Memory previous = new Memory("1.0.1");
 		previous.check(new NpcSnapChangelog(), true);
-		assertEquals(13, previous.messages.size());
+		assertEquals(11, previous.messages.size());
 		assertEquals("2DScape (v1.0.2):", previous.messages.get(0));
 	}
 
@@ -65,7 +58,7 @@ public class NpcSnapChangelogTest
 		{
 			Memory memory = new Memory(version);
 			memory.check(new NpcSnapChangelog(), true);
-			assertEquals(18, memory.messages.size());
+			assertEquals(16, memory.messages.size());
 			assertEquals("1.0.3", memory.version);
 		}
 	}
@@ -79,13 +72,16 @@ public class NpcSnapChangelogTest
 		assertTrue(memory.events.isEmpty());
 		memory.check(changelog, true);
 		memory.check(changelog, true);
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
+		assertEquals(expectedAnnounceEvents(memory.messages.size()), memory.events);
 		changelog.requestCheck();
 		memory.check(changelog, false);
 		memory.check(changelog, true);
 		memory.check(new NpcSnapChangelog(), true);
-		assertEquals(18, memory.messages.size());
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save", "read", "read"), memory.events);
+		assertEquals(16, memory.messages.size());
+		List<String> expectedEvents = expectedAnnounceEvents(memory.messages.size());
+		expectedEvents.add("read");
+		expectedEvents.add("read");
+		assertEquals(expectedEvents, memory.events);
 	}
 
 	@Test
@@ -96,7 +92,7 @@ public class NpcSnapChangelogTest
 		changelog.requestCheck();
 		Memory newProfile = new Memory("1.0.0");
 		newProfile.check(changelog, true);
-		assertEquals(18, newProfile.messages.size());
+		assertEquals(16, newProfile.messages.size());
 		assertEquals("1.0.3", newProfile.version);
 	}
 
@@ -134,15 +130,15 @@ public class NpcSnapChangelogTest
 			assertEquals("1.0.0", memory.version);
 		}
 		memory.check(changelog, true);
-		assertEquals(18, memory.messages.size());
+		assertEquals(16, memory.messages.size());
 		assertEquals("1.0.3", memory.version);
 	}
 
 	@Test
-	public void eightyCharacterChangeIsAllowed()
+	public void entriesLongerThanEightyCharactersAreAllowed()
 	{
-		NpcSnapChangelog.Release release = new NpcSnapChangelog.Release("1.0.3", "a".repeat(80) + ";" + "b".repeat(80));
-		assertEquals(List.of("a".repeat(80), "b".repeat(80)), release.changes);
+		NpcSnapChangelog.Release release = new NpcSnapChangelog.Release("1.0.3", "a".repeat(81) + ";" + "b".repeat(120));
+		assertEquals(List.of("a".repeat(81), "b".repeat(120)), release.changes);
 	}
 
 	@Test
@@ -166,21 +162,9 @@ public class NpcSnapChangelogTest
 	}
 
 	@Test(expected = IllegalArgumentException.class)
-	public void longerEntryInAListIsRejected()
-	{
-		new NpcSnapChangelog.Release("1.0.3", "Short change;" + "a".repeat(81));
-	}
-
-	@Test(expected = IllegalArgumentException.class)
 	public void onlyEmptyEntriesAreRejected()
 	{
 		new NpcSnapChangelog.Release("1.0.3", " ; ; ");
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void longerChangeIsRejected()
-	{
-		new NpcSnapChangelog.Release("1.0.3", "a".repeat(81));
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -205,6 +189,18 @@ public class NpcSnapChangelogTest
 			properties.load(input);
 		}
 		assertEquals(properties.getProperty("version"), NpcSnapChangelog.CURRENT_VERSION);
+	}
+
+	private static List<String> expectedAnnounceEvents(int messageCount)
+	{
+		List<String> events = new ArrayList<>();
+		events.add("read");
+		for (int i = 0; i < messageCount; i++)
+		{
+			events.add("message");
+		}
+		events.add("save");
+		return events;
 	}
 
 	private static final class Memory
