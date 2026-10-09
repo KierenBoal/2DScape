@@ -31,7 +31,8 @@ final class NpcSnapConfigChangeHandler
 		}
 
 		if ("useInventorySpritesForGroundItems".equals(key)
-			|| "ignoreCameraAwareRotation".equals(key))
+			|| "ignoreCameraAwareRotation".equals(key)
+			|| "enableActorWorldPlaneProjection".equals(key))
 		{
 			clearBillboardCache.run();
 		}

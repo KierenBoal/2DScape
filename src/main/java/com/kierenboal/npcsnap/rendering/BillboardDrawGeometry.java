@@ -8,6 +8,7 @@ public final class BillboardDrawGeometry
 {
 	public final Rectangle unskewedBounds;
 	public final Rectangle bounds;
+	public final BillboardProjectedQuad projectedQuad;
 	private final double contentTopY;
 	private final double contentBottomY;
 	private final double contentCenterX;
@@ -23,12 +24,26 @@ public final class BillboardDrawGeometry
 		double bottomOffsetX)
 	{
 		this.unskewedBounds = new Rectangle(unskewedBounds);
+		this.projectedQuad = null;
 		this.contentCenterX = contentCenterX;
 		this.contentTopY = contentTopY;
 		this.contentBottomY = contentBottomY;
 		this.topOffsetX = Double.isFinite(topOffsetX) ? topOffsetX : 0.0d;
 		this.bottomOffsetX = Double.isFinite(bottomOffsetX) ? bottomOffsetX : 0.0d;
 		this.bounds = enclosingBounds();
+	}
+
+	private BillboardDrawGeometry(BillboardProjectedQuad quad)
+	{
+		projectedQuad = quad;
+		bounds = new Rectangle(quad.bounds);
+		unskewedBounds = new Rectangle(bounds);
+		contentCenterX = contentTopY = contentBottomY = topOffsetX = bottomOffsetX = 0.0d;
+	}
+
+	public static BillboardDrawGeometry projected(BillboardProjectedQuad quad)
+	{
+		return quad != null ? new BillboardDrawGeometry(quad) : null;
 	}
 
 	public static BillboardDrawGeometry rectangular(Rectangle bounds)
@@ -128,6 +143,10 @@ public final class BillboardDrawGeometry
 
 	public Point canvasPoint(double sourceXFraction, double sourceYFraction)
 	{
+		if (projectedQuad != null)
+		{
+			return projectedQuad.canvasPoint(sourceXFraction, sourceYFraction);
+		}
 		double canvasY = unskewedBounds.y + (sourceYFraction * unskewedBounds.height);
 		double canvasX = unskewedBounds.x + (sourceXFraction * unskewedBounds.width) + offsetAt(canvasY);
 		return new Point((int) Math.round(canvasX), (int) Math.round(canvasY));
@@ -135,12 +154,20 @@ public final class BillboardDrawGeometry
 
 	public Point contentTopCenter()
 	{
+		if (projectedQuad != null)
+		{
+			return projectedQuad.contentTopCenter();
+		}
 		double canvasX = contentCenterX + offsetAt(contentTopY);
 		return new Point((int) Math.round(canvasX), (int) Math.round(contentTopY));
 	}
 
 	public Polygon polygon()
 	{
+		if (projectedQuad != null)
+		{
+			return projectedQuad.polygon();
+		}
 		int topY = unskewedBounds.y;
 		int bottomY = unskewedBounds.y + unskewedBounds.height;
 		int topOffset = (int) Math.round(offsetAt(topY));

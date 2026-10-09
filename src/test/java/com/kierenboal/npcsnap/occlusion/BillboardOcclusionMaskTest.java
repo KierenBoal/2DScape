@@ -2,6 +2,9 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
 import com.kierenboal.npcsnap.rendering.BillboardDepthSurface;
+import com.kierenboal.npcsnap.rendering.BillboardCanvasPoint;
+import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardProjectedQuad;
 import com.kierenboal.npcsnap.rendering.BillboardFrameBuffer;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
@@ -29,6 +32,55 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardOcclusionMaskTest
 {
+	@Test
+	public void projectedPlaneUsesDifferentDepthsWithinTheSameCoarseOcclusionCell()
+	{
+		Rectangle imageBounds = new Rectangle(0, 0, 8, 8);
+		BillboardProjectedQuad quad = BillboardProjectedQuad.create(
+			new BillboardCanvasPoint(0, 0, 100, 0, 0), new BillboardCanvasPoint(8, 0, 300, 0, 0),
+			new BillboardCanvasPoint(8, 8.0 / 3.0, 300, 0, 0), new BillboardCanvasPoint(0, 8, 100, 0, 0),
+			imageBounds, imageBounds);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.projected(quad);
+		BufferedImage sprite = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+		int[] pixels = new int[64];
+		Arrays.fill(pixels, 0xFF804020);
+		sprite.setRGB(0, 0, 8, 8, pixels, 0, 8);
+		Renderable actor = proxy(Renderable.class, method("getModelHeight", 100));
+		BillboardRenderRequest request = new BillboardRenderRequest(actor, proxy(Model.class), new LocalPoint(0, 0),
+			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
+			new BillboardRenderResult(geometry, sprite, imageBounds), 1);
+		BillboardDepthCalculator camera = new BillboardDepthCalculator(proxy(Client.class));
+		BillboardDepthSurface surface = BillboardDepthSurface.from(camera, draw, 0);
+		assertTrue("Projected surfaces must support occlusion even with a flat source model", surface.supportsWorldOcclusion());
+		assertEquals(quad.depthAt(0.5 / 8.0, 0.5 / 8.0), surface.depthAt(0, 0, 8, 8, 1), 1e-8);
+		BillboardProjectedQuad.Sample sample = new BillboardProjectedQuad.Sample();
+		assertTrue(quad.sample(7.5, 1.5, sample));
+		double farDepth = sample.depth;
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
+		{
+			for (BillboardOcclusionComposition composition : BillboardOcclusionComposition.values())
+			{
+				BillboardOcclusionMask mask = new BillboardOcclusionMask();
+				BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+					prepared -> BillboardDepthSurface.from(camera, prepared, 0));
+				mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(imageBounds,
+					180f, "wall", 128, 0x102030)), quality, composition, 0, 0, 8, 8, null, null);
+				buffer.begin(8, 8);
+				buffer.blit(draw, 0, 0, 8, 8, false);
+				assertEquals("Near side at " + quality, 0xFF804020, buffer.image().getRGB(0, 1));
+				assertEquals("Far side at " + quality + " / " + composition,
+					composition == BillboardOcclusionComposition.HARD_CUTOUT ? 0 : mask.tintPixel(7, 1, farDepth, 0xFF804020),
+					buffer.image().getRGB(7, 1));
+				buffer.begin(8, 8);
+				buffer.blit(new PreparedBillboardDraw(request, draw.result, 1, null, 1), 0, 0, 8, 8, false);
+				assertEquals(0, buffer.image().getRGB(0, 1));
+			}
+		}
+	}
+
 	@Test
 	public void cachedSpriteOcclusionDoesNotAlternateWhenAnotherEntityReusesTheModel()
 	{

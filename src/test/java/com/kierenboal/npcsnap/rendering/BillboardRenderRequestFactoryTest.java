@@ -352,6 +352,27 @@ public class BillboardRenderRequestFactoryTest
 		assertTrue(request.relativePitch != orientation.relativePitch(true));
 	}
 
+	@Test
+	public void worldPlaneModeCapturesOnlyActorBodiesAtZeroPitch()
+	{
+		java.util.concurrent.atomic.AtomicBoolean enabled = new java.util.concurrent.atomic.AtomicBoolean(true);
+		Client client = TestProxies.proxy(Client.class, TestProxies.method("getCameraPitch", 2048));
+		NpcSnapConfig config = new NpcSnapConfig()
+		{
+			@Override public boolean enableActorWorldPlaneProjection() { return enabled.get(); }
+			@Override public boolean enableRotationSnapping() { return false; }
+		};
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
+			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+			new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
+		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", worldView(0)),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)));
+		assertEquals(0, factory.buildActor(actor).relativePitch);
+		assertEquals(-2048, factory.buildActorSpotAnimation(TestProxies.proxy(ActorSpotAnim.class), actor).relativePitch);
+		enabled.set(false);
+		assertEquals(-2048, factory.buildActor(actor).relativePitch);
+	}
+
 	private static BillboardRenderRequestFactory factory()
 	{
 		return factory(true, null);

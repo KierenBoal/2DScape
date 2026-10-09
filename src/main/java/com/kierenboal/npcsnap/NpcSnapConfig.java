@@ -182,6 +182,12 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(keyName = "enableActorWorldPlaneProjection", name = "Actor world-plane projection", description = "Experimental: project NPC and player sprites as standing world planes fitted to their live model bounds.", section = renderingSection, position = 10)
+	default boolean enableActorWorldPlaneProjection()
+	{
+		return false;
+	}
+
 	@ConfigItem(keyName = "enableBillboardSpriteShadows", name = "Add sprite shadows", description = "Draw a small shadow underneath each sprite.", section = spriteSection, position = 0)
 	default boolean enableBillboardSpriteShadows()
 	{

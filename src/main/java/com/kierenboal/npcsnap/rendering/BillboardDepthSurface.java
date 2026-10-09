@@ -17,6 +17,7 @@ public final class BillboardDepthSurface
 	private final boolean supportsWorldOcclusion;
 	private final Rectangle sourceBounds;
 	private final Rectangle drawBounds;
+	private final BillboardProjectedQuad projectedQuad;
 
 	public BillboardDepthSurface(
 		BillboardDepthCalculator depthCalculator,
@@ -57,6 +58,20 @@ public final class BillboardDepthSurface
 		this.supportsWorldOcclusion = supportsWorldOcclusion;
 		this.sourceBounds = sourceBounds;
 		this.drawBounds = drawBounds;
+		this.projectedQuad = null;
+	}
+
+	private BillboardDepthSurface(BillboardDepthSurface surface, BillboardProjectedQuad quad)
+	{
+		depthCalculator = surface.depthCalculator;
+		baseLocalX = surface.baseLocalX;
+		baseLocalY = surface.baseLocalY;
+		baseHeight = surface.baseHeight;
+		modelHeight = Math.max(1, surface.modelHeight);
+		supportsWorldOcclusion = true;
+		sourceBounds = surface.sourceBounds;
+		drawBounds = surface.drawBounds;
+		projectedQuad = quad;
 	}
 
 	public static BillboardDepthSurface invalid()
@@ -66,8 +81,14 @@ public final class BillboardDepthSurface
 
 	public static BillboardDepthSurface from(BillboardDepthCalculator depthCalculator, PreparedBillboardDraw draw, double baseHeight)
 	{
-		return draw == null ? invalid() : from(depthCalculator, draw.request, draw.sourceBounds, draw.bounds,
+		if (draw == null)
+		{
+			return invalid();
+		}
+		BillboardDepthSurface surface = from(depthCalculator, draw.request, draw.sourceBounds, draw.bounds,
 			baseHeight, draw.modelHeight, draw.supportsWorldOcclusion);
+		return draw.geometry != null && draw.geometry.projectedQuad != null && surface != INVALID
+			? new BillboardDepthSurface(surface, draw.geometry.projectedQuad) : surface;
 	}
 
 	public static BillboardDepthSurface from(BillboardDepthCalculator depthCalculator, BillboardRenderRequest request, Rectangle sourceBounds, Rectangle drawBounds, double baseHeight)
@@ -145,6 +166,11 @@ public final class BillboardDepthSurface
 
 	public DebugPoint debugPointAt(int sourceX, int sourceY, int sourceWidth, int sourceHeight, int canvasY)
 	{
+		if (projectedQuad != null && sourceWidth > 0 && sourceHeight > 0)
+		{
+			return new DebugPoint(baseLocalX, baseLocalY, baseHeight, 0.0d, 0.0d,
+				projectedQuad.depthAt((sourceX + 0.5d) / sourceWidth, (sourceY + 0.5d) / sourceHeight));
+		}
 		if (depthCalculator == null || sourceBounds == null || drawBounds == null || sourceWidth <= 0 || sourceHeight <= 0 || modelHeight <= 0 || !Double.isFinite(baseHeight))
 		{
 			return DebugPoint.invalid();

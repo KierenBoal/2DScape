@@ -24,6 +24,7 @@ public final class BillboardFrameBuffer
 	private boolean[] rowHasDepth = new boolean[0];
 	private double[] rowDepth = new double[0];
 	private int[] sampleTransmittance = new int[0];
+	private final BillboardProjectedQuad.Sample projectedSample = new BillboardProjectedQuad.Sample();
 	private BufferedImage image;
 	private int[] pixels = new int[0];
 	private char[] paintOrder = new char[0];
@@ -88,6 +89,7 @@ public final class BillboardFrameBuffer
 			? draw.geometry
 			: BillboardDrawGeometry.rectangular(draw.bounds);
 		int drawWidth = geometry.unskewedBounds.width;
+		BillboardProjectedQuad quad = geometry.projectedQuad;
 		int drawPaintOrder = draw.paintOrder;
 		TileObject ignoredTileObject = draw.occlusionIgnoredTileObject;
 		BillboardDepthSurface billboardDepth = occlusionMask.coveredCellCount() > 0 ? depthSurfaceFactory.create(draw) : null;
@@ -108,7 +110,7 @@ public final class BillboardFrameBuffer
 		}
 		for (int y = clipTop; y < clipBottom; y++)
 		{
-			int sourceY = geometry.sourceYAt(y, sourceHeight);
+			int sourceY = quad == null ? geometry.sourceYAt(y, sourceHeight) : 0;
 			if (sourceY < 0 || sourceY >= sourceHeight)
 			{
 				continue;
@@ -133,12 +135,26 @@ public final class BillboardFrameBuffer
 					continue;
 				}
 
-				int rowX = x - rowLeft;
-				if (rowX < 0 || rowX >= drawWidth)
+				int sourceX;
+				if (quad != null)
 				{
-					continue;
+					if (!quad.sample(x + 0.5d, y + 0.5d, projectedSample))
+					{
+						continue;
+					}
+					sourceX = Math.min(sourceWidth - 1, (int) (projectedSample.u * sourceWidth));
+					sourceY = Math.min(sourceHeight - 1, (int) (projectedSample.v * sourceHeight));
+					sourceRow = sourceY * sourceWidth;
 				}
-				int sourceX = (int) (((long) rowX * sourceWidth) / drawWidth);
+				else
+				{
+					int rowX = x - rowLeft;
+					if (rowX < 0 || rowX >= drawWidth)
+					{
+						continue;
+					}
+					sourceX = (int) (((long) rowX * sourceWidth) / drawWidth);
+				}
 				int sourcePixel = sourcePixels[sourceRow + sourceX];
 				int sourceAlpha = (sourcePixel >>> 24) & 0xFF;
 				if (sourceAlpha == 0)
@@ -153,14 +169,16 @@ public final class BillboardFrameBuffer
 
 				if (rowHasOcclusion)
 				{
-					if (!rowHasDepth[clippedRow])
+					if (quad == null && !rowHasDepth[clippedRow])
 					{
 						rowDepth[clippedRow] = billboardDepth.depthAtRow(sourceHeight, y);
 						rowHasDepth[clippedRow] = true;
 					}
-					double pixelDepth = rowDepth[clippedRow];
+					double pixelDepth = quad != null ? projectedSample.depth : rowDepth[clippedRow];
 					int transmittance;
-					if (occlusionSampleStep > 1)
+					// A rotated plane varies in depth across the row. Do not reuse a
+					// cell classification made at a different point on that plane.
+					if (occlusionSampleStep > 1 && quad == null)
 					{
 						int sampleX = occlusionMask.sampleX(x);
 						if (sampleX != cachedSampleX)

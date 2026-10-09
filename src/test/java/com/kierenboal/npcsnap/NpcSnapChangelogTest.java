@@ -22,9 +22,9 @@ public class NpcSnapChangelogTest
 		assertEquals(List.of(
 			"2DScape (v1.0.1):", "* World object exports fixed", "* boat hiding", "* XP bubble scaling", "* occlusion edge fixes",
 			"2DScape (v1.0.2):", "* Improved rotation calculation with camera location", "* Version system added",
-			"* Projectile arc and height rendering fixed", "* Billboarded world objects no longer clip other sprites", "* World object occlusion and overlapping sprite ordering stabilized"), memory.messages);
+			"* Projectile arc and height rendering fixed", "* Billboarded world objects no longer clip other sprites", "* World object occlusion and overlapping sprite ordering stabilized", "* Optional actor world-plane projection fits sprites to live bounds"), memory.messages);
 		assertEquals("1.0.2", memory.version);
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
+		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
 		for (String message : memory.messages)
 		{
 			if (message.startsWith("* "))
@@ -39,10 +39,10 @@ public class NpcSnapChangelogTest
 	{
 		Memory baseline = new Memory("1.0.0");
 		baseline.check(new NpcSnapChangelog(), true);
-		assertEquals(11, baseline.messages.size());
+		assertEquals(12, baseline.messages.size());
 		Memory previous = new Memory("1.0.1");
 		previous.check(new NpcSnapChangelog(), true);
-		assertEquals(6, previous.messages.size());
+		assertEquals(7, previous.messages.size());
 		assertEquals("2DScape (v1.0.2):", previous.messages.get(0));
 	}
 
@@ -65,7 +65,7 @@ public class NpcSnapChangelogTest
 		{
 			Memory memory = new Memory(version);
 			memory.check(new NpcSnapChangelog(), true);
-			assertEquals(11, memory.messages.size());
+			assertEquals(12, memory.messages.size());
 			assertEquals("1.0.2", memory.version);
 		}
 	}
@@ -79,13 +79,13 @@ public class NpcSnapChangelogTest
 		assertTrue(memory.events.isEmpty());
 		memory.check(changelog, true);
 		memory.check(changelog, true);
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
+		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save"), memory.events);
 		changelog.requestCheck();
 		memory.check(changelog, false);
 		memory.check(changelog, true);
 		memory.check(new NpcSnapChangelog(), true);
-		assertEquals(11, memory.messages.size());
-		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save", "read", "read"), memory.events);
+		assertEquals(12, memory.messages.size());
+		assertEquals(List.of("read", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "message", "save", "read", "read"), memory.events);
 	}
 
 	@Test
@@ -96,7 +96,7 @@ public class NpcSnapChangelogTest
 		changelog.requestCheck();
 		Memory newProfile = new Memory("1.0.0");
 		newProfile.check(changelog, true);
-		assertEquals(11, newProfile.messages.size());
+		assertEquals(12, newProfile.messages.size());
 		assertEquals("1.0.2", newProfile.version);
 	}
 
@@ -134,7 +134,7 @@ public class NpcSnapChangelogTest
 			assertEquals("1.0.0", memory.version);
 		}
 		memory.check(changelog, true);
-		assertEquals(11, memory.messages.size());
+		assertEquals(12, memory.messages.size());
 		assertEquals("1.0.2", memory.version);
 	}
 

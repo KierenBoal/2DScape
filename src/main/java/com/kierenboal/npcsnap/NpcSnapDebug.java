@@ -98,7 +98,7 @@ public class NpcSnapDebug
 			Stroke stroke = graphics.getStroke();
 			graphics.setStroke(new BasicStroke(size));
 			graphics.setColor(BILLBOARD_RED);
-			if (renderDebug.geometry != null && renderDebug.geometry.isSheared())
+			if (renderDebug.geometry != null && (renderDebug.geometry.isSheared() || renderDebug.geometry.projectedQuad != null))
 			{
 				graphics.drawPolygon(renderDebug.geometry.polygon());
 			}

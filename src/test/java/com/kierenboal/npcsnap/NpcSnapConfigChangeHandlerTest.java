@@ -54,6 +54,16 @@ public class NpcSnapConfigChangeHandlerTest
 		counters.assertCounts(0, 2);
 	}
 
+	@Test
+	public void actorWorldPlaneChangesClearBillboardCache()
+	{
+		Counters counters = new Counters();
+		counters.handler().handle("other", "enableActorWorldPlaneProjection");
+		counters.assertCounts(0, 0);
+		counters.handler().handle("npc-snap", "enableActorWorldPlaneProjection");
+		counters.assertCounts(0, 1);
+	}
+
 	private static final class Counters
 	{
 		private final AtomicInteger uiDirty = new AtomicInteger();

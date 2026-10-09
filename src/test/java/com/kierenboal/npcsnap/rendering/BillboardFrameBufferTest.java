@@ -261,6 +261,46 @@ public class BillboardFrameBufferTest
 		assertEquals(0, buffer.image().getRGB(0, 1));
 	}
 
+	@Test
+	public void projectedQuadPreservesNearestNeighbourPixelsAndTransparentLayerOrder()
+	{
+		Rectangle rect = new Rectangle(0, 0, 2, 2);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.projected(BillboardProjectedQuad.create(
+			point(0, 0, 100), point(2, 0, 100), point(2, 2, 100), point(0, 2, 100), rect, rect));
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(2, 2);
+		buffer.blit(draw(image(2, 2, new int[] {0x80FF0000, 0, 0xFF00FF00, 0xFF0000FF}), geometry, 10),
+			0, 0, 2, 2, false);
+		buffer.blit(draw(image(1, 1, new int[] {0xFFFFFFFF}), rect, 1), 0, 0, 2, 2, false);
+		assertEquals(0xFFFF7F7F, buffer.image().getRGB(0, 0));
+		assertEquals(0xFFFFFFFF, buffer.image().getRGB(1, 0));
+		assertEquals(0xFF00FF00, buffer.image().getRGB(0, 1));
+		assertEquals(0xFF0000FF, buffer.image().getRGB(1, 1));
+	}
+
+	@Test
+	public void rotatedQuadSamplesBothTextureCoordinatesAndLeavesExteriorTransparent()
+	{
+		Rectangle rect = new Rectangle(0, 0, 2, 2);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.projected(BillboardProjectedQuad.create(
+			point(2, 0, 100), point(4, 2, 100), point(2, 4, 100), point(0, 2, 100), rect, rect));
+		BillboardFrameBuffer buffer = buffer();
+		buffer.begin(4, 4);
+		buffer.blit(draw(image(2, 2, new int[] {0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF}), geometry, 1),
+			0, 0, 4, 4, false);
+		assertEquals(0, buffer.image().getRGB(0, 0));
+		assertEquals(0, buffer.image().getRGB(3, 3));
+		assertEquals(0xFFFF0000, buffer.image().getRGB(1, 0));
+		assertEquals(0xFF00FF00, buffer.image().getRGB(2, 1));
+		assertEquals(0xFF0000FF, buffer.image().getRGB(0, 1));
+		assertEquals(0xFFFFFFFF, buffer.image().getRGB(2, 2));
+	}
+
+	private static BillboardCanvasPoint point(double x, double y, double depth)
+	{
+		return new BillboardCanvasPoint(x, y, depth, 0, 0);
+	}
+
 	private static PreparedBillboardDraw draw(BufferedImage image, Rectangle bounds, int paintOrder)
 	{
 		return new PreparedBillboardDraw(

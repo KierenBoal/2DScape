@@ -118,7 +118,7 @@ public final class BillboardRenderRequestFactory
 			actor.getAnimationHeightOffset(),
 			orientationCalculator.relativeActorBodyYaw(actor,
 				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor), mainWorldLocation),
-			orientationCalculator.relativePitch(actor),
+			config.enableActorWorldPlaneProjection() ? 0 : orientationCalculator.relativePitch(actor),
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
 			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
 			hoverColor, interactionColor,
