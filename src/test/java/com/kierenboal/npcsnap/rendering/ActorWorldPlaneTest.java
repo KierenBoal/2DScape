@@ -1,15 +1,12 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
-import net.runelite.api.AABB;
 import net.runelite.api.Client;
-import net.runelite.api.Model;
 import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
-import static com.kierenboal.npcsnap.TestProxies.methodSupplier;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
 import static org.junit.Assert.*;
 
@@ -21,16 +18,17 @@ public class ActorWorldPlaneTest
 		for (boolean gpu : new boolean[] {false, true})
 		{
 			BillboardDepthCalculator camera = camera(gpu, 0, 0);
-			ActorWorldPlane plane = new ActorWorldPlane(20, -80, 10, 50, 80, 10);
-			Rectangle content = new Rectangle(-40, -100, 80, 100);
-			Rectangle image = new Rectangle(-50, -110, 100, 120);
-			BillboardDrawGeometry geometry = plane.project(camera, new LocalPoint(0, 1000), 0,
-				0, 0, 0, image, content);
+			Rectangle content = new Rectangle(-30, -100, 80, 100);
+			Rectangle image = new Rectangle(-40, -110, 100, 120);
+			BillboardDrawGeometry geometry = ActorWorldPlane.project(camera, new LocalPoint(0, 1000), 0,
+				0, image, content);
 			assertNotNull(geometry);
-			// The unpadded top-left maps to the asymmetric live box's (-30, -160).
-			assertEquals(new Point(385, 220), geometry.canvasPoint(0.1, 1.0 / 12.0));
-			assertEquals(new Point(435, 300), geometry.canvasPoint(0.9, 11.0 / 12.0));
-			assertEquals(new Point(410, 220), geometry.contentTopCenter());
+			assertEquals(new Point(385, 250), geometry.canvasPoint(0.1, 1.0 / 12.0));
+			assertEquals(new Point(425, 300), geometry.canvasPoint(0.9, 11.0 / 12.0));
+			assertEquals(new Point(405, 250), geometry.contentTopCenter());
+			assertEquals(new Point(380, 245), geometry.canvasPoint(0, 0));
+			assertEquals(new Point(430, 305), geometry.canvasPoint(1, 1));
+			assertEquals(new Point(400, 300), geometry.canvasPoint(0.4, 11.0 / 12.0));
 			assertTrue(geometry.bounds.contains(geometry.polygon().getBounds()));
 		}
 	}
@@ -40,8 +38,8 @@ public class ActorWorldPlaneTest
 	{
 		BillboardDepthCalculator camera = camera(false, 0, 0);
 		Rectangle image = new Rectangle(-150, -240, 300, 240);
-		BillboardDrawGeometry geometry = new ActorWorldPlane(0, -120, 0, 150, 120, 20)
-			.project(camera, new LocalPoint(0, 1000), 0, 0, 2048, 0, image, image);
+		BillboardDrawGeometry geometry = ActorWorldPlane.project(camera, new LocalPoint(-400, 1000),
+			0, Math.atan2(400, 1000), image, image);
 		assertNotNull(geometry);
 		BillboardProjectedQuad.Sample sample = new BillboardProjectedQuad.Sample();
 		for (double u : new double[] {0.1, 0.3, 0.5, 0.9})
@@ -66,16 +64,15 @@ public class ActorWorldPlaneTest
 	@Test
 	public void cameraPitchAndYawAgreeBetweenCpuAndGpu()
 	{
-		ActorWorldPlane plane = new ActorWorldPlane(20, -80, 0, 50, 80, 10);
 		Rectangle image = new Rectangle(-50, -160, 100, 160);
 		for (int yaw : new int[] {0, 512, 1024})
 		{
 			for (int pitch : new int[] {0, 1024, 2048, 3072})
 			{
-				BillboardDrawGeometry cpu = plane.project(camera(false, yaw, pitch), new LocalPoint(500, 1500), 0,
-					256, 2048, -0.3, image, image);
-				BillboardDrawGeometry gpu = plane.project(camera(true, yaw, pitch), new LocalPoint(500, 1500), 0,
-					256, 2048, -0.3, image, image);
+				BillboardDrawGeometry cpu = ActorWorldPlane.project(camera(false, yaw, pitch), new LocalPoint(500, 1500), 0,
+					Math.atan2(-500, 1500), image, image);
+				BillboardDrawGeometry gpu = ActorWorldPlane.project(camera(true, yaw, pitch), new LocalPoint(500, 1500), 0,
+					Math.atan2(-500, 1500), image, image);
 				assertNotNull(cpu);
 				assertNotNull(gpu);
 				for (double u : new double[] {0, 0.5, 1})
@@ -89,57 +86,89 @@ public class ActorWorldPlaneTest
 	}
 
 	@Test
-	public void capturedViewTurnsWithActorButNeverExceedsSixtyDegrees()
+	public void planeFacesCameraAndPreservesCapturedSizeThroughoutAnOrbit()
 	{
-		assertEquals(Math.PI / 4, ActorWorldPlane.rightBearing(2048, 0, 0), 1e-8);
-		assertEquals(0, ActorWorldPlane.rightBearing(2048, 256, 0), 1e-8);
-		assertEquals(-Math.PI / 4, ActorWorldPlane.rightBearing(2048, 512, 0), 1e-8);
-		assertEquals(Math.PI / 3, Math.abs(ActorWorldPlane.rightBearing(8192, 0, 0)), 1e-8);
-		// Equivalent full-circle orientations cannot introduce a discontinuity.
-		assertEquals(ActorWorldPlane.rightBearing(2048, 0, 0), ActorWorldPlane.rightBearing(2048, 2048, 0), 1e-8);
+		Rectangle image = new Rectangle(-50, -100, 100, 100);
+		LocalPoint location = new LocalPoint(0, 1000);
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			for (int yaw = 0; yaw < 16384; yaw += 2048)
+			{
+				double angle = yaw * 2.0 * Math.PI / 16384;
+				int cameraX = (int) Math.round(1000 * Math.sin(angle));
+				int cameraY = (int) Math.round(1000 - 1000 * Math.cos(angle));
+				Client client = cameraClient(gpu, yaw, 0, cameraX, cameraY);
+				double bearing = ActorWorldPlane.viewingBearing(client, location);
+				BillboardDrawGeometry geometry = ActorWorldPlane.project(new BillboardDepthCalculator(client), location,
+					0, bearing, image, image);
+				assertNotNull(geometry);
+				// Raster bounds round outward; measure the projected corners instead.
+				assertEquals(50, geometry.canvasPoint(1, 0).getX() - geometry.canvasPoint(0, 0).getX(), 1);
+				assertEquals(50, geometry.canvasPoint(0, 1).getY() - geometry.canvasPoint(0, 0).getY(), 1);
+				assertEquals(geometry.projectedQuad.depthAt(0, 0), geometry.projectedQuad.depthAt(1, 0), 0.1);
+				assertEquals(geometry.projectedQuad.depthAt(0.5, 0), geometry.projectedQuad.depthAt(0.5, 1), 1e-8);
+			}
+		}
 	}
 
 	@Test
-	public void snapshotsDoNotRetainMutableAabbData()
+	public void coincidentCameraUsesItsCpuOrGpuYawAndPositionConventions()
 	{
-		java.util.concurrent.atomic.AtomicInteger width = new java.util.concurrent.atomic.AtomicInteger(50);
-		AABB box = proxy(AABB.class, methodSupplier("getExtremeX", width::get),
-			method("getCenterY", -50), method("getExtremeY", 50), method("getExtremeZ", 10));
-		Model model = proxy(Model.class, method("getAABB", box));
-		ActorWorldPlane before = ActorWorldPlane.sample(model);
-		width.set(100);
-		ActorWorldPlane after = ActorWorldPlane.sample(model);
+		LocalPoint location = new LocalPoint(512, 1024);
+		Client cpu = proxy(Client.class, method("getCameraX", 512), method("getCameraY", 1024),
+			method("getCameraYaw", 4096), method("getCameraFpYaw", 0.7f));
+		assertEquals(Math.PI / 2, ActorWorldPlane.viewingBearing(cpu, location), 1e-8);
+		Client gpu = proxy(Client.class, method("isGpu", true), method("getCameraFpX", 512.0f),
+			method("getCameraFpY", 1024.0f), method("getCameraYaw", 4096), method("getCameraFpYaw", 0.7f));
+		assertEquals(0.7f, ActorWorldPlane.viewingBearing(gpu, location), 1e-8);
+		Client offsetGpu = proxy(Client.class, method("isGpu", true), method("getCameraX", 512),
+			method("getCameraY", 1024), method("getCameraFpX", 112.0f), method("getCameraFpY", 24.0f));
+		assertEquals(Math.atan2(-400, 1000), ActorWorldPlane.viewingBearing(offsetGpu, location), 1e-8);
+	}
+
+	@Test
+	public void differentCapturesSupplyTheirOwnWidthHeightAndOrigin()
+	{
 		Rectangle image = new Rectangle(-50, -100, 100, 100);
-		BillboardDrawGeometry a = before.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, 0, 0, image, image);
-		BillboardDrawGeometry b = after.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, 0, 0, image, image);
+		Rectangle next = new Rectangle(-10, -200, 50, 200);
+		BillboardDrawGeometry a = ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, image, image);
+		BillboardDrawGeometry b = ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, next, next);
 		assertEquals(50, a.bounds.width);
-		assertEquals(100, b.bounds.width);
-		assertNull(ActorWorldPlane.sample(null));
-		assertNull(ActorWorldPlane.sample(proxy(Model.class)));
+		assertEquals(50, a.bounds.height);
+		assertEquals(25, b.bounds.width);
+		assertEquals(100, b.bounds.height);
+		assertEquals(new Point(395, 200), b.canvasPoint(0, 0));
+		assertEquals(new Point(420, 300), b.canvasPoint(1, 1));
 	}
 
 	@Test
 	public void invalidNearPlaneTinyAndOversizedProjectionsAreRejected()
 	{
 		Rectangle image = new Rectangle(-100, -200, 200, 200);
-		ActorWorldPlane plane = new ActorWorldPlane(0, -100, 0, 100, 100, 10);
-		assertNull(plane.project(camera(false, 0, 0), new LocalPoint(0, 50), 0,
-			0, 2048, 0, image, image));
-		assertNull(plane.project(camera(false, 0, 0), new LocalPoint(0, 1000000), 0,
-			0, 0, 0, image, image));
-		assertNull(new ActorWorldPlane(0, -10000, 0, 10000, 10000, 0)
-			.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, 0, 0, image, image));
-		assertNull(plane.project(camera(false, 0, 0), null, 0, 0, 0, 0, image, image));
-		assertNull(plane.project(camera(false, 0, 0), new LocalPoint(0, 1000), Double.NaN,
-			0, 0, 0, image, image));
+		assertNull(ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(50, 50), 0,
+			-Math.PI / 4, image, image));
+		assertNull(ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(0, 1000000), 0,
+			0, image, image));
+		Rectangle oversized = new Rectangle(-10000, -20000, 20000, 20000);
+		assertNull(ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(0, 1000), 0, 0, oversized, oversized));
+		assertNull(ActorWorldPlane.project(camera(false, 0, 0), null, 0, 0, image, image));
+		assertNull(ActorWorldPlane.project(camera(false, 0, 0), new LocalPoint(0, 1000), Double.NaN,
+			0, image, image));
 	}
 
 	private static BillboardDepthCalculator camera(boolean gpu, int yaw, int pitch)
 	{
-		return new BillboardDepthCalculator(proxy(Client.class, method("isGpu", gpu),
+		return new BillboardDepthCalculator(cameraClient(gpu, yaw, pitch, 0, 0));
+	}
+
+	private static Client cameraClient(boolean gpu, int yaw, int pitch, int cameraX, int cameraY)
+	{
+		return proxy(Client.class, method("isGpu", gpu),
+			method("getCameraX", cameraX), method("getCameraY", cameraY),
+			method("getCameraFpX", (float) cameraX), method("getCameraFpY", (float) cameraY),
 			method("getCameraYaw", yaw), method("getCameraPitch", pitch),
 			method("getCameraFpYaw", (float) (yaw * 2.0 * Math.PI / 16384)),
 			method("getCameraFpPitch", (float) (pitch * 2.0 * Math.PI / 16384)),
-			method("getScale", 500), method("getViewportWidth", 800), method("getViewportHeight", 600)));
+			method("getScale", 500), method("getViewportWidth", 800), method("getViewportHeight", 600));
 	}
 }

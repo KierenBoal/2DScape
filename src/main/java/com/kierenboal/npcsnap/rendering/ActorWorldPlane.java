@@ -1,70 +1,46 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
-import net.runelite.api.AABB;
-import net.runelite.api.Model;
+import net.runelite.api.Client;
 import net.runelite.api.coords.LocalPoint;
 
-/** Immutable model-space bounds copied before the client applies frame snapping. */
+/** Projects the captured sprite's model-space bounds onto a camera-facing world plane. */
 public final class ActorWorldPlane
 {
-	private final double centerX, centerY, centerZ;
-	private final double extremeX, extremeY, extremeZ;
-
-	public ActorWorldPlane(double centerX, double centerY, double centerZ,
-		double extremeX, double extremeY, double extremeZ)
+	private ActorWorldPlane()
 	{
-		this.centerX = centerX;
-		this.centerY = centerY;
-		this.centerZ = centerZ;
-		this.extremeX = extremeX;
-		this.extremeY = extremeY;
-		this.extremeZ = extremeZ;
 	}
 
-	public static ActorWorldPlane sample(Model model)
+	/** Horizontal camera-facing right axis, using the same camera conventions as projection. */
+	public static double viewingBearing(Client client, LocalPoint location)
 	{
-		AABB box = model != null ? model.getAABB(0) : null;
-		return box != null && box.getExtremeY() > 0 && (box.getExtremeX() > 0 || box.getExtremeZ() > 0)
-			? new ActorWorldPlane(box.getCenterX(), box.getCenterY(), box.getCenterZ(),
-				box.getExtremeX(), box.getExtremeY(), box.getExtremeZ()) : null;
+		double cameraX = client.isGpu() ? client.getCameraFpX() : client.getCameraX();
+		double cameraY = client.isGpu() ? client.getCameraFpY() : client.getCameraY();
+		double dx = location.getX() - cameraX, dy = location.getY() - cameraY;
+		if (Math.hypot(dx, dy) > 1.0d)
+		{
+			return Math.atan2(-dx, dy);
+		}
+		return client.isGpu() ? client.getCameraFpYaw()
+			: client.getCameraYaw() * (2.0d * Math.PI / BillboardAngleUtils.CAMERA_FULL_CIRCLE);
 	}
 
-	/** Plane right bearing, with the captured view's residual turn limited for readability. */
-	public static double rightBearing(int capturedYaw, int worldOrientation, double viewingBearing)
-	{
-		double bearing = capturedYaw * (2.0d * Math.PI / BillboardAngleUtils.BILLBOARD_FULL_CIRCLE)
-			- worldOrientation * (2.0d * Math.PI / BillboardAngleUtils.ACTOR_FULL_CIRCLE);
-		double difference = Math.atan2(Math.sin(bearing - viewingBearing), Math.cos(bearing - viewingBearing));
-		return viewingBearing + Math.max(-Math.PI / 3.0d, Math.min(Math.PI / 3.0d, difference));
-	}
-
-	public BillboardDrawGeometry project(BillboardDepthCalculator calculator, LocalPoint location, double baseWorldZ,
-		int worldOrientation, int capturedYaw, double viewingBearing, Rectangle image, Rectangle content)
+	public static BillboardDrawGeometry project(BillboardDepthCalculator calculator, LocalPoint location, double baseWorldZ,
+		double viewingBearing, Rectangle image, Rectangle content)
 	{
 		if (location == null || image == null || image.isEmpty() || content == null || content.isEmpty()
 			|| !Double.isFinite(baseWorldZ) || !Double.isFinite(viewingBearing))
 		{
 			return null;
 		}
-		double bearing = rightBearing(capturedYaw, worldOrientation, viewingBearing);
+		// Sprite selection has already applied actor rotation and snapping. The
+		// sheet itself faces the camera on yaw, independently of that captured view.
+		double bearing = viewingBearing;
 		double rightX = Math.cos(bearing), rightY = Math.sin(bearing);
-		double actorAngle = worldOrientation * (2.0d * Math.PI / BillboardAngleUtils.ACTOR_FULL_CIRCLE);
-		// Project the eight unrotated AABB corners onto the sheet's horizontal axis.
-		double localAngle = bearing + actorAngle;
-		double localRightX = Math.cos(localAngle), localRightZ = Math.sin(localAngle);
-		double center = centerX * localRightX + centerZ * localRightZ;
-		double halfWidth = Math.abs(localRightX) * extremeX + Math.abs(localRightZ) * extremeZ;
-		double width = 2.0d * halfWidth, height = 2.0d * extremeY;
-		if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0 || height <= 0)
-		{
-			return null;
-		}
-		// Map unpadded content to the live box, extending the same map over padding.
-		double left = center - halfWidth + (image.x - content.x) * width / content.width;
-		double right = center - halfWidth + (image.getMaxX() - content.x) * width / content.width;
-		double top = centerY - extremeY + (image.y - content.y) * height / content.height;
-		double bottom = centerY - extremeY + (image.getMaxY() - content.y) * height / content.height;
+		// Bounds are in captured model units, not texture pixels. Preserve both
+		// dimensions and their offset from model zero, including outline padding.
+		double left = image.x, right = image.getMaxX();
+		double top = image.y, bottom = image.getMaxY();
 		return BillboardDrawGeometry.projected(BillboardProjectedQuad.create(
 			corner(calculator, location, baseWorldZ, rightX, rightY, left, top),
 			corner(calculator, location, baseWorldZ, rightX, rightY, right, top),

@@ -182,7 +182,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableActorWorldPlaneProjection", name = "Actor world-plane projection", description = "Experimental: project NPC and player sprites as standing world planes fitted to their live model bounds.", section = renderingSection, position = 10)
+	@ConfigItem(keyName = "enableActorWorldPlaneProjection", name = "Improved click accuracy mode", description = "Experimental: project NPC and player sprites as standing world planes that face the camera on yaw and preserve the captured sprite's proportions.", section = renderingSection, position = 10)
 	default boolean enableActorWorldPlaneProjection()
 	{
 		return false;

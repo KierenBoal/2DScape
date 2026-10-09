@@ -373,6 +373,30 @@ public class BillboardRenderRequestFactoryTest
 		assertEquals(-2048, factory.buildActor(actor).relativePitch);
 	}
 
+	@Test
+	public void cameraFacingPlaneRetainsActorRotationSnappingForSpriteSelection()
+	{
+		java.util.concurrent.atomic.AtomicInteger orientation = new java.util.concurrent.atomic.AtomicInteger();
+		Client client = TestProxies.proxy(Client.class);
+		NpcSnapConfig config = new NpcSnapConfig()
+		{
+			@Override public boolean enableActorWorldPlaneProjection() { return true; }
+			@Override public boolean ignoreCameraAwareRotation() { return true; }
+		};
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
+			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+			new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
+		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", worldView(0)),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)),
+			TestProxies.methodSupplier("getCurrentOrientation", orientation::get));
+		assertEquals(0, factory.buildActor(actor).relativeYaw);
+		orientation.set(64);
+		assertEquals("Small turns remain within the same snapped sprite view", 0, factory.buildActor(actor).relativeYaw);
+		orientation.set(512);
+		assertEquals("Quarter turns select a different sprite view", 4096, factory.buildActor(actor).relativeYaw);
+		assertEquals(0, factory.buildActor(actor).relativePitch);
+	}
+
 	private static BillboardRenderRequestFactory factory()
 	{
 		return factory(true, null);

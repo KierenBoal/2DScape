@@ -26,45 +26,39 @@ import static org.junit.Assert.*;
 public class NpcBillboardWorldPlaneTest
 {
 	@Test
-	public void preSnapBoundsAreCopiedOncePerCycleAndMissingBoundsFallBack()
+	public void liveBoundsAndGameCyclesCannotStretchTheDisplayedSprite()
 	{
 		Fixture f = new Fixture();
-		assertNull(f.draw(f.actor, 0, 0).projectedQuad);
-		f.overlay.captureActorWorldPlane(f.actor);
-		BillboardDrawGeometry initial = f.draw(f.actor, 0, 0);
+		BillboardDrawGeometry initial = f.draw(f.actor, 0);
 		assertNotNull(initial.projectedQuad);
-		assertEquals(1, f.measurements.get());
-		// A snapped model, or a later model lookup, can overwrite its AABB backing data.
 		f.halfWidth.set(100);
-		f.overlay.captureActorWorldPlane(f.actor);
-		assertEquals(initial.bounds, f.draw(f.actor, 0, 0).bounds);
-		assertEquals(1, f.measurements.get());
+		f.halfHeight.set(200);
+		assertEquals(initial.bounds, f.draw(f.actor, 0).bounds);
 		f.cycle.incrementAndGet();
-		assertNull("Previous-cycle measurements cannot be used", f.draw(f.actor, 0, 0).projectedQuad);
-		f.overlay.captureActorWorldPlane(f.actor);
-		assertEquals(2, f.measurements.get());
-		assertTrue(f.draw(f.actor, 0, 0).bounds.width > initial.bounds.width);
-		f.overlay.clearInteractionIfMatches(f.actor);
-		assertNull(f.draw(f.actor, 0, 0).projectedQuad);
+		assertEquals(initial.bounds, f.draw(f.actor, 0).bounds);
+		assertEquals("Projection must not sample the live model", 0, f.measurements.get());
 	}
 
 	@Test
-	public void geometryUsesDisplayedYawWhileRequestWaitsForRedraw()
+	public void spriteYawAndActorOrientationCannotStretchCachedBounds()
 	{
 		Fixture f = new Fixture();
-		f.overlay.captureActorWorldPlane(f.actor);
-		BillboardDrawGeometry initial = f.draw(f.actor, 0, 0);
-		BillboardDrawGeometry held = f.draw(f.actor, 2048, 0);
-		BillboardDrawGeometry refreshed = f.draw(f.actor, 2048, 2048);
-		assertEquals(initial.polygon().getBounds(), held.polygon().getBounds());
-		assertEquals(initial.projectedQuad.depthAt(0, 0), held.projectedQuad.depthAt(0, 0), 1e-8);
-		assertNotEquals(held.projectedQuad.depthAt(0, 0), refreshed.projectedQuad.depthAt(0, 0), 1e-8);
-		f.orientation.set(256);
-		assertNotEquals(held.projectedQuad.depthAt(0, 0), f.draw(f.actor, 2048, 0).projectedQuad.depthAt(0, 0), 1e-8);
+		BillboardDrawGeometry initial = f.draw(f.actor, 0);
+		for (int spriteYaw : new int[] {2048, 4096, 8192, 12288})
+		{
+			BillboardDrawGeometry changed = f.draw(f.actor, spriteYaw);
+			assertEquals(initial.polygon().getBounds(), changed.polygon().getBounds());
+			assertEquals(initial.projectedQuad.depthAt(0, 0), changed.projectedQuad.depthAt(0, 0), 1e-8);
+		}
+		f.orientation.set(512);
+		BillboardDrawGeometry turned = f.draw(f.actor, 4096);
+		assertEquals(initial.bounds, turned.bounds);
+		assertEquals(initial.projectedQuad.depthAt(0, 0), turned.projectedQuad.depthAt(0, 0), 1e-8);
+		assertEquals(initial.contentTopCenter(), turned.contentTopCenter());
 	}
 
 	@Test
-	public void nestedOrientationIncludesTheOwningWorldEntity()
+	public void nestedActorsPreserveCapturedDimensionsAtTheirMainWorldLocation()
 	{
 		Fixture f = new Fixture();
 		WorldView nested = proxy(WorldView.class);
@@ -73,28 +67,23 @@ public class NpcBillboardWorldPlaneTest
 		f.owner = owner;
 		Actor actor = proxy(Actor.class, method("getWorldView", nested), method("getModel", f.model),
 			method("getLocalLocation", new LocalPoint(128, 128, nested)), method("getCurrentOrientation", 0));
-		f.overlay.captureActorWorldPlane(actor);
 		f.orientation.set(256);
-		f.overlay.captureActorWorldPlane(f.actor);
-		BillboardDrawGeometry a = f.draw(actor, 2048, 2048), b = f.draw(f.actor, 2048, 2048);
+		BillboardDrawGeometry a = f.draw(actor, 2048), b = f.draw(f.actor, 2048);
 		assertNotNull(a.projectedQuad);
 		assertEquals(b.bounds, a.bounds);
 		assertEquals(b.projectedQuad.depthAt(0, 0), a.projectedQuad.depthAt(0, 0), 1e-8);
 	}
 
 	@Test
-	public void toggleOffRestoresTheOriginalGeometryAndClearDropsMeasurements()
+	public void toggleOffRestoresTheOriginalGeometryAndReenablingNeedsNoMeasurement()
 	{
 		Fixture f = new Fixture();
-		f.overlay.captureActorWorldPlane(f.actor);
-		assertNotNull(f.draw(f.actor, 2048, 2048).projectedQuad);
+		assertNotNull(f.draw(f.actor, 2048).projectedQuad);
 		f.enabled.set(false);
-		assertNull(f.draw(f.actor, 2048, 2048).projectedQuad);
+		assertNull(f.draw(f.actor, 2048).projectedQuad);
 		f.overlay.clearBillboardCache();
 		f.enabled.set(true);
-		assertNull(f.draw(f.actor, 2048, 2048).projectedQuad);
-		f.overlay.captureActorWorldPlane(f.actor);
-		assertNotNull(f.draw(f.actor, 2048, 2048).projectedQuad);
+		assertNotNull(f.draw(f.actor, 2048).projectedQuad);
 	}
 
 	private static final class Fixture
@@ -103,6 +92,7 @@ public class NpcBillboardWorldPlaneTest
 		private final AtomicInteger cycle = new AtomicInteger();
 		private final AtomicInteger measurements = new AtomicInteger();
 		private final AtomicInteger halfWidth = new AtomicInteger(50);
+		private final AtomicInteger halfHeight = new AtomicInteger(50);
 		private final AtomicInteger orientation = new AtomicInteger();
 		private WorldEntity owner;
 		private final WorldView view = proxy(WorldView.class, method("isTopLevel", true),
@@ -111,7 +101,7 @@ public class NpcBillboardWorldPlaneTest
 				methodSupplier("iterator", () -> owner == null ? Collections.emptyIterator() : Collections.singleton(owner).iterator()))));
 		private final LocalPoint location = new LocalPoint(512, 1024, view);
 		private final AABB box = proxy(AABB.class, methodSupplier("getExtremeX", halfWidth::get),
-			method("getCenterY", -50), method("getExtremeY", 50), method("getExtremeZ", 10));
+			method("getCenterY", -50), methodSupplier("getExtremeY", halfHeight::get), method("getExtremeZ", 10));
 		private final Model model = proxy(Model.class, methodSupplier("getAABB", () -> {
 			measurements.incrementAndGet(); return box;
 		}));
@@ -129,12 +119,12 @@ public class NpcBillboardWorldPlaneTest
 		private final NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
 			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client), null);
 
-		private BillboardDrawGeometry draw(Actor target, int requestedYaw, int capturedYaw)
+		private BillboardDrawGeometry draw(Actor target, int requestedYaw)
 		{
 			BillboardRenderRequest request = new BillboardRenderRequest(target, model, location, 0, 0,
 				requestedYaw, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
 			Rectangle image = new Rectangle(-50, -100, 100, 100);
-			BillboardDrawGeometry geometry = overlay.buildDrawGeometry(request, target, image, image, capturedYaw);
+			BillboardDrawGeometry geometry = overlay.buildDrawGeometry(request, target, image, image);
 			assertNotNull(geometry);
 			return geometry;
 		}

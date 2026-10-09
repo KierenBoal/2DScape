@@ -164,8 +164,6 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<Renderable> forceHoverInteractionRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Set<Actor> forceActorResizeRedraws = Collections.newSetFromMap(new IdentityHashMap<>());
 	private final Map<Actor, Boolean> actorResizeObservations = new IdentityHashMap<>();
-	private final Map<Actor, ActorWorldPlane> actorWorldPlanes = new IdentityHashMap<>();
-	private int actorWorldPlanesCycle = Integer.MIN_VALUE;
 	private final ActorBillboardBounds.Sampler actorBoundsSampler;
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
 	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask(performanceMetrics);
@@ -368,8 +366,6 @@ class NpcBillboardOverlay extends Overlay
 
 	private void clearRenderQueue()
 	{
-		actorWorldPlanes.clear();
-		actorWorldPlanesCycle = Integer.MIN_VALUE;
 		updateQueue.clear();
 		classificationDebug.clear();
 		billboardUpdateStates.clear();
@@ -399,8 +395,6 @@ class NpcBillboardOverlay extends Overlay
 	void clearBillboardCache()
 	{
 		billboardCache.clear();
-		actorWorldPlanes.clear();
-		actorWorldPlanesCycle = Integer.MIN_VALUE;
 		forceActorResizeRedraws.clear();
 		actorResizeObservations.clear();
 	}
@@ -450,42 +444,6 @@ class NpcBillboardOverlay extends Overlay
 			return true;
 		}
 		return false;
-	}
-
-	/** Called before any mutation of the actor's action or pose frame. */
-	void captureActorWorldPlane(Actor actor)
-	{
-		if (!config.enable2dBillboardSprites() || !config.enableActorWorldPlaneProjection()
-			|| !isActorWorldViewVisible(actor))
-		{
-			return;
-		}
-		LocalPoint location = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor);
-		LocalPoint playerLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), client.getLocalPlayer());
-		if (location == null || (playerLocation != null
-			&& location.distanceTo(playerLocation) > config.billboardRadiusTiles() * BillboardConstants.LOCAL_TILE_SIZE))
-		{
-			return;
-		}
-		int cycle = client.getGameCycle();
-		if (actorWorldPlanesCycle != cycle)
-		{
-			actorWorldPlanes.clear();
-			actorWorldPlanesCycle = cycle;
-		}
-		if (!actorWorldPlanes.containsKey(actor))
-		{
-			ActorWorldPlane plane = null;
-			try
-			{
-				plane = ActorWorldPlane.sample(actor.getModel());
-			}
-			catch (RuntimeException ex)
-			{
-				log.debug("Unable to measure actor world plane", ex);
-			}
-			actorWorldPlanes.put(actor, plane);
-		}
 	}
 
 	private ActorBillboardBounds sampleActorBounds(Actor actor, Model model)
@@ -597,7 +555,6 @@ class NpcBillboardOverlay extends Overlay
 
 	void clearInteractionIfMatches(Actor actor)
 	{
-		actorWorldPlanes.remove(actor);
 		interactionState.clearIfMatches(actor);
 		actorOverheadRenderer.clear(actor);
 	}
@@ -1524,8 +1481,7 @@ class NpcBillboardOverlay extends Overlay
 		Rectangle bounds = cached != null ? cached.bounds : estimateBillboardImageBounds(request);
 		Rectangle contentBounds = cached != null ? cached.contentBounds : bounds;
 		BillboardDrawGeometry geometry = bounds != null
-			? buildDrawGeometry(request, request.renderable, bounds, contentBounds,
-				cached != null ? cached.key.relativeYaw : request.relativeYaw)
+			? buildDrawGeometry(request, request.renderable, bounds, contentBounds)
 			: null;
 		return geometry != null ? geometry.bounds : null;
 	}
@@ -3329,7 +3285,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		cached.stateDebugInfo(buildStateDebugInfo(request, queuePosition));
-		BillboardDrawGeometry geometry = buildDrawGeometry(request, renderable, cached.bounds, cached.contentBounds, cached.key.relativeYaw);
+		BillboardDrawGeometry geometry = buildDrawGeometry(request, renderable, cached.bounds, cached.contentBounds);
 		return geometry != null ? new BillboardRenderResult(geometry, cached.image, cached.bounds) : null;
 	}
 
@@ -3383,18 +3339,11 @@ class NpcBillboardOverlay extends Overlay
 		Rectangle billboardBounds,
 		Rectangle contentBounds)
 	{
-		return buildDrawGeometry(request, renderable, billboardBounds, contentBounds, request.relativeYaw);
-	}
-
-	BillboardDrawGeometry buildDrawGeometry(
-		BillboardRenderRequest request, Renderable renderable, Rectangle billboardBounds,
-		Rectangle contentBounds, int capturedYaw)
-	{
 		boolean actor = renderable instanceof Actor;
 		if (actor && config.enableActorWorldPlaneProjection())
 		{
 			BillboardDrawGeometry projected = actorWorldPlaneGeometry((Actor) renderable, request,
-				billboardBounds, contentBounds, capturedYaw);
+				billboardBounds, contentBounds);
 			if (projected != null)
 			{
 				Rectangle visible = projected.bounds;
@@ -3448,25 +3397,19 @@ class NpcBillboardOverlay extends Overlay
 	}
 
 	private BillboardDrawGeometry actorWorldPlaneGeometry(Actor actor, BillboardRenderRequest request,
-		Rectangle image, Rectangle content, int capturedYaw)
+		Rectangle image, Rectangle content)
 	{
-		ActorWorldPlane plane = actorWorldPlanesCycle == client.getGameCycle() ? actorWorldPlanes.get(actor) : null;
 		LocalPoint location = request.localPoint;
-		if (plane == null || location == null)
+		if (location == null)
 		{
 			return null;
 		}
-		double cameraX = client.isGpu() ? client.getCameraFpX() : client.getCameraX();
-		double cameraY = client.isGpu() ? client.getCameraFpY() : client.getCameraY();
-		double dx = location.getX() - cameraX, dy = location.getY() - cameraY;
-		double viewBearing = Math.hypot(dx, dy) > 1.0d ? Math.atan2(-dx, dy)
-			: client.getCameraYaw() * (2.0d * Math.PI / BillboardAngleUtils.CAMERA_FULL_CIRCLE);
-		int orientation = WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor);
+		double viewBearing = ActorWorldPlane.viewingBearing(client, location);
 		double tileHeight = actor.getWorldView() != null && actor.getWorldView().isTopLevel()
 			? Perspective.getFootprintTileHeight(client, location, request.plane, actor.getFootprintSize())
 			: Perspective.getTileHeight(client, location, request.plane);
-		return plane.project(depthCalculator, location, BillboardDepthCalculator.worldHeight(tileHeight, request.verticalOffset),
-			orientation, capturedYaw, viewBearing, image, content);
+		return ActorWorldPlane.project(depthCalculator, location, BillboardDepthCalculator.worldHeight(tileHeight, request.verticalOffset),
+			viewBearing, image, content);
 	}
 
 	static Rectangle alignGroundContact(

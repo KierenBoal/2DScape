@@ -8,6 +8,8 @@ import java.awt.image.BufferedImage;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class BillboardFrameBufferTest
 {
@@ -294,6 +296,38 @@ public class BillboardFrameBufferTest
 		assertEquals(0xFF00FF00, buffer.image().getRGB(2, 1));
 		assertEquals(0xFF0000FF, buffer.image().getRGB(0, 1));
 		assertEquals(0xFFFFFFFF, buffer.image().getRGB(2, 2));
+	}
+
+	@Test
+	public void projectedPhysicalDimensionsAreIndependentOfTextureResolution()
+	{
+		Rectangle bounds = new Rectangle(-30, -100, 80, 100);
+		net.runelite.api.Client client = com.kierenboal.npcsnap.TestProxies.proxy(net.runelite.api.Client.class,
+			com.kierenboal.npcsnap.TestProxies.method("getScale", 500),
+			com.kierenboal.npcsnap.TestProxies.method("getViewportWidth", 100),
+			com.kierenboal.npcsnap.TestProxies.method("getViewportHeight", 100));
+		BillboardDrawGeometry geometry = ActorWorldPlane.project(new BillboardDepthCalculator(client),
+			new net.runelite.api.coords.LocalPoint(0, 1000), 0, 0, bounds, bounds);
+		assertNotNull(geometry);
+		int[] expected = null;
+		for (int resolution : new int[] {1, 16, 64})
+		{
+			int[] pixels = new int[resolution * resolution];
+			java.util.Arrays.fill(pixels, 0xFFFFFFFF);
+			BillboardFrameBuffer buffer = buffer();
+			buffer.begin(100, 100);
+			buffer.blit(draw(image(resolution, resolution, pixels), geometry, 1), 0, 0, 100, 100, false);
+			int[] actual = buffer.image().getRGB(0, 0, 100, 100, null, 0, 100);
+			if (expected == null)
+			{
+				expected = actual;
+				assertEquals(40 * 50, java.util.Arrays.stream(actual).filter(pixel -> pixel != 0).count());
+			}
+			else
+			{
+				assertArrayEquals(expected, actual);
+			}
+		}
 	}
 
 	private static BillboardCanvasPoint point(double x, double y, double depth)

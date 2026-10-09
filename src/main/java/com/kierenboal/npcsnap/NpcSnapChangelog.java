@@ -14,7 +14,8 @@ final class NpcSnapChangelog
 	static final int MAX_CHANGE_LENGTH = 80;
 	private static final List<Release> RELEASES = List.of(
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
-		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds"));
+		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
+		new Release("1.0.3", "Improved click accuracy mode in 'Rendering config' section of config, better clickboxe accuracy, less RSC."));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
