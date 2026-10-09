@@ -3,6 +3,11 @@ package com.kierenboal.npcsnap.features;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.TestProxies;
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
+import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
+import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
+import com.kierenboal.npcsnap.rendering.VerticalAnchor;
+import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
@@ -11,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import net.runelite.api.Client;
 import net.runelite.api.Hitsplat;
+import net.runelite.api.HitsplatID;
 import net.runelite.api.HeadIcon;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
@@ -18,23 +24,16 @@ import net.runelite.api.SpritePixels;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ActorOverheadRendererTest
 {
 	@Test
-	public void hitsplatColoursUseAmountOnly()
-	{
-		assertEquals(new java.awt.Color(0x3155D9), ActorOverheadRenderer.hitsplatColor(0));
-		assertEquals(new java.awt.Color(0xE51B17), ActorOverheadRenderer.hitsplatColor(1));
-		assertEquals(new java.awt.Color(0xE51B17), ActorOverheadRenderer.hitsplatColor(99));
-	}
-
-	@Test
 	public void classicHitsplatUsesCompactPixelBounds()
 	{
-		java.awt.Polygon star = ActorOverheadRenderer.hitsplatStar(10, 20, 20, 20);
+		java.awt.Polygon star = RetroHitsplatRenderer.classicStar(10, 20, 20, 20);
 		assertEquals(new Rectangle(10, 20, 20, 20), star.getBounds());
 		assertEquals(20, star.npoints);
 		assertTrue(hasReflexVertex(star));
@@ -246,6 +245,24 @@ public class ActorOverheadRendererTest
 	}
 
 	@Test
+	public void shortHitsplatsLastTwoTicksWithoutShorteningLongerNativeLifetimes()
+	{
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class,
+			TestProxies.method("getGameCycle", 100)), config(true));
+		NPC shortHit = TestProxies.proxy(NPC.class);
+		NPC longHit = TestProxies.proxy(NPC.class);
+		renderer.recordHitsplat(shortHit, TestProxies.proxy(Hitsplat.class,
+			TestProxies.method("getDisappearsOnGameCycle", 130)));
+		renderer.recordHitsplat(longHit, TestProxies.proxy(Hitsplat.class,
+			TestProxies.method("getDisappearsOnGameCycle", 200)));
+		assertEquals(1, renderer.trackedHitsplatCount(shortHit, 130));
+		assertEquals(1, renderer.trackedHitsplatCount(shortHit, 159));
+		assertEquals(0, renderer.trackedHitsplatCount(shortHit, 160));
+		assertEquals(1, renderer.trackedHitsplatCount(longHit, 199));
+		assertEquals(0, renderer.trackedHitsplatCount(longHit, 200));
+	}
+
+	@Test
 	public void hitsplatsExpireAndRemainIsolatedByActorIdentity()
 	{
 		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(true));
@@ -260,6 +277,59 @@ public class ActorOverheadRendererTest
 		assertEquals(1, renderer.trackedHitsplatCount(first, 99));
 		assertEquals(0, renderer.trackedHitsplatCount(second, 99));
 		assertEquals(0, renderer.trackedHitsplatCount(first, 100));
+	}
+
+	@Test
+	public void recordedHitsplatKeepsItsTypeAndAmountUntilNativeExpiry()
+	{
+		java.util.concurrent.atomic.AtomicInteger cycle = new java.util.concurrent.atomic.AtomicInteger(1);
+		java.util.concurrent.atomic.AtomicInteger type = new java.util.concurrent.atomic.AtomicInteger(HitsplatID.POISON);
+		java.util.concurrent.atomic.AtomicInteger amount = new java.util.concurrent.atomic.AtomicInteger(0);
+		ActorOverheadRenderer renderer = new ActorOverheadRenderer(TestProxies.proxy(Client.class,
+			TestProxies.methodSupplier("getGameCycle", cycle::get)), config(true));
+		NPC actor = TestProxies.proxy(NPC.class);
+		renderer.recordHitsplat(actor, TestProxies.proxy(Hitsplat.class,
+			TestProxies.methodSupplier("getHitsplatType", type::get),
+			TestProxies.methodSupplier("getAmount", amount::get),
+			TestProxies.method("getDisappearsOnGameCycle", 100)));
+		type.set(HitsplatID.HEAL);
+		amount.set(99);
+		BillboardRenderRequest request = new BillboardRenderRequest(actor, null, null, 0, 0, 0, 0,
+			-1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+		Rectangle bounds = new Rectangle(90, 20, 20, 90);
+		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
+			new BillboardRenderResult(bounds, null, bounds), 0);
+		BufferedImage actual = renderOverheads(renderer, draw);
+		BufferedImage expected = new BufferedImage(200, 140, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = expected.createGraphics();
+		try
+		{
+			g.setFont(net.runelite.client.ui.FontManager.getRunescapeSmallFont());
+			RetroHitsplatRenderer.draw(g, HitsplatID.POISON, 0, 100, 50);
+		}
+		finally
+		{
+			g.dispose();
+		}
+		assertArrayEquals(expected.getRGB(0, 0, 200, 140, null, 0, 200), actual.getRGB(0, 0, 200, 140, null, 0, 200));
+		cycle.set(100);
+		BufferedImage expired = renderOverheads(renderer, draw);
+		assertArrayEquals(new int[200 * 140], expired.getRGB(0, 0, 200, 140, null, 0, 200));
+	}
+
+	private static BufferedImage renderOverheads(ActorOverheadRenderer renderer, PreparedBillboardDraw draw)
+	{
+		BufferedImage image = new BufferedImage(200, 140, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		try
+		{
+			renderer.render(g, Collections.singletonList(draw));
+		}
+		finally
+		{
+			g.dispose();
+		}
+		return image;
 	}
 
 	@Test

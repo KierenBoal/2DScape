@@ -8,6 +8,11 @@
 
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
+## Best experience
+If you are doing content that requiers click precision, I'd suggest enabling the following two features:
+- "Rendering config" -> "Improved click accuracy mode": this makes the billboards fit the space the NPC actually takes which makes it look more "flat" but for FAR greater click accuracy
+- "Retro" -> "Use retro HP bar, overhead chat, hitsplats and prayers": This moves the hitsplats to more accurately represent where they actually are on the sprite; if you enable 'Improved click accuracy mode' you don't really need this; but it does add to the asthetic!
+
 On your first login after an update, 2DScape prints a header such as `2DScape (v1.0.2):`, followed by one `* change` chat line per semicolon-separated entry. Each entry is at most 80 characters, excluding the bullet prefix. Your last seen version is saved per RuneLite configuration profile; a missing or invalid value starts at `1.0.0`, so new users see both `1.0.1` and `1.0.2` once. To add a release, append its semicolon-separated changes to `NpcSnapChangelog` and update `runelite-plugin.properties`; Gradle reads its version from that file. Editing an already-seen release does not replay it.
 
 Under **Limit frame rate**, **Redraw on clickbox resize** lets NPCs and players update their sprite early when their model bounding box or hull width or height changes significantly. It defaults to **50%**; set it to **0%** to disable the check. Resize redraws still respect the per-frame drawing budget.
@@ -48,6 +53,10 @@ Exports are saved in RuneLite's `plugin-data/2dscape` directory. The in-game mes
 **Note**: These sprites are generated in real time by rasterizing the triangles from Jagex's Old School RuneScapes in-game models. They aren't hand drawn; they're calculated on the fly with 2D rasterization and a bunch of 3D math. So if you export sprites, keep in mind whatever licensing Jaggy Baggy requiers.
 
 ---
+
+## Developer tools
+
+[Retro hitsplat comparisons and maintenance](docs/retro-hitsplats/README.md).
 
 ## Creator: Kieren Boal
 

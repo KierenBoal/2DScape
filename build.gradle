@@ -56,6 +56,17 @@ tasks.register('run', JavaExec) {
     args "--developer-mode", "--debug"
 }
 
+tasks.register('renderRetroHitsplatPreview', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.kierenboal.npcsnap.features.RetroHitsplatPreview'
+	systemProperty 'java.awt.headless', 'true'
+	args project.layout.buildDirectory.dir('reports/retro-hitsplats').get().asFile.absolutePath,
+		project.findProperty('hitsplatPreviewName') ?: 'attempt-01',
+		project.findProperty('rscHitsplatReference') ?: '',
+		project.findProperty('hitsplatWikiDirectory') ?: 'tmp_wiki_page'
+}
+
 tasks.register('shadowJar', Jar) {
 	dependsOn configurations.testRuntimeClasspath
 	manifest {

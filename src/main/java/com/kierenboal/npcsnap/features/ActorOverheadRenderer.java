@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.HeadIcon;
 import net.runelite.api.Hitsplat;
 import net.runelite.api.NPC;
@@ -31,6 +32,7 @@ public final class ActorOverheadRenderer
 	private static final int ELEMENT_GAP = 2;
 	private static final int HEALTH_WIDTH = 30;
 	private static final int HEALTH_HEIGHT = 5;
+	private static final int MIN_HITSPLAT_CYCLES = 2 * Constants.GAME_TICK_LENGTH / Constants.CLIENT_TICK_LENGTH;
 	private static final int[] HITSPLAT_OFFSETS_X = {0, -20, 20, 0};
 	private static final int[] HITSPLAT_OFFSETS_Y = {0, 16, 16, 32};
 	private static final Color CHAT_SHADOW = Color.BLACK;
@@ -119,7 +121,8 @@ public final class ActorOverheadRenderer
 			return;
 		}
 		hitsplats.computeIfAbsent(actor, ignored -> new ArrayList<>()).add(new TrackedHitsplat(
-			hitsplat.getAmount(), hitsplat.getDisappearsOnGameCycle()));
+			hitsplat.getHitsplatType(), hitsplat.getAmount(), Math.max(hitsplat.getDisappearsOnGameCycle(),
+				client.getGameCycle() + MIN_HITSPLAT_CYCLES)));
 	}
 
 	public void clear(Actor actor)
@@ -143,7 +146,7 @@ public final class ActorOverheadRenderer
 	public void updateDrawableActors(Set<Actor> current)
 	{
 		// A culled or temporarily unavailable sprite is not an actor despawn.
-		// Reset its positioning, but keep hits until RuneLite's expiry cycle.
+		// Reset positioning without restarting the hitsplat's tracked expiry.
 		anchors.keySet().retainAll(current);
 		expireHitsplats(client.getGameCycle());
 	}
@@ -280,26 +283,13 @@ public final class ActorOverheadRenderer
 		}
 		Font font = FontManager.getRunescapeSmallFont();
 		graphics.setFont(font);
-		FontMetrics metrics = graphics.getFontMetrics(font);
 		int centerX = anchor.x;
 		int centerY = anchor.y + Math.max(12, billboard.height / 3);
 		for (int i = 0; i < active.size(); i++)
 		{
 			TrackedHitsplat hitsplat = active.get(i);
-			String text = Integer.toString(hitsplat.amount);
-			int width = Math.max(20, metrics.stringWidth(text) + 12);
-			int x = centerX - (width / 2) + hitsplatOffsetX(i);
-			int y = centerY + hitsplatOffsetY(i);
-			graphics.setColor(hitsplatColor(hitsplat.amount));
-			java.awt.Polygon star = hitsplatStar(x, y - 15, width, 20);
-			graphics.fillPolygon(star);
-			graphics.setColor(Color.BLACK);
-			graphics.drawPolygon(star);
-			int textX = x + ((width - metrics.stringWidth(text)) / 2);
-			graphics.setColor(Color.BLACK);
-			graphics.drawString(text, textX + 1, y + 1);
-			graphics.setColor(Color.WHITE);
-			graphics.drawString(text, textX, y);
+			RetroHitsplatRenderer.draw(graphics, hitsplat.type, hitsplat.amount,
+				centerX + hitsplatOffsetX(i), centerY + hitsplatOffsetY(i));
 		}
 	}
 
@@ -432,43 +422,15 @@ public final class ActorOverheadRenderer
 		return HITSPLAT_OFFSETS_Y[index % 4];
 	}
 
-	static Color hitsplatColor(int amount)
-	{
-		return amount == 0 ? new Color(0x3155D9) : new Color(0xE51B17);
-	}
-
-	static java.awt.Polygon hitsplatStar(int x, int y, int width, int height)
-	{
-		int right = x + width;
-		int bottom = y + height;
-		int midX = x + width / 2;
-		int midY = y + height / 2;
-		int bodyHalfWidth = Math.max(6, (width * 3) / 10);
-		int bodyHalfHeight = Math.max(5, height / 4);
-		int spikeHalfWidth = Math.max(2, width / 10);
-		int spikeHalfHeight = Math.max(2, height / 10);
-		int bodyLeft = midX - bodyHalfWidth;
-		int bodyRight = midX + bodyHalfWidth;
-		int bodyTop = midY - bodyHalfHeight;
-		int bodyBottom = midY + bodyHalfHeight;
-		return new java.awt.Polygon(
-			new int[] {midX - spikeHalfWidth, midX, midX + spikeHalfWidth,
-				bodyRight, right - 2, bodyRight, right, bodyRight, right - 2,
-				bodyRight, midX + spikeHalfWidth, midX, midX - spikeHalfWidth,
-				bodyLeft, x + 2, bodyLeft, x, bodyLeft, x + 2, bodyLeft},
-			new int[] {bodyTop, y, bodyTop,
-				bodyTop, y + 2, midY - spikeHalfHeight, midY, midY + spikeHalfHeight, bottom - 2,
-				bodyBottom, bodyBottom, bottom, bodyBottom,
-				bodyBottom, bottom - 2, midY + spikeHalfHeight, midY, midY - spikeHalfHeight, y + 2, bodyTop}, 20);
-	}
-
 	private static final class TrackedHitsplat
 	{
+		private final int type;
 		private final int amount;
 		private final int expiresOnCycle;
 
-		private TrackedHitsplat(int amount, int expiresOnCycle)
+		private TrackedHitsplat(int type, int amount, int expiresOnCycle)
 		{
+			this.type = type;
 			this.amount = amount;
 			this.expiresOnCycle = expiresOnCycle;
 		}
