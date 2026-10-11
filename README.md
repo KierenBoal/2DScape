@@ -46,10 +46,6 @@ Exports are saved in RuneLite's `plugin-data/2dscape` directory. The in-game mes
 
 ---
 
-## Developer tools
-
-[Retro hitsplat comparisons and maintenance](docs/retro-hitsplats/README.md).
-
 ## Creator: Kieren Boal
 
 I want to acknowledge and disclose usage of AI agentic engineering in creating this plugin, I have several years industry experience as a programmer, and still hand write code to this day as part of my work life, so it's been amazing being able to transfer the skills I have in programming into a programming domain (Java, specifically with RuneLites Plugin system, learning what the hell a gradel was and how it lol) I was unfailiar with, from this whole process I learnt a HEAP of new skills and how to use the RuneLite API, alongside creating this plugin that I once tried to hand code back in 2022, but was unable to figure out the rendering in Java, I could do the rendering in C# with a CPU rasterizer that I'd written but translating that to Java just wasn't gonna happen easily (I'd even considered writing it in C#, then  hosting a C# server locally that does the rasterization in nice familiar C#, and RuneLite would pipe the models, world and camera position back to the server, but yeah that was absoloutely not gonna fly for a real plugin and would've been really bad lmao), so I've been thrilled to use OpenAI's Codex to make this plugin a reality and actually finish the project! I am very proud of how this has come out.
@@ -60,3 +56,4 @@ I want to acknowledge and disclose usage of AI agentic engineering in creating t
 - **GPT-5.5:** First implementation of blocky occlusion culling.
 - **GPT-5.6:** Code tidy-up and SO many optimisations. Sol handled orchestration, high-level planning, and a lot of cleanup; Terra and Luna handled implementation.
 - **GPT-6.0 Astra:** Made the occlusion culling truly shine by getting rid of the blockiness and adding composite transparency, so sprites can be seen behind transparent geometry like stained glass.
+- **GPT-6.1 Sol:** Workhorse, new retro hitsplats and new improved clickbox accuracy
