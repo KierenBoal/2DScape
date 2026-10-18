@@ -120,7 +120,7 @@ public class GroundItemOcclusionTest
 	private static BillboardDepthCalculator calculator()
 	{
 		return new BillboardDepthCalculator(proxy(Client.class,
-			method("getCameraFpY", -1000.0f), method("getCameraPitch", 2048),
-			method("get3dZoom", 512), method("getViewportHeight", 4)));
+			method("getCameraY", -1000), method("getCameraPitch", 2048),
+			method("getScale", 512), method("getViewportHeight", 4)));
 	}
 }

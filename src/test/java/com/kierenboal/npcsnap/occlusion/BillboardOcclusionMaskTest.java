@@ -89,8 +89,8 @@ public class BillboardOcclusionMaskTest
 			method("getVerticesX", new float[] {-20, 20, 20, -20}), method("getVerticesY", vertexY),
 			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
 		Renderable actor = proxy(Renderable.class, method("getModelHeight", 100));
-		Client client = proxy(Client.class, method("getCameraFpY", -1000f),
-			method("get3dZoom", 512), method("getViewportHeight", 8));
+		Client client = proxy(Client.class, method("getCameraY", -1000),
+			method("getScale", 512), method("getViewportHeight", 8));
 		BillboardDepthCalculator depth = new BillboardDepthCalculator(client);
 		BufferedImage sprite = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
 		for (int y = 0; y < 8; y++)
@@ -237,8 +237,8 @@ public class BillboardOcclusionMaskTest
 			0, 0, 4, 4, null, null);
 		Client client = proxy(
 			Client.class,
-			method("getCameraFpY", -1000f),
-			method("get3dZoom", 512),
+			method("getCameraY", -1000),
+			method("getScale", 512),
 			method("getViewportHeight", 4));
 		BillboardDepthSurface surface = new BillboardDepthSurface(
 			new BillboardDepthCalculator(client),
@@ -306,8 +306,8 @@ public class BillboardOcclusionMaskTest
 		assertEquals(BillboardOcclusionMask.CellResult.REFINE, mask.classifySample(0, 1, 1000d));
 		Client client = proxy(
 			Client.class,
-			method("getCameraFpY", -1000f),
-			method("get3dZoom", 512),
+			method("getCameraY", -1000),
+			method("getScale", 512),
 			method("getViewportHeight", 4));
 		BillboardDepthSurface surface =
 			new BillboardDepthSurface(

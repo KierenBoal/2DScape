@@ -61,6 +61,16 @@ public class BillboardOcclusionDebugSamplerTest
 	}
 
 	@Test
+	public void surfaceCutoffIsReportedSeparatelyFromSceneryOcclusion()
+	{
+		BillboardOcclusionDebugSampler sampler = sampler();
+		PreparedBillboardDraw image = draw(0xFFFFFFFF);
+		sampler.collect(List.of(new PreparedBillboardDraw(null, image.result, 1, null, 22)), true);
+		assertTrue(sampler.samples().stream().anyMatch(sample -> sample.contains("surfaceCutoff=22 surfaceOccluded=false")));
+		assertTrue(sampler.samples().stream().anyMatch(sample -> sample.contains("occluded=false surfaceCutoff=22 surfaceOccluded=true")));
+	}
+
+	@Test
 	public void opaqueDrawSamplesConfiguredGridAndFormatsDiagnostics()
 	{
 		BillboardOcclusionDebugSampler sampler = sampler();

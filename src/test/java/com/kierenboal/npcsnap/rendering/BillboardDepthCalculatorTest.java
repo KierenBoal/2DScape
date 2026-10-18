@@ -7,6 +7,7 @@ import net.runelite.api.Projectile;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
+import static com.kierenboal.npcsnap.TestProxies.methodSupplier;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -15,6 +16,78 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardDepthCalculatorTest
 {
+	@Test
+	public void renderSnapshotIsStableAndReleasedBeforeTheNextPreparation()
+	{
+		java.util.concurrent.atomic.AtomicInteger cameraX = new java.util.concurrent.atomic.AtomicInteger(100);
+		java.util.concurrent.atomic.AtomicInteger scale = new java.util.concurrent.atomic.AtomicInteger(512);
+		Client client = proxy(Client.class, methodSupplier("getCameraX", cameraX::get),
+			methodSupplier("getScale", scale::get), method("getViewportWidth", 800), method("getViewportHeight", 600));
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+		calculator.beginFrame();
+		cameraX.set(200);
+		scale.set(1600);
+		calculator.beginRender();
+		BillboardCanvasPoint captured = calculator.projectCanvasPoint(300, 1000, 0);
+		assertEquals(Perspective.localToCanvas(client, 300, 1000, 0), calculator.localToCanvas(300, 1000, 0));
+		cameraX.set(400);
+		scale.set(777);
+		assertEquals(captured.x, calculator.projectCanvasPoint(300, 1000, 0).x, 0.0d);
+		calculator.endRender();
+		assertEquals(new BillboardDepthCalculator(client).projectCanvasPoint(300, 1000, 0).x,
+			calculator.projectCanvasPoint(300, 1000, 0).x, 0.0d);
+		calculator.beginFrame();
+		calculator.beginRender();
+		assertEquals(Perspective.localToCanvas(client, 300, 1000, 0), calculator.localToCanvas(300, 1000, 0));
+		calculator.endRender();
+	}
+
+	@Test
+	public void preparationDoesNotRetainCameraOrViewportFromBeforeSceneDraw()
+	{
+		java.util.concurrent.atomic.AtomicInteger cameraX = new java.util.concurrent.atomic.AtomicInteger(100);
+		java.util.concurrent.atomic.AtomicInteger viewport = new java.util.concurrent.atomic.AtomicInteger(600);
+		java.util.concurrent.atomic.AtomicInteger scale = new java.util.concurrent.atomic.AtomicInteger(512);
+		Client client = proxy(Client.class, methodSupplier("getCameraX", cameraX::get),
+			methodSupplier("getViewportHeight", viewport::get), methodSupplier("getScale", scale::get),
+			method("getViewportWidth", 800), method("getCameraPitch", 2048));
+		BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+		calculator.beginFrame();
+		assertNotNull(calculator.projectCanvasPoint(100, 1000, 0));
+		cameraX.set(200);
+		viewport.set(1009);
+		scale.set(2048);
+		BillboardCanvasPoint expected = new BillboardDepthCalculator(client).projectCanvasPoint(100, 1000, 0);
+		BillboardCanvasPoint actual = calculator.projectCanvasPoint(100, 1000, 0);
+		assertEquals(expected.x, actual.x, 0.0d);
+		assertEquals(expected.y, actual.y, 0.0d);
+	}
+
+	@Test
+	public void projectionAndRecoveredPlaneDepthAgreeDespiteDifferentRasterizerZoom()
+	{
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			Client client = proxy(Client.class, method("isGpu", gpu),
+				method("getCameraX", 160), method("getCameraY", 240), method("getCameraZ", -320),
+				method("getCameraFpX", 160.25f), method("getCameraFpY", 240.75f), method("getCameraFpZ", -320.5f),
+				method("getCameraYaw", 555), method("getCameraPitch", 2100),
+				method("getCameraFpYaw", .21287f), method("getCameraFpPitch", .80537f),
+				method("getScale", 1600), method("get3dZoom", 512),
+				method("getViewportWidth", 801), method("getViewportHeight", 1009),
+				method("getViewportXOffset", 17), method("getViewportYOffset", 29));
+			BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+			for (int height : new int[] {-200, -100, 0, 100})
+			{
+				BillboardCanvasPoint point = calculator.projectCanvasPoint(350, 1400, height);
+				assertNotNull(point);
+				assertEquals(point.depth, calculator.cameraForwardDepth(350, 1400, height), 1e-8d);
+				assertEquals(point.depth, calculator.cameraForwardDepthOnVerticalPlane(350, 1400,
+					(int) Math.round(point.y)), 1.0d);
+			}
+		}
+	}
+
 	@Test
 	public void cachedRasterProjectionMatchesRuneLiteCpuAndGpuRounding()
 	{
@@ -29,10 +102,12 @@ public class BillboardDepthCalculatorTest
 				method("getViewportXOffset", 17), method("getViewportYOffset", 29));
 			BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
 			calculator.beginFrame();
+			calculator.beginRender();
 			for (int x : new int[] {-5000, -64, 350, 1024, 18000})
 				for (int y : new int[] {240, 400, 1200, 5000})
 					for (int z : new int[] {-1500, -100, 700})
 						assertEquals(Perspective.localToCanvas(client, x, y, z), calculator.localToCanvas(x, y, z));
+			calculator.endRender();
 		}
 	}
 

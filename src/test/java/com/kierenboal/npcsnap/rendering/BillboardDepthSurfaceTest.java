@@ -241,10 +241,12 @@ public class BillboardDepthSurfaceTest
 			Client.class,
 			method("getCameraFpX", 0.0f),
 			method("getCameraFpY", -1_000.0f),
+			method("getCameraY", -1_000),
 			method("getCameraFpZ", 0.0f),
 			method("getCameraYaw", yaw),
 			method("getCameraPitch", pitch),
 			method("get3dZoom", 512),
+			method("getScale", 512),
 			method("getViewportYOffset", 0),
 			method("getViewportHeight", 100)
 		);

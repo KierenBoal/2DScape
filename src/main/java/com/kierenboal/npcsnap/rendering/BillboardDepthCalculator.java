@@ -24,7 +24,26 @@ public final class BillboardDepthCalculator
 
 	public void beginFrame()
 	{
+		// BeforeRender precedes the scene's final camera, viewport and zoom setup.
+		frameCamera = null;
+	}
+
+	public void beginRender()
+	{
 		frameCamera = new Camera(client);
+	}
+
+	public void endRender()
+	{
+		frameCamera = null;
+	}
+
+	public String projectionDebugState()
+	{
+		Camera camera = camera();
+		return "gpu=" + camera.gpu + " camera=(" + camera.x + "," + camera.y + "," + camera.z
+			+ ") scale=" + camera.scale + " viewport=(" + camera.viewportX + "," + camera.viewportY
+			+ "," + camera.width + "," + camera.height + ")";
 	}
 
 	private Camera camera()
@@ -37,7 +56,8 @@ public final class BillboardDepthCalculator
 		final boolean gpu;
 		final int fixedYawSin, fixedYawCos, fixedPitchSin, fixedPitchCos;
 		final double x, y, z, yawSin, yawCos, pitchSin, pitchCos, scale;
-		final double depthX, depthY, depthZ, depthYawSin, depthYawCos, depthPitchSin, depthPitchCos, zoom;
+		final double distanceX, distanceY, distanceZ;
+		final int yaw, pitch;
 		final int viewportX, viewportY, width, height;
 		Camera(Client client)
 		{
@@ -45,16 +65,12 @@ public final class BillboardDepthCalculator
 			x = gpu ? client.getCameraFpX() : client.getCameraX();
 			y = gpu ? client.getCameraFpY() : client.getCameraY();
 			z = gpu ? client.getCameraFpZ() : client.getCameraZ();
-			int yaw = Math.floorMod(client.getCameraYaw(), Perspective.SINE14.length);
-			int pitch = Math.floorMod(client.getCameraPitch(), Perspective.SINE14.length);
+			yaw = Math.floorMod(client.getCameraYaw(), Perspective.SINE14.length);
+			pitch = Math.floorMod(client.getCameraPitch(), Perspective.SINE14.length);
 			fixedYawSin = Perspective.SINE14[yaw]; fixedYawCos = Perspective.COSINE14[yaw];
 			fixedPitchSin = Perspective.SINE14[pitch]; fixedPitchCos = Perspective.COSINE14[pitch];
-			depthX = client.getCameraFpX(); depthY = client.getCameraFpY(); depthZ = client.getCameraFpZ();
-			int depthYaw = Math.floorMod((int) Math.round(yaw / 8d), Perspective.SINE.length);
-			int depthPitch = Math.floorMod((int) Math.round(pitch / 8d), Perspective.SINE.length);
-			depthYawSin = Perspective.SINE[depthYaw] / 65536d; depthYawCos = Perspective.COSINE[depthYaw] / 65536d;
-			depthPitchSin = Perspective.SINE[depthPitch] / 65536d; depthPitchCos = Perspective.COSINE[depthPitch] / 65536d;
-			zoom = client.get3dZoom();
+			// Radial paint ordering retains its existing floating-point origin.
+			distanceX = client.getCameraFpX(); distanceY = client.getCameraFpY(); distanceZ = client.getCameraFpZ();
 			yawSin = gpu ? Math.sin(client.getCameraFpYaw()) : Perspective.SINE14[yaw] / 65536d;
 			yawCos = gpu ? Math.cos(client.getCameraFpYaw()) : Perspective.COSINE14[yaw] / 65536d;
 			pitchSin = gpu ? Math.sin(client.getCameraFpPitch()) : Perspective.SINE14[pitch] / 65536d;
@@ -200,9 +216,9 @@ public final class BillboardDepthCalculator
 	private double cameraDistance(double localX, double localY, double worldZ)
 	{
 		Camera camera = camera();
-		double dx = localX - camera.depthX;
-		double dy = localY - camera.depthY;
-		double dz = worldZ - camera.depthZ;
+		double dx = localX - camera.distanceX;
+		double dy = localY - camera.distanceY;
+		double dz = worldZ - camera.distanceZ;
 		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
 	}
 
@@ -230,26 +246,26 @@ public final class BillboardDepthCalculator
 	public double cameraForwardDepth(int localX, int localY, double worldHeight)
 	{
 		Camera camera = camera();
-		double forward = (localY - camera.depthY) * camera.depthYawCos - (localX - camera.depthX) * camera.depthYawSin;
-		return (worldHeight - camera.depthZ) * camera.depthPitchSin + forward * camera.depthPitchCos;
+		double forward = (localY - camera.y) * camera.yawCos - (localX - camera.x) * camera.yawSin;
+		return (worldHeight - camera.z) * camera.pitchSin + forward * camera.pitchCos;
 	}
 
 	public double cameraForwardDepthOnVerticalPlane(int localX, int localY, int canvasY)
 	{
 		Camera camera = camera();
-		double x = localX - camera.depthX;
-		double y = localY - camera.depthY;
-		double yawSin = camera.depthYawSin, yawCos = camera.depthYawCos;
-		double pitchSin = camera.depthPitchSin, pitchCos = camera.depthPitchCos;
+		double x = localX - camera.x;
+		double y = localY - camera.y;
+		double yawSin = camera.yawSin, yawCos = camera.yawCos;
+		double pitchSin = camera.pitchSin, pitchCos = camera.pitchCos;
 		double cameraY = (y * yawCos) - (x * yawSin);
-		double zoom = camera.zoom;
-		if (!Double.isFinite(cameraY) || cameraY <= 0.0d || !Double.isFinite(zoom) || zoom <= 0.0d)
+		double scale = camera.scale;
+		if (!Double.isFinite(cameraY) || cameraY <= 0.0d || !Double.isFinite(scale) || scale <= 0.0d)
 		{
 			return Double.NaN;
 		}
 
 		double viewportCenterY = camera.viewportY + (camera.height / 2.0d);
-		double screenSlope = (canvasY - viewportCenterY) / zoom;
+		double screenSlope = (canvasY - viewportCenterY) / scale;
 		double denominator = pitchCos - (screenSlope * pitchSin);
 		if (!Double.isFinite(denominator) || denominator <= 0.0d)
 		{
@@ -258,8 +274,9 @@ public final class BillboardDepthCalculator
 
 		// Intersect the pixel's camera ray with the yaw-facing world-vertical
 		// plane through the target. In camera coordinates:
-		// cameraY = depth * (cos(pitch) - screenSlope * sin(pitch)).
-		return cameraY / denominator;
+		// cameraY * (cos²(pitch) + sin²(pitch)) = depth *
+		// (cos(pitch) - screenSlope * sin(pitch)). Retain CPU table rounding.
+		return cameraY * (pitchCos * pitchCos + pitchSin * pitchSin) / denominator;
 	}
 
 	public BillboardCanvasPoint projectCanvasPoint(LocalPoint localPoint, int plane, double verticalOffset)
@@ -313,12 +330,12 @@ public final class BillboardDepthCalculator
 
 	public int cameraYawIndex()
 	{
-		return cameraAngleIndex(client.getCameraYaw());
+		return cameraAngleIndex(camera().yaw);
 	}
 
 	public int cameraPitchIndex()
 	{
-		return cameraAngleIndex(client.getCameraPitch());
+		return cameraAngleIndex(camera().pitch);
 	}
 
 	private int cameraAngleIndex(int cameraAngle)

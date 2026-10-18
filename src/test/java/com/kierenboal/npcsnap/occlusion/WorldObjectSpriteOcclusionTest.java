@@ -50,8 +50,8 @@ public class WorldObjectSpriteOcclusionTest
 		BillboardRenderResult cachedSprite = new BillboardRenderResult(bounds, sprite, bounds);
 		GameObject object = proxy(GameObject.class);
 		BillboardDepthCalculator calculator = new BillboardDepthCalculator(proxy(Client.class,
-			method("getCameraFpY", -1000.0f), method("getCameraPitch", 2048),
-			method("get3dZoom", 512), method("getViewportHeight", 4)));
+			method("getCameraY", -1000), method("getCameraPitch", 2048),
+			method("getScale", 512), method("getViewportHeight", 4)));
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
 			draw -> BillboardDepthSurface.from(calculator, draw, 0));

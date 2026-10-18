@@ -131,7 +131,7 @@ public final class BillboardSceneVisibility
 	static final class Snapshot
 	{
 		volatile boolean zbufRenderer;
-		final Map<Renderable, Model> drawnModels = Collections.synchronizedMap(new IdentityHashMap<>());
+		final Map<Renderable, SceneryModelSnapshot> drawnModels = Collections.synchronizedMap(new IdentityHashMap<>());
 		final Projection projection;
 		final int minLevel;
 		final int level;
@@ -189,7 +189,12 @@ public final class BillboardSceneVisibility
 			if (snapshot != null && renderable != null && model != null)
 			{
 				snapshot.zbufRenderer = true;
-				snapshot.drawnModels.put(renderable, model);
+				// Static models retain their persistent geometry cache. Actors/effects
+				// never become scenery occluders, so do not copy their animation pools.
+				if (renderable instanceof Model || renderable instanceof net.runelite.api.Actor
+					|| renderable instanceof net.runelite.api.ActorSpotAnim || renderable instanceof net.runelite.api.GraphicsObject
+					|| renderable instanceof net.runelite.api.Projectile || renderable instanceof net.runelite.api.TileItem) return;
+				snapshot.drawnModels.put(renderable, SceneryModelSnapshot.capture(model));
 			}
 		}
 

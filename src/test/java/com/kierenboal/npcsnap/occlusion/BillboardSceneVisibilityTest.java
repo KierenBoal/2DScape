@@ -46,7 +46,7 @@ public class BillboardSceneVisibilityTest
 		assertTrue(visibility.snapshot(scene).drawnModels.isEmpty());
 		client.callbacks.drawDynamic(null, scene, proxy(net.runelite.api.TileObject.class,
 			method("getId", net.runelite.api.gameval.ObjectID.SAILING_BOAT_HULL_KANDARIN_3X8_IRONWOOD)), renderable, model, 0, 0, 0, 0);
-		assertSame(model, visibility.snapshot(scene).drawnModels.get(renderable));
+		assertSame(model, visibility.snapshot(scene).drawnModels.get(renderable).model);
 		assertEquals(3, renderer.dynamicCalls);
 		visibility.stop();
 	}
@@ -66,8 +66,8 @@ public class BillboardSceneVisibilityTest
 		client.callbacks.drawPass(null, scene, DrawCallbacks.PASS_OPAQUE);
 		client.callbacks.drawDynamic(null, scene, null, facility, facilityModel, 0, 0, 0, 0);
 		client.callbacks.drawDynamic(2, null, scene, null, sail, sailModel, 0, 0, 0, 0);
-		assertSame(facilityModel, visibility.snapshot(scene).drawnModels.get(facility));
-		assertSame(sailModel, visibility.snapshot(scene).drawnModels.get(sail));
+		assertSame(facilityModel, visibility.snapshot(scene).drawnModels.get(facility).model);
+		assertSame(sailModel, visibility.snapshot(scene).drawnModels.get(sail).model);
 		assertTrue(visibility.snapshot(scene).zbufRenderer);
 		assertEquals(2, renderer.dynamicCalls);
 		visibility.beginFrame();

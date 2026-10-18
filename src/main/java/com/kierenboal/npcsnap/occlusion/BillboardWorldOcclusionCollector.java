@@ -127,9 +127,8 @@ public final class BillboardWorldOcclusionCollector
 		cachedTerrainScene = null;
 		collectionView = null;
 		collectionProjection = null;
-		frameModelGeometry.clear();
 		frameModels.clear();
-		mutableModels.clear();
+		frameScenery.clear();
 		worldOccluders.clear();
 	}
 
@@ -241,8 +240,7 @@ public final class BillboardWorldOcclusionCollector
 	private double[] projectedModelDepths = new double[0];
 	private boolean[] modelVertexProjected = new boolean[0];
 	private boolean[] visibleModelFaces = new boolean[0];
-	private final Set<Model> mutableModels = Collections.newSetFromMap(new IdentityHashMap<>());
-	private final IdentityHashMap<Model, ModelGeometry> frameModelGeometry = new IdentityHashMap<>();
+	private final IdentityHashMap<Renderable, SceneryModelSnapshot> frameScenery = new IdentityHashMap<>();
 	private final IdentityHashMap<Renderable, Model> frameModels = new IdentityHashMap<>();
 	private int debugShapesAccepted;
 	private int debugTerrainTilesConsidered;
@@ -312,9 +310,8 @@ public final class BillboardWorldOcclusionCollector
 	{
 		lastProjection = null;
 		lastProjectedPoint = null;
-		frameModelGeometry.clear();
 		frameModels.clear();
-		mutableModels.clear();
+		frameScenery.clear();
 		visibleBoats = skippedBoats = 0;
 		availableModelFaces = terrainTrianglesConsidered = 0L;
 		collectedVisibility = "not-collected";
@@ -456,6 +453,7 @@ public final class BillboardWorldOcclusionCollector
 		debugLastLoggedCycle = gameCycle;
 		log.debug("Billboard adaptive occlusion {}", occlusionMask.drainDebugStats());
 		log.debug("Billboard renderer visibility at collection {}", collectedVisibility);
+		log.debug("Billboard projection snapshot {} rasterizerZoom={}", depthCalculator.projectionDebugState(), client.get3dZoom());
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView != null)
 		{
@@ -1352,7 +1350,8 @@ public final class BillboardWorldOcclusionCollector
 		for (ObjectRenderablePart part : observed.parts)
 		{
 			Model model = part != null && part.renderable != null ? sceneryModel(part.renderable) : null;
-			signature = (31 * signature) + System.identityHashCode(model);
+			SceneryModelSnapshot captured = part == null ? null : frameScenery.get(part.renderable);
+			signature = (31 * signature) + System.identityHashCode(captured != null ? captured : model);
 		}
 		return signature;
 	}
@@ -1440,15 +1439,14 @@ public final class BillboardWorldOcclusionCollector
 				continue;
 			}
 
-			Model model;
 			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Renderable model retrieval"))
 			{
-				model = sceneryModel(part.renderable);
+				sceneryModel(part.renderable);
 			}
 			ModelGeometry geometry;
 			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model geometry cache"))
 			{
-				geometry = modelGeometry(model);
+				geometry = sceneryGeometry(part.renderable);
 			}
 			if (geometry == null || !geometry.hasBounds)
 			{
@@ -1609,13 +1607,23 @@ public final class BillboardWorldOcclusionCollector
 		if (!frameModels.containsKey(renderable))
 		{
 			BillboardSceneVisibility.Snapshot snapshot = collectionSnapshot();
-			Model drawnModel = snapshot == null ? null : snapshot.drawnModels.get(renderable);
-			frameModels.put(renderable, drawnModel != null ? drawnModel : occlusionModel(renderable,
-				snapshot != null && snapshot.zbufRenderer));
+			SceneryModelSnapshot drawn = snapshot == null ? null : snapshot.drawnModels.get(renderable);
+			Model model = drawn != null ? drawn.model : occlusionModel(renderable, snapshot != null && snapshot.zbufRenderer);
+			frameModels.put(renderable, model);
+			if (model != null && !(renderable instanceof Model))
+			{
+				// Key by object, not by Model: unrelated animations share Model identities.
+				frameScenery.put(renderable, drawn != null ? drawn : SceneryModelSnapshot.capture(model));
+			}
 		}
-		Model model = frameModels.get(renderable);
-		if (model != null && !(renderable instanceof Model)) mutableModels.add(model);
-		return model;
+		return frameModels.get(renderable);
+	}
+
+	private ModelGeometry sceneryGeometry(Renderable renderable)
+	{
+		Model model = sceneryModel(renderable);
+		SceneryModelSnapshot captured = frameScenery.get(renderable);
+		return captured != null ? captured.geometry : modelGeometry(model);
 	}
 
 	private BillboardSceneVisibility.Snapshot collectionSnapshot()
@@ -1640,17 +1648,19 @@ public final class BillboardWorldOcclusionCollector
 		BillboardSceneVisibility.Snapshot snapshot = collectionSnapshot();
 		if (model == null && part.renderable instanceof DynamicObject
 			&& snapshot != null && snapshot.zbufRenderer) return true;
-		if (model != null && model.getTransparency() == (byte) 255) return true;
+		SceneryModelSnapshot captured = frameScenery.get(part.renderable);
+		byte modelTransparency = captured != null ? captured.transparency : model != null ? model.getTransparency() : 0;
+		if (model != null && modelTransparency == (byte) 255) return true;
 		if (model != null && config.debugLogBillboardOcclusion())
 		{
 			String input = snapshot != null && snapshot.drawnModels.containsKey(part.renderable) ? "drawn"
 				: snapshot != null && snapshot.zbufRenderer && part.renderable instanceof DynamicObject ? "recorded" : "normal";
-			source += " modelInput=" + input + " modelTransparency=" + (model.getTransparency() & 255);
+			source += " modelInput=" + input + " modelTransparency=" + (modelTransparency & 255);
 		}
 		ModelGeometry geometry;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model geometry cache"))
 		{
-			geometry = modelGeometry(model);
+			geometry = sceneryGeometry(part.renderable);
 		}
 		if (geometry == null || geometry.vertexCount <= 0 || geometry.faceCount <= 0)
 		{
@@ -1676,13 +1686,12 @@ public final class BillboardWorldOcclusionCollector
 			modelVertexProjected = new boolean[geometry.vertexCount];
 		}
 		Arrays.fill(modelVertexProjected, 0, geometry.vertexCount, false);
-		// These arrays can change independently of the cached vertex/index arrays.
-		int[] colors1 = model.getFaceColors1();
-		int[] colors2 = model.getFaceColors2();
-		int[] colors3 = model.getFaceColors3();
-		short[] unlitColors = model.getUnlitFaceColors();
-		byte[] transparencies = model.getFaceTransparencies();
-		byte modelTransparency = model.getTransparency();
+		// Animated colors/alpha must belong to the same capture as the vertices.
+		int[] colors1 = captured != null ? captured.colors1 : model.getFaceColors1();
+		int[] colors2 = captured != null ? captured.colors2 : model.getFaceColors2();
+		int[] colors3 = captured != null ? captured.colors3 : model.getFaceColors3();
+		short[] unlitColors = captured != null ? captured.unlitColors : model.getUnlitFaceColors();
+		byte[] transparencies = captured != null ? captured.transparencies : model.getFaceTransparencies();
 		int baseHeight = partBaseHeight(part);
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model face traversal"))
 		{
@@ -1798,11 +1807,6 @@ public final class BillboardWorldOcclusionCollector
 		{
 			return null;
 		}
-		if (mutableModels.contains(model))
-		{
-			return frameModelGeometry.computeIfAbsent(model, ModelGeometry::from);
-		}
-
 		ModelGeometry cached = modelGeometryCache.get(model);
 		if (cached != null && cached.matches(model))
 		{
@@ -2114,27 +2118,27 @@ public final class BillboardWorldOcclusionCollector
 			return Double.NaN;
 		}
 
-		Model model;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Fallback model retrieval"))
 		{
-			model = sceneryModel(part.renderable);
+			sceneryModel(part.renderable);
 		}
-		if (model == null || model.getVerticesCount() <= 0)
+		ModelGeometry geometry = sceneryGeometry(part.renderable);
+		if (geometry == null || geometry.vertexCount <= 0)
 		{
 			return worldDepth(part.localPoint.getX(), part.localPoint.getY(),
 				partBaseHeight(part) - Math.max(0, part.renderable.getModelHeight() / 2.0d));
 		}
 
-		float[] verticesX = model.getVerticesX();
-		float[] verticesY = model.getVerticesY();
-		float[] verticesZ = model.getVerticesZ();
+		float[] verticesX = geometry.verticesX;
+		float[] verticesY = geometry.verticesY;
+		float[] verticesZ = geometry.verticesZ;
 		if (verticesX == null || verticesY == null || verticesZ == null)
 		{
 			return worldDepth(part.localPoint.getX(), part.localPoint.getY(),
 				partBaseHeight(part) - Math.max(0, part.renderable.getModelHeight() / 2.0d));
 		}
 
-		int vertexCount = Math.min(model.getVerticesCount(), Math.min(verticesX.length, Math.min(verticesY.length, verticesZ.length)));
+		int vertexCount = geometry.vertexCount;
 		int stride = Math.max(1, vertexStride);
 		// A fallback hull has screen-space coverage but no per-pixel world position. Using
 		// its nearest vertex as a constant depth assigns the closest corner to the whole
@@ -2261,8 +2265,7 @@ public final class BillboardWorldOcclusionCollector
 			return false;
 		}
 
-		Model model = sceneryModel(part.renderable);
-		ModelGeometry geometry = modelGeometry(model);
+		ModelGeometry geometry = sceneryGeometry(part.renderable);
 		double minX = -BillboardConstants.LOCAL_TILE_SIZE / 2.0d;
 		double maxX = BillboardConstants.LOCAL_TILE_SIZE / 2.0d;
 		double minY = -Math.max(1, part.renderable != null ? part.renderable.getModelHeight() : 0);
@@ -2743,6 +2746,16 @@ public final class BillboardWorldOcclusionCollector
 
 		static ModelGeometry from(Model model)
 		{
+			return from(model, false);
+		}
+
+		static ModelGeometry copyOf(Model model)
+		{
+			return from(model, true);
+		}
+
+		private static ModelGeometry from(Model model, boolean copy)
+		{
 			float[] x = model.getVerticesX();
 			float[] y = model.getVerticesY();
 			float[] z = model.getVerticesZ();
@@ -2755,6 +2768,15 @@ public final class BillboardWorldOcclusionCollector
 			int faceCount = f1 == null || f2 == null || f3 == null
 				? 0
 				: Math.min(model.getFaceCount(), Math.min(f1.length, Math.min(f2.length, f3.length)));
+			if (copy)
+			{
+				x = x == null ? null : Arrays.copyOf(x, vertexCount);
+				y = y == null ? null : Arrays.copyOf(y, vertexCount);
+				z = z == null ? null : Arrays.copyOf(z, vertexCount);
+				f1 = f1 == null ? null : Arrays.copyOf(f1, faceCount);
+				f2 = f2 == null ? null : Arrays.copyOf(f2, faceCount);
+				f3 = f3 == null ? null : Arrays.copyOf(f3, faceCount);
+			}
 			float minX = Float.POSITIVE_INFINITY;
 			float maxX = Float.NEGATIVE_INFINITY;
 			float minY = Float.POSITIVE_INFINITY;

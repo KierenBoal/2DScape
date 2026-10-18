@@ -243,6 +243,8 @@ class NpcBillboardOverlay extends Overlay
 				return null;
 			}
 
+			// The scene has now established the camera and viewport for this draw.
+			depthCalculator.beginRender();
 			List<BillboardTarget> visibleTargets;
 			try (BillboardPerformanceMetrics.Timer timer = performanceMetrics.time("Visible target lookup"))
 			{
@@ -273,6 +275,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 		finally
 		{
+			depthCalculator.endRender();
 			performanceMetrics.finishFrame();
 			drawPerformanceMetrics(graphics);
 		}
@@ -3383,8 +3386,7 @@ class NpcBillboardOverlay extends Overlay
 		if (BillboardGeometryUtils.isUsableDistance(forwardDepth))
 		{
 			// Perspective.localToCanvas uses the client scale for both CPU and GPU
-			// projections. Keep effect sprites on that same scale instead of the
-			// camera zoom value used for vertical-plane ray intersections.
+			// projections. Keep effect sprites on the same scale as occlusion rays.
 			double perspectiveScale = client.getScale() / forwardDepth;
 			targetHeight = BillboardGeometryUtils.scaledSize(billboardBounds.height, perspectiveScale);
 		}

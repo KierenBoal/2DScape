@@ -130,12 +130,13 @@ public final class BillboardOcclusionDebugSampler
 		String target = request != null && request.renderable != null ? request.renderable.getClass().getSimpleName() : "-";
 		return String.format(
 			Locale.ROOT,
-			"{target=%s canvas=(%d,%d) src=(%d,%d) alpha=%d draw=%s sourceBounds=%s modelH=%d worldOcclusionEnabled=%s local=(%d,%d) h=%s xOff=%s zOff=%s billboardDepth=%s worldDepth=%s worldSource=%s bias=%s worldDepthMargin=%s transmittance=%d occluded=%s}",
+			"{target=%s canvas=(%d,%d) src=(%d,%d) alpha=%d draw=%s sourceBounds=%s modelH=%d worldOcclusionEnabled=%s local=(%d,%d) h=%s xOff=%s zOff=%s billboardDepth=%s worldDepth=%s worldSource=%s bias=%s worldDepthMargin=%s transmittance=%d occluded=%s surfaceCutoff=%d surfaceOccluded=%s}",
 			target, canvasX, canvasY, sourceX, sourceY, sourceAlpha, draw.bounds, draw.sourceBounds,
 			draw.modelHeight, worldOcclusionEnabled,
 			point.localX, point.localY, decimal(point.height), decimal(point.horizontalOffset),
 			decimal(point.verticalOffset), decimal(point.depth), decimal(worldDepth),
-			worldSource == null ? "-" : worldSource, decimal(bias), decimal(worldDepthMargin), transmittance, transmittance == 0);
+			worldSource == null ? "-" : worldSource, decimal(bias), decimal(worldDepthMargin), transmittance, transmittance == 0,
+			draw.surfaceOcclusionRow, canvasY >= draw.surfaceOcclusionRow);
 	}
 
 	private static String decimal(double value)
