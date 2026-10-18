@@ -15,7 +15,7 @@ final class NpcSnapChangelog
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
 		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
 		new Release("1.0.3", "Improved click accuracy mode in Rendering config (less RSC, better accuracy though); Retro hitsplats now respect damage types and max hits."),
-		new Release("1.0.4", "Land/boat occlusion improvements, XP bubble improvements; unified frame rates"));
+		new Release("1.0.4", "Land/boat/animation occlusion fixes, skilling XP bubble improvements, unified frame rates across players/projectiles/objects/etc"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;

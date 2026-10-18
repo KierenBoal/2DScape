@@ -28,6 +28,32 @@ import static org.junit.Assert.*;
 public class BillboardSceneVisibilityTest
 {
 	@Test
+	public void temporaryDrawsPreserveBoatFilteringAndDoNotCaptureActors()
+	{
+		TestClient client = new TestClient();
+		Renderer renderer = new Renderer();
+		client.callbacks = renderer;
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		Scene scene = proxy(Scene.class, method("getWorldViewId", 7));
+		Renderable renderable = proxy(Renderable.class);
+		Model model = proxy(Model.class);
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of());
+		client.callbacks.drawTemp(null, scene, proxy(net.runelite.api.GameObject.class,
+			method("getId", net.runelite.api.gameval.ObjectID.SAILING_TELEPORTATION_FOCUS), method("getRenderable", renderable)), model, 0, 0, 0, 0);
+		assertTrue(visibility.snapshot(scene).drawnModels.isEmpty());
+		client.callbacks.drawTemp(null, scene, proxy(net.runelite.api.GameObject.class,
+			method("getId", net.runelite.api.gameval.ObjectID.SAILING_BOAT_HULL_KANDARIN_3X8_IRONWOOD), method("getRenderable", renderable)), model, 0, 0, 0, 0);
+		assertSame(model, visibility.snapshot(scene).drawnModels.get(renderable).model);
+		Renderable actor = proxy(net.runelite.api.NPC.class);
+		client.callbacks.drawTemp(null, scene, proxy(net.runelite.api.GameObject.class,
+			method("getId", net.runelite.api.gameval.ObjectID.SAILING_BOAT_HULL_KANDARIN_3X8_IRONWOOD), method("getRenderable", actor)), model, 0, 0, 0, 0);
+		assertFalse(visibility.snapshot(scene).drawnModels.containsKey(actor));
+		assertEquals(3, renderer.tempCalls);
+		visibility.stop();
+	}
+
+	@Test
 	public void boatDetailsAreNotTrackedButTheirRendererCallsStillForward()
 	{
 		TestClient client = new TestClient();
@@ -341,6 +367,9 @@ public class BillboardSceneVisibilityTest
 		private int sceneCalls;
 		private int overlayColor;
 		private int dynamicCalls;
+		private int tempCalls;
+		@Override public void drawTemp(Projection projection, Scene scene, net.runelite.api.GameObject object,
+			Model model, int orientation, int x, int y, int z) { tempCalls++; }
 		@Override public void drawDynamic(Projection projection, Scene scene, net.runelite.api.TileObject object,
 			Renderable renderable, Model model, int orientation, int x, int y, int z) { dynamicCalls++; }
 		@Override public void draw(int color) { overlayColor = color; }

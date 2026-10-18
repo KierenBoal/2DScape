@@ -13,6 +13,7 @@ import javax.inject.Singleton;
 import lombok.experimental.Delegate;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.GameObject;
 import net.runelite.api.Projection;
 import net.runelite.api.Scene;
 import net.runelite.api.Model;
@@ -215,6 +216,16 @@ public final class BillboardSceneVisibility
 		}
 
 		@Override
+		public void drawTemp(Projection projection, Scene scene, GameObject object, Model model,
+			int orientation, int x, int y, int z)
+		{
+			// Animated locs also use this path. getModelZbuf() cannot reproduce
+			// their animated pose later when the overlay gathers occluders.
+			recordModel(scene, object, object != null ? object.getRenderable() : null, model);
+			delegate.drawTemp(projection, scene, object, model, orientation, x, y, z);
+		}
+
+		@Override
 		public void preSceneDraw(Scene scene, Projection projection,
 			float x, float y, float z, float pitch, float yaw,
 			int minLevel, int level, int maxLevel, Set<Integer> hidden)
@@ -241,6 +252,7 @@ public final class BillboardSceneVisibility
 			Model model, int orientation, int x, int y, int z);
 		void drawDynamic(int renderThreadId, Projection projection, Scene scene, TileObject object, Renderable renderable,
 			Model model, int orientation, int x, int y, int z);
+		void drawTemp(Projection projection, Scene scene, GameObject object, Model model, int orientation, int x, int y, int z);
 		void preSceneDraw(Scene scene, Projection projection, float x, float y, float z, float pitch, float yaw,
 			int minLevel, int level, int maxLevel, Set<Integer> hidden);
 		void preSceneDraw(Scene scene, float x, float y, float z, float pitch, float yaw,

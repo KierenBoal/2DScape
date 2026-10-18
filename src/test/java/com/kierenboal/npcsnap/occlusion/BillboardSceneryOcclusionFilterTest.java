@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.TestProxies;
 
 import java.awt.Rectangle;
 import net.runelite.api.DecorativeObject;
+import net.runelite.api.DynamicObject;
 import net.runelite.api.GameObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.Renderable;
@@ -39,6 +40,14 @@ public class BillboardSceneryOcclusionFilterTest
 		GameObject gameObject = proxy(GameObject.class, method("getRenderable", renderable));
 
 		assertFalse(BillboardSceneryOcclusionFilter.isOccluder(gameObject));
+	}
+
+	@Test
+	public void animatedObjectsRemainCandidatesWhenTheirCachedHeightIsUnset()
+	{
+		DynamicObject animated = proxy(DynamicObject.class,
+			TestProxies.methodSupplier("getModel", () -> { throw new AssertionError("Filtering must not regenerate models"); }));
+		assertTrue(BillboardSceneryOcclusionFilter.isOccluder(proxy(GameObject.class, method("getRenderable", animated))));
 	}
 
 	@Test

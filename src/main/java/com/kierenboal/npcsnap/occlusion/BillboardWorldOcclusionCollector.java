@@ -1184,12 +1184,15 @@ public final class BillboardWorldOcclusionCollector
 		Tile tile = candidate == null ? null : candidate.tile;
 		Point sceneLocation = tile == null ? null : tile.getSceneLocation();
 		String roof = visibility == null ? "-" : visibility.debugSummary();
+		Renderable gameRenderable = tileObject instanceof GameObject ? ((GameObject) tileObject).getRenderable() : null;
 		samples.add(
 			tileObject.getId() + ":" + debugObjectName(tileObject)
 				+ " kind=" + debugObjectKind(tileObject)
 				+ " sourcePlane=" + (candidate == null ? "-" : candidate.sourcePlane)
 				+ " tilePlane=" + (tile == null ? "-" : tile.getPlane())
 				+ " objectHeight=" + tileObject.getZ()
+				+ " cachedModelHeight=" + (gameRenderable == null ? "-" : gameRenderable.getModelHeight())
+				+ " animated=" + (gameRenderable instanceof DynamicObject)
 				+ " renderLevel=" + (tile == null ? "-" : tile.getRenderLevel())
 				+ " scene=" + (sceneLocation == null ? "-" : sceneLocation.getX() + "," + sceneLocation.getY())
 				+ " bridge=" + (candidate != null && candidate.bridgeLinked)

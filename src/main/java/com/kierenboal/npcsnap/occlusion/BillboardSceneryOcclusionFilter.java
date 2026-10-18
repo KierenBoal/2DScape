@@ -6,6 +6,7 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import net.runelite.api.GameObject;
 import net.runelite.api.DecorativeObject;
+import net.runelite.api.DynamicObject;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileObject;
 import net.runelite.api.WallObject;
@@ -36,7 +37,11 @@ public final class BillboardSceneryOcclusionFilter
 		}
 
 		Renderable renderable = ((GameObject) tileObject).getRenderable();
-		return renderable != null && renderable.getModelHeight() >= MIN_SCENERY_MODEL_HEIGHT;
+		// DynamicObject's cached renderable height is not authoritative: scene
+		// animation updates can reset it even while the rendered model is tall.
+		// Let the captured geometry's bounds/faces decide animated coverage.
+		return renderable instanceof DynamicObject
+			|| (renderable != null && renderable.getModelHeight() >= MIN_SCENERY_MODEL_HEIGHT);
 	}
 
 	public static boolean intersectsInterest(TileObject tileObject, Rectangle interestBounds)

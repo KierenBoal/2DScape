@@ -26,6 +26,44 @@ import static org.junit.Assert.*;
 public class AnimatedSceneryOcclusionTest
 {
 	@Test
+	public void animatedGeometryDoesNotDisappearWhenRenderableHeightIsResetBetweenFrames()
+	{
+		Fixture fixture = new Fixture();
+		for (int frame = 0; frame < 50; frame++)
+		{
+			fixture.begin();
+			// Scene drawing can leave DynamicObject's cached height unset. The
+			// rendered geometry is unchanged, including on animation boundaries.
+			fixture.firstHeight.set(frame % 14 == 3 ? 0 : 200);
+			fixture.drawFirst();
+			BillboardOcclusionMask mask = fixture.collect();
+			assertEquals("Unchanged flag coverage at frame " + frame, 128, mask.transmittanceAt(400, 250, 2000));
+		}
+	}
+
+	@Test
+	public void temporaryAnimatedObjectsUseTheRenderedPoseOnEveryFrame()
+	{
+		Fixture fixture = new Fixture();
+		for (int frame = 0; frame < 12; frame++)
+		{
+			fixture.begin();
+			fixture.callbacks.get().drawPass(null, fixture.scene, DrawCallbacks.PASS_OPAQUE);
+			boolean moved = (frame & 1) != 0;
+			fixture.callbacks.get().drawTemp(null, fixture.scene, fixture.firstObject,
+				fixture.setModel(moved ? 120 : 0, moved ? 128 : 0), 0, 512, 0, 1024);
+			fixture.setModel(20_000, 255); // Renderer storage is reused before overlays run.
+			BillboardOcclusionMask mask = fixture.collect();
+			assertEquals("Original flag position in frame " + frame, moved ? 255 : 0,
+				mask.transmittanceAt(400, 250, 2000));
+			assertEquals("Animated flag position in frame " + frame, moved ? 128 : 255,
+				mask.transmittanceAt(460, 250, 2000));
+		}
+		assertEquals("Do not regenerate the unanimated fallback", 0, fixture.zbufReads.get());
+		assertEquals("Forward every renderer draw exactly once", 12, fixture.tempCalls.get());
+	}
+
+	@Test
 	public void anotherObjectsAnimationCannotCreateAnOpaqueGhostBesideThePortal()
 	{
 		Fixture fixture = new Fixture();
@@ -81,11 +119,16 @@ public class AnimatedSceneryOcclusionTest
 		final float[] x = {-100, 100, 0};
 		final int[] a = {0}, colors = {1234};
 		final byte[] alpha = {(byte) 128};
+		final java.util.concurrent.atomic.AtomicInteger zbufReads = new java.util.concurrent.atomic.AtomicInteger();
+		final java.util.concurrent.atomic.AtomicInteger tempCalls = new java.util.concurrent.atomic.AtomicInteger();
+		final java.util.concurrent.atomic.AtomicInteger firstHeight = new java.util.concurrent.atomic.AtomicInteger(200);
 		final Model shared = proxy(Model.class, method("getVerticesCount", 3), method("getFaceCount", 1),
 			method("getVerticesX", x), method("getVerticesY", new float[] {0, 0, -200}), method("getVerticesZ", new float[3]),
 			method("getFaceIndices1", a), method("getFaceIndices2", new int[] {1}), method("getFaceIndices3", new int[] {2}),
 			method("getFaceColors3", colors), method("getFaceTransparencies", alpha));
-		final DynamicObject first = proxy(DynamicObject.class, method("getModelHeight", 200), methodSupplier("getModel", () -> setModel(2000, 0)));
+		final DynamicObject first = proxy(DynamicObject.class, methodSupplier("getModelHeight", firstHeight::get),
+			methodSupplier("getModel", () -> setModel(2000, 0)),
+			methodSupplier("getModelZbuf", () -> { zbufReads.incrementAndGet(); return setModel(2000, 0); }));
 		final DynamicObject second = proxy(DynamicObject.class, method("getModelHeight", 200), methodSupplier("getModel", () -> setModel(0, 128)));
 		final AtomicReference<LocalPoint> secondLocation = new AtomicReference<>(new LocalPoint(1024, 1024));
 		final GameObject firstObject = proxy(GameObject.class, method("getLocalLocation", new LocalPoint(512, 1024)), method("getRenderable", first));
@@ -110,6 +153,8 @@ public class AnimatedSceneryOcclusionTest
 				method("getViewportWidth", 800), method("getViewportHeight", 600));
 			callbacks.set(new DrawCallbacks()
 			{
+				@Override public void drawTemp(net.runelite.api.Projection projection, Scene scene, GameObject object,
+					Model model, int orientation, int x, int y, int z) { tempCalls.incrementAndGet(); }
 				@Override public void draw(int color) { }
 				@Override public void swapScene(Scene scene) { }
 			});
