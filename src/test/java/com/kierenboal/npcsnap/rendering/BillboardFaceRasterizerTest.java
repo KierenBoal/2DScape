@@ -7,6 +7,7 @@ import java.awt.Rectangle;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotEquals;
 
 public class BillboardFaceRasterizerTest
@@ -30,7 +31,7 @@ public class BillboardFaceRasterizerTest
 	{
 		int[] pixels = new int[4];
 		TextureCacheEntry entry = new TextureCacheEntry(new int[] {
-			0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF
+			0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF
 		}, 2, 2, 0L);
 		TextureSample sample = new TextureSample(entry, 0f, 0f, 1);
 		TextureUvs uvs = new TextureUvs(0f, 0f, 1f, 0f, 0f, 1f);
@@ -39,7 +40,7 @@ public class BillboardFaceRasterizerTest
 		BillboardFaceRasterizer.rasterizeTexturedFace(
 			pixels, 2, 2, new Rectangle(0, 0, 2, 2), 1d, face, 16);
 
-		assertNotEquals(0, pixels[0]);
+		assertArrayEquals(new int[] {0xFFD80000, 0xFF00D800, 0xFF0000D8, 0}, pixels);
 	}
 
 	@Test

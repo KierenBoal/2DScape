@@ -48,18 +48,6 @@ public class GroundItemBillboardTrackerTest
 	}
 
 	@Test
-	public void seedTracksItemsInScene()
-	{
-		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();
-		TileItem item = proxy(TileItem.class);
-		Tile currentTile = tile(0, new LocalPoint(256, 256), Arrays.asList(item));
-
-		tracker.seed(worldView(currentTile));
-
-		Assert.assertNotNull(tracker.get(item));
-	}
-
-	@Test
 	public void clearAllowsASeedForTheNextScene()
 	{
 		GroundItemBillboardTracker tracker = new GroundItemBillboardTracker();

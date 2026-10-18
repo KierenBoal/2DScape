@@ -3,7 +3,6 @@ package com.kierenboal.npcsnap.state;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
-import com.kierenboal.npcsnap.targeting.BillboardTargetType;
 import com.kierenboal.npcsnap.TestProxies;
 
 import static org.junit.Assert.assertFalse;
@@ -32,39 +31,6 @@ public class BillboardUpdateModelsTest
 		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(Arrays.asList(stationary, animated), false));
 		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(Arrays.asList(stationary, idle), true));
 		assertFalse(BillboardUpdateScheduler.usesTileObjectAnimationCadence(null, true));
-	}
-
-	@Test
-	public void attachedAndDetachedEffectsUseAnimationCadenceWhenEnabled()
-	{
-		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.ACTOR_SPOT_ANIM, true));
-		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.GRAPHICS_OBJECT, true));
-		assertTrue(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.PROJECTILE, true));
-		assertFalse(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.PLAYER, true));
-		assertFalse(BillboardUpdateScheduler.usesAnimationCadence(BillboardTargetType.GRAPHICS_OBJECT, false));
-	}
-
-	@Test
-	public void cadencedProjectileSnapshotIgnoresLiveFlightState()
-	{
-		UpdateHeuristicSnapshot snapshot = UpdateHeuristicSnapshot.cadencedProjectile(123.0d);
-
-		assertEquals(Long.MIN_VALUE, snapshot.positionKey);
-		assertEquals(1, snapshot.animationHash);
-		assertEquals(1, snapshot.modelStateHash);
-		assertEquals(1, snapshot.textureStateHash);
-		assertEquals(1, snapshot.viewHash);
-		assertTrue(snapshot.animated);
-	}
-
-	@Test
-	public void cadencedProjectileUsesTheAnimationUpdateInterval()
-	{
-		BillboardUpdateState state = new BillboardUpdateState(1.0d);
-		state.advance(100, 1, 1.0d, UpdateHeuristicSnapshot.cadencedProjectile(123.0d), 17);
-
-		assertFalse(state.isReady(116, true));
-		assertTrue(state.isReady(117, true));
 	}
 
 	@Test
@@ -187,8 +153,8 @@ public class BillboardUpdateModelsTest
 		plan.markRedrawSucceeded();
 
 		assertEquals(0, state.cyclesSinceRedraw(10));
-		assertFalse(state.isReady(13, true));
-		assertTrue(state.isReady(14, true));
+		assertFalse(state.isReady(10, true));
+		assertTrue(state.isReady(11, true));
 	}
 
 	@Test

@@ -22,20 +22,17 @@ public class BillboardAnimatedTexturesTest
 	}
 
 	@Test
-	public void vOffsetWrapsAnimatedTextureScroll()
+	public void scrollPreservesSubframeMovementAndWrapsAfterAFullCycle()
 	{
-		Assert.assertEquals(0.75f, BillboardAnimatedTextures.vOffset(1_000L, null, false, 4), 0.00001f);
-	}
-
-	@Test
-	public void vOffsetSnapsToVisibleFrameCount()
-	{
-		Assert.assertEquals(2.0f / 3.0f, BillboardAnimatedTextures.vOffset(1_000L, null, true, 3), 0.00001f);
+		Assert.assertEquals(0.875f, BillboardAnimatedTextures.vOffset(500L, null), 0.00001f);
+		Assert.assertEquals(0.75f, BillboardAnimatedTextures.vOffset(1_000L, null), 0.00001f);
+		Assert.assertEquals(0f, BillboardAnimatedTextures.vOffset(4_000L, null), 0.00001f);
+		Assert.assertEquals(0.875f, BillboardAnimatedTextures.vOffset(4_500L, null), 0.00001f);
 	}
 
 	@Test
 	public void offsetStateHashIgnoresNonAnimatedTextureIds()
 	{
-		Assert.assertEquals(0, BillboardAnimatedTextures.offsetStateHash(ItemID.COINS, 1_000L, true, 4));
+		Assert.assertEquals(0, BillboardAnimatedTextures.offsetStateHash(ItemID.COINS, 1_000L));
 	}
 }

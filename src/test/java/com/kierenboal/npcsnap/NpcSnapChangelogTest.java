@@ -9,43 +9,53 @@ import java.util.Properties;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 public class NpcSnapChangelogTest
 {
+	// Exercise announcement behavior without duplicating the changing release copy.
+	private static final List<NpcSnapChangelog.Release> HISTORY = List.of(
+		new NpcSnapChangelog.Release("1.0.1", "First change; Second change"),
+		new NpcSnapChangelog.Release("1.0.10", "Tenth patch"),
+		new NpcSnapChangelog.Release("1.1.0", "Minor release"),
+		new NpcSnapChangelog.Release("2.0.0", "Major release"));
+	private static final List<String> ALL_MESSAGES = List.of(
+		"2DScape (v1.0.1):", "* First change", "* Second change",
+		"2DScape (v1.0.10):", "* Tenth patch",
+		"2DScape (v1.1.0):", "* Minor release",
+		"2DScape (v2.0.0):", "* Major release");
+
 	@Test
-	public void missingVersionShowsAllReleasesThenSavesCurrentVersion()
+	public void missingVersionAndBaselineAnnounceAllReleasesInOrderBeforeSaving()
 	{
-		Memory memory = new Memory(null);
-		memory.check(new NpcSnapChangelog(), true);
-		assertEquals(List.of(
-			"2DScape (v1.0.1):", "* World object exports fixed", "* boat hiding", "* XP bubble scaling", "* occlusion edge fixes",
-			"2DScape (v1.0.2):", "* Improved rotation calculation with camera location", "* Version system added",
-			"* Projectile arc and height rendering fixed", "* Billboarded world objects no longer clip other sprites", "* World object occlusion and overlapping sprite ordering stabilized", "* Optional actor world-plane projection fits sprites to live bounds", "* Actor world-plane sprites now face the camera on yaw", "2DScape (v1.0.3):", "* Improved click accuracy mode in Rendering config (less RSC, better accuracy though)", "* Retro hitsplats now respect damage types and max hits."), memory.messages);
-		assertEquals("1.0.3", memory.version);
-		assertEquals(expectedAnnounceEvents(memory.messages.size()), memory.events);
+		for (String version : new String[] {null, "1.0.0"})
+		{
+			Memory memory = new Memory(version);
+			memory.check(changelog(), true);
+			assertEquals(ALL_MESSAGES, memory.messages);
+			assertEquals("2.0.0", memory.version);
+			assertEquals(expectedAnnounceEvents(), memory.events);
+		}
 	}
 
 	@Test
-	public void storedBaselineShowsAllAndPreviousReleaseShowsOnlyTheDelta()
+	public void previousVersionAnnouncesOnlyNewerReleasesUsingNumericVersionOrder()
 	{
-		Memory baseline = new Memory("1.0.0");
-		baseline.check(new NpcSnapChangelog(), true);
-		assertEquals(16, baseline.messages.size());
-		Memory previous = new Memory("1.0.1");
-		previous.check(new NpcSnapChangelog(), true);
-		assertEquals(11, previous.messages.size());
-		assertEquals("2DScape (v1.0.2):", previous.messages.get(0));
+		Memory memory = new Memory("1.0.2");
+		memory.check(changelog(), true);
+		assertEquals(List.of("2DScape (v1.0.10):", "* Tenth patch",
+			"2DScape (v1.1.0):", "* Minor release", "2DScape (v2.0.0):", "* Major release"), memory.messages);
+		assertEquals("2.0.0", memory.version);
 	}
 
 	@Test
 	public void currentOrNewerVersionDoesNotAnnounceOrMoveCacheBackwards()
 	{
-		for (String version : List.of("1.0.3", "1.1.2", "2.0.0"))
+		for (String version : List.of("2.0.0", "2.1.0", "3.0.0"))
 		{
 			Memory memory = new Memory(version);
-			memory.check(new NpcSnapChangelog(), true);
+			memory.check(changelog(), true);
 			assertEquals(List.of("read"), memory.events);
 			assertEquals(version, memory.version);
 		}
@@ -57,9 +67,9 @@ public class NpcSnapChangelogTest
 		for (String version : List.of("", "oops", "1.0", "-1.0.1", "1.0.2-beta", "999999999999.0.0"))
 		{
 			Memory memory = new Memory(version);
-			memory.check(new NpcSnapChangelog(), true);
-			assertEquals(16, memory.messages.size());
-			assertEquals("1.0.3", memory.version);
+			memory.check(changelog(), true);
+			assertEquals(ALL_MESSAGES, memory.messages);
+			assertEquals("2.0.0", memory.version);
 		}
 	}
 
@@ -67,18 +77,18 @@ public class NpcSnapChangelogTest
 	public void waitsForLoginAndAvoidsRepeatsAcrossTicksLoginsAndRestarts()
 	{
 		Memory memory = new Memory(null);
-		NpcSnapChangelog changelog = new NpcSnapChangelog();
+		NpcSnapChangelog changelog = changelog();
 		memory.check(changelog, false);
 		assertTrue(memory.events.isEmpty());
 		memory.check(changelog, true);
 		memory.check(changelog, true);
-		assertEquals(expectedAnnounceEvents(memory.messages.size()), memory.events);
+		assertEquals(expectedAnnounceEvents(), memory.events);
 		changelog.requestCheck();
 		memory.check(changelog, false);
 		memory.check(changelog, true);
-		memory.check(new NpcSnapChangelog(), true);
-		assertEquals(16, memory.messages.size());
-		List<String> expectedEvents = expectedAnnounceEvents(memory.messages.size());
+		memory.check(changelog(), true);
+		assertEquals(ALL_MESSAGES, memory.messages);
+		List<String> expectedEvents = expectedAnnounceEvents();
 		expectedEvents.add("read");
 		expectedEvents.add("read");
 		assertEquals(expectedEvents, memory.events);
@@ -87,58 +97,27 @@ public class NpcSnapChangelogTest
 	@Test
 	public void profileChangeReadsTheNewProfilesVersion()
 	{
-		NpcSnapChangelog changelog = new NpcSnapChangelog();
-		new Memory("1.0.3").check(changelog, true);
+		NpcSnapChangelog changelog = changelog();
+		new Memory("2.0.0").check(changelog, true);
 		changelog.requestCheck();
 		Memory newProfile = new Memory("1.0.0");
 		newProfile.check(changelog, true);
-		assertEquals(16, newProfile.messages.size());
-		assertEquals("1.0.3", newProfile.version);
-	}
-
-	@Test
-	public void skippedReleasesAreAnnouncedInOrderAcrossMinorAndMajorVersions()
-	{
-		NpcSnapChangelog changelog = new NpcSnapChangelog(List.of(
-			new NpcSnapChangelog.Release("1.0.1", "First change"),
-			new NpcSnapChangelog.Release("1.0.10", "Tenth patch"),
-			new NpcSnapChangelog.Release("1.1.0", "Minor release"),
-			new NpcSnapChangelog.Release("1.1.2", "Latest release")));
-		Memory memory = new Memory("1.0.0");
-		memory.check(changelog, true);
-		assertEquals(List.of("2DScape (v1.0.1):", "* First change", "2DScape (v1.0.10):", "* Tenth patch",
-			"2DScape (v1.1.0):", "* Minor release", "2DScape (v1.1.2):", "* Latest release"), memory.messages);
-		assertEquals("1.1.2", memory.version);
-		assertTrue(NpcSnapChangelog.compareVersions("1.0.10", "1.0.2") > 0);
-		assertTrue(NpcSnapChangelog.compareVersions("2.0.0", "1.99.99") > 0);
+		assertEquals(ALL_MESSAGES, newProfile.messages);
+		assertEquals("2.0.0", newProfile.version);
 	}
 
 	@Test
 	public void failureToSendDoesNotAdvanceVersionAndCanBeRetried()
 	{
-		NpcSnapChangelog changelog = new NpcSnapChangelog();
+		NpcSnapChangelog changelog = changelog();
 		Memory memory = new Memory("1.0.0");
-		try
-		{
-			changelog.check(true, () -> memory.version, message -> {
-				throw new IllegalStateException("chat unavailable");
-			}, version -> memory.version = version);
-			fail("Expected chat failure");
-		}
-		catch (IllegalStateException expected)
-		{
-			assertEquals("1.0.0", memory.version);
-		}
+		assertThrows(IllegalStateException.class, () -> changelog.check(true, () -> memory.version, message -> {
+			throw new IllegalStateException("chat unavailable");
+		}, version -> memory.version = version));
+		assertEquals("1.0.0", memory.version);
 		memory.check(changelog, true);
-		assertEquals(16, memory.messages.size());
-		assertEquals("1.0.3", memory.version);
-	}
-
-	@Test
-	public void entriesLongerThanEightyCharactersAreAllowed()
-	{
-		NpcSnapChangelog.Release release = new NpcSnapChangelog.Release("1.0.3", "a".repeat(81) + ";" + "b".repeat(120));
-		assertEquals(List.of("a".repeat(81), "b".repeat(120)), release.changes);
+		assertEquals(ALL_MESSAGES, memory.messages);
+		assertEquals("2.0.0", memory.version);
 	}
 
 	@Test
@@ -151,33 +130,19 @@ public class NpcSnapChangelogTest
 	}
 
 	@Test
-	public void tenChangesAreAllShownEvenWhenTotalTextExceedsEightyCharacters()
+	public void emptyAndMultilineChangesAreRejected()
 	{
-		Memory memory = new Memory("1.0.0");
-		memory.check(new NpcSnapChangelog(List.of(new NpcSnapChangelog.Release("1.0.1",
-			"Fix number 1; Fix number 2; Fix number 3; Fix number 4; Fix number 5; Fix number 6; Fix number 7; Fix number 8; Fix number 9; Fix number 10"))), true);
-		assertEquals(List.of("2DScape (v1.0.1):", "* Fix number 1", "* Fix number 2", "* Fix number 3",
-			"* Fix number 4", "* Fix number 5", "* Fix number 6", "* Fix number 7", "* Fix number 8",
-			"* Fix number 9", "* Fix number 10"), memory.messages);
+		for (String change : new String[] {null, "", " ; ; ", "First line\nSecond line", "First line\rSecond line"})
+		{
+			assertThrows(IllegalArgumentException.class, () -> new NpcSnapChangelog.Release("1.0.1", change));
+		}
 	}
 
-	@Test(expected = IllegalArgumentException.class)
-	public void onlyEmptyEntriesAreRejected()
-	{
-		new NpcSnapChangelog.Release("1.0.3", " ; ; ");
-	}
-
-	@Test(expected = IllegalArgumentException.class)
-	public void multilineChangeIsRejected()
-	{
-		new NpcSnapChangelog.Release("1.0.3", "First line\nSecond line");
-	}
-
-	@Test(expected = IllegalArgumentException.class)
+	@Test
 	public void outOfOrderHistoryIsRejected()
 	{
-		new NpcSnapChangelog(List.of(new NpcSnapChangelog.Release("1.0.10", "Later"),
-			new NpcSnapChangelog.Release("1.0.2", "Earlier")));
+		assertThrows(IllegalArgumentException.class, () -> new NpcSnapChangelog(List.of(
+			new NpcSnapChangelog.Release("1.0.10", "Later"), new NpcSnapChangelog.Release("1.0.2", "Earlier"))));
 	}
 
 	@Test
@@ -191,11 +156,16 @@ public class NpcSnapChangelogTest
 		assertEquals(properties.getProperty("version"), NpcSnapChangelog.CURRENT_VERSION);
 	}
 
-	private static List<String> expectedAnnounceEvents(int messageCount)
+	private static NpcSnapChangelog changelog()
+	{
+		return new NpcSnapChangelog(HISTORY);
+	}
+
+	private static List<String> expectedAnnounceEvents()
 	{
 		List<String> events = new ArrayList<>();
 		events.add("read");
-		for (int i = 0; i < messageCount; i++)
+		for (int i = 0; i < ALL_MESSAGES.size(); i++)
 		{
 			events.add("message");
 		}

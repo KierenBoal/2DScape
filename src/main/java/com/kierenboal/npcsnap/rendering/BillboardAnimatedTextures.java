@@ -76,36 +76,23 @@ public final class BillboardAnimatedTextures
 		return false;
 	}
 
-	public static float vOffset(long nowMillis, Texture texture, boolean frameSnappingEnabled, int animationFrameCount)
+	public static float vOffset(long nowMillis, Texture texture)
 	{
 		double speedMultiplier = texture != null && texture.getAnimationSpeed() > 0
 			? texture.getAnimationSpeed()
 			: 1.0d;
 		double offset = (nowMillis / 1000.0d) * ANIMATED_TEXTURE_V_SCROLL_PER_SECOND * speedMultiplier;
-		return snappedOffset(offset, frameSnappingEnabled, animationFrameCount);
+		return (float) BillboardGeometryUtils.wrapUnit(offset);
 	}
 
-	public static int offsetStateHash(int animatedTextureId, long nowMillis, boolean frameSnappingEnabled, int animationFrameCount)
+	public static int offsetStateHash(int animatedTextureId, long nowMillis)
 	{
 		if (!isAnimatedTextureId(animatedTextureId))
 		{
 			return 0;
 		}
 
-		return Float.floatToIntBits(vOffset(nowMillis, null, frameSnappingEnabled, animationFrameCount));
-	}
-
-	private static float snappedOffset(double offset, boolean frameSnappingEnabled, int animationFrameCount)
-	{
-		offset = BillboardGeometryUtils.wrapUnit(offset);
-		if (!frameSnappingEnabled)
-		{
-			return (float) offset;
-		}
-
-		int visibleFrameCount = Math.max(1, animationFrameCount);
-		double snapped = Math.round(offset * visibleFrameCount) / (double) visibleFrameCount;
-		return (float) BillboardGeometryUtils.wrapUnit(snapped);
+		return Float.floatToIntBits(vOffset(nowMillis, null));
 	}
 
 	private static int normalizeEquipmentItemId(int equipmentId)

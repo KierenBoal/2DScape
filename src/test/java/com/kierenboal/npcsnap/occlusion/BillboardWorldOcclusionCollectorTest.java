@@ -32,6 +32,32 @@ import static org.junit.Assert.assertTrue;
 public class BillboardWorldOcclusionCollectorTest
 {
 	@Test
+	public void zbufFacilitiesUseRecordedModelsAndDoNotRegenerateMissingModels()
+	{
+		Model normal = proxy(Model.class), recorded = proxy(Model.class);
+		java.util.concurrent.atomic.AtomicInteger normalReads = new java.util.concurrent.atomic.AtomicInteger();
+		net.runelite.api.DynamicObject object = proxy(net.runelite.api.DynamicObject.class,
+			methodSupplier("getModel", () -> { normalReads.incrementAndGet(); return normal; }), method("getModelZbuf", recorded));
+		assertSame(recorded, BillboardWorldOcclusionCollector.occlusionModel(object, true));
+		assertEquals(0, normalReads.get());
+		assertSame(normal, BillboardWorldOcclusionCollector.occlusionModel(object, false));
+		assertEquals(1, normalReads.get());
+		assertEquals(null, BillboardWorldOcclusionCollector.occlusionModel(proxy(net.runelite.api.DynamicObject.class,
+			method("getModel", normal)), true));
+	}
+
+	@Test
+	public void modelTransparencyCombinesWithFaceTransparencyLikeTheRenderer()
+	{
+		byte[] faces = {0, (byte) 128, (byte) 253, (byte) 255};
+		assertEquals(255, BillboardWorldOcclusionCollector.faceTransmittance(0, null, (byte) 255));
+		assertEquals(126, BillboardWorldOcclusionCollector.faceTransmittance(0, faces, (byte) 128));
+		assertEquals(190, BillboardWorldOcclusionCollector.faceTransmittance(1, faces, (byte) 128));
+		assertEquals(253, BillboardWorldOcclusionCollector.faceTransmittance(2, faces, (byte) 254));
+		assertEquals(255, BillboardWorldOcclusionCollector.faceTransmittance(3, faces, (byte) 128));
+	}
+
+	@Test
 	public void hiddenFacesUseSeparateUnsignedTransparencyAndColorSentinel()
 	{
 		Model staticModel = proxy(Model.class);

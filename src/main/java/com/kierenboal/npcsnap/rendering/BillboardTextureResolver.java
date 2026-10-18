@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.BillboardConstants;
-import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.state.TextureCacheEntry;
 
 import java.util.HashMap;
@@ -15,13 +14,11 @@ import net.runelite.api.TextureProvider;
 public final class BillboardTextureResolver
 {
 	private final Client client;
-	private final NpcSnapConfig config;
 	private final Map<Integer, TextureCacheEntry> textureCache = new HashMap<>();
 
-	public BillboardTextureResolver(Client client, NpcSnapConfig config)
+	public BillboardTextureResolver(Client client)
 	{
 		this.client = client;
-		this.config = config;
 	}
 
 	public void clear()
@@ -46,9 +43,7 @@ public final class BillboardTextureResolver
 	{
 		return BillboardAnimatedTextures.offsetStateHash(
 			animatedTextureId,
-			nowMillis,
-			config.enableAnimationFrameSnapping(),
-			config.animationFrameCount()
+			nowMillis
 		);
 	}
 
@@ -95,7 +90,7 @@ public final class BillboardTextureResolver
 		if (BillboardAnimatedTextures.isAnimatedTextureId(animatedTextureId))
 		{
 			uOffset = 0f;
-			vOffset = BillboardAnimatedTextures.vOffset(nowMillis, texture, config.enableAnimationFrameSnapping(), config.animationFrameCount());
+			vOffset = BillboardAnimatedTextures.vOffset(nowMillis, texture);
 		}
 		int stateHash = 31 * textureId + Float.floatToIntBits(uOffset);
 		stateHash = 31 * stateHash + Float.floatToIntBits(vOffset);

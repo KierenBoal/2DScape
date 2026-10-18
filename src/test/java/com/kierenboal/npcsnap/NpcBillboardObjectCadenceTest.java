@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
@@ -30,18 +29,20 @@ public class NpcBillboardObjectCadenceTest
 	@Test
 	public void animatedObjectsHoldTheirCapturedImageUntilTheConfiguredUpdateCycle()
 	{
-		for (int frameRate : new int[] {2, 4, 10})
+		for (int frameRate : new int[] {2, 4, 10, 50})
 		{
 			Fixture fixture = new Fixture(true, true, frameRate);
-			int interval = (int) Math.ceil(50.0d / frameRate);
+			double interval = 50.0d / frameRate;
+			double deadline = interval;
 			int previous = fixture.frame(0);
 			for (int cycle = 1; cycle <= interval * 2; cycle++)
 			{
 				int current = fixture.frame(cycle);
-				if (cycle % interval == 0)
+				if (cycle >= Math.ceil(deadline - 1e-9))
 				{
 					assertNotEquals("The next captured live pose should be visible", previous, current);
 					previous = current;
+					deadline += interval;
 				}
 				else
 				{
@@ -106,7 +107,7 @@ public class NpcBillboardObjectCadenceTest
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
 			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
-				new AnimationFrameSnapper(client), null);
+				null);
 			overlay.setActive(true);
 		}
 

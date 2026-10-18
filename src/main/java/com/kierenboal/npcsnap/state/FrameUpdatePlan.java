@@ -13,7 +13,12 @@ public final class FrameUpdatePlan
 	public final int gameCycle;
 	public final int baseRefreshInterval;
 	public final double fullQualityScale;
-	public final int minimumAnimatedRedrawInterval;
+	public final double minimumAnimatedRedrawInterval;
+	public boolean forceStateChangeRedraw;
+	private boolean completed;
+	private int expectedParts = 1;
+	private final java.util.Set<net.runelite.api.Renderable> successfulParts =
+		java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
 	public FrameUpdatePlan(
 		double qualityScale,
@@ -23,7 +28,7 @@ public final class FrameUpdatePlan
 		int gameCycle,
 		int baseRefreshInterval,
 		double fullQualityScale,
-		int minimumAnimatedRedrawInterval)
+		double minimumAnimatedRedrawInterval)
 	{
 		this(qualityScale, forceHoverInteractionRedraw, false, updateState, snapshot,
 			gameCycle, baseRefreshInterval, fullQualityScale, minimumAnimatedRedrawInterval);
@@ -38,7 +43,7 @@ public final class FrameUpdatePlan
 		int gameCycle,
 		int baseRefreshInterval,
 		double fullQualityScale,
-		int minimumAnimatedRedrawInterval)
+		double minimumAnimatedRedrawInterval)
 	{
 		this.qualityScale = qualityScale;
 		this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
@@ -61,13 +66,32 @@ public final class FrameUpdatePlan
 
 	public boolean isForcedRedraw()
 	{
-		return forceHoverInteractionRedraw || forceActorResizeRedraw;
+		return forceHoverInteractionRedraw || forceActorResizeRedraw || forceStateChangeRedraw;
+	}
+
+	public boolean isCompleted()
+	{
+		return completed;
+	}
+
+	public void expectParts(int count)
+	{
+		expectedParts = Math.max(1, count);
+	}
+
+	public void partSucceeded(net.runelite.api.Renderable part)
+	{
+		successfulParts.add(part);
+		if (successfulParts.size() >= expectedParts) markRedrawSucceeded();
 	}
 
 	public void markRedrawSucceeded()
 	{
+		if (completed) return;
+		completed = true;
 		if (updateState != null)
 		{
+			if (isForcedRedraw()) updateState.resetCadence();
 			updateState.advance(gameCycle, baseRefreshInterval, fullQualityScale, snapshot, minimumAnimatedRedrawInterval);
 		}
 	}

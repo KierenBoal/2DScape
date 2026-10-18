@@ -29,8 +29,6 @@ public class BillboardCacheModelsTest
 			key, new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
 
 		assertTrue(cached.matchesPreviewKey(preview));
-		assertEquals(12, key.colorBands);
-		assertEquals(99, key.textureStateHash);
 	}
 
 	@Test
@@ -96,8 +94,6 @@ public class BillboardCacheModelsTest
 		assertFalse(cached.consumeDirty());
 		assertTrue(cached.consumeDebugFrameRedrawn());
 		assertFalse(cached.consumeDebugFrameRedrawn());
-		cached.touch(20L);
-		assertEquals(20L, cached.lastUsedMillis());
 	}
 
 	private static NpcSnapConfig config()

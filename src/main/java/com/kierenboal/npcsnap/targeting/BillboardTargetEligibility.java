@@ -51,8 +51,10 @@ public final class BillboardTargetEligibility
 	{
 		WorldView actorWorldView = actor.getWorldView();
 		boolean projectedNested = !actorWorldView.isTopLevel();
-		actorLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actorWorldView, actorLocation);
-		int actorPlane = projectedNested ? 0 : actorWorldView.getPlane();
+		WorldViewLocationResolver.ResolvedLocation location = projectedNested ? WorldViewLocationResolver.resolve(client, actor) : null;
+		if (projectedNested && location == null) return false;
+		actorLocation = projectedNested ? location.mainPoint : actorLocation;
+		int actorPlane = projectedNested ? client.getTopLevelWorldView().getPlane() : actorWorldView.getPlane();
 		if (!hasEligibleLocation(localPlayerLocation, actorLocation, actorPlane))
 		{
 			return false;
@@ -65,8 +67,10 @@ public final class BillboardTargetEligibility
 		}
 
 		int verticalOffset = actor.getAnimationHeightOffset();
-		Point canvasPoint = Perspective.localToCanvas(
-			client, actorLocation, actorPlane, verticalOffset + (actor.getModelHeight() / 2));
+		Point canvasPoint = projectedNested
+			? Perspective.localToCanvas(client, actorLocation.getX(), actorLocation.getY(),
+				(int) Math.round(location.height) - verticalOffset - actor.getModelHeight() / 2)
+			: Perspective.localToCanvas(client, actorLocation, actorPlane, verticalOffset + actor.getModelHeight() / 2);
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;
@@ -127,9 +131,12 @@ public final class BillboardTargetEligibility
 			return false;
 		}
 
-		LocalPoint localPlayerLocation = client.getLocalPlayer() != null ? client.getLocalPlayer().getLocalLocation() : null;
-		LocalPoint actorLocation = WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor);
-		int plane = actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0;
+		LocalPoint localPlayerLocation = WorldViewLocationResolver.toMainWorld(client, client.getLocalPlayer());
+		boolean nested = !actor.getWorldView().isTopLevel();
+		WorldViewLocationResolver.ResolvedLocation location = nested ? WorldViewLocationResolver.resolve(client, actor) : null;
+		if (nested && location == null) return false;
+		LocalPoint actorLocation = nested ? location.mainPoint : actor.getLocalLocation();
+		int plane = nested ? client.getTopLevelWorldView().getPlane() : actor.getWorldView().getPlane();
 		if (!hasEligibleLocation(localPlayerLocation, actorLocation, plane)
 			|| spotAnimation.getModel() == null)
 		{
@@ -137,8 +144,10 @@ public final class BillboardTargetEligibility
 		}
 
 		int verticalOffset = BillboardEffectGeometry.actorSpotVerticalOffset(spotAnimation);
-		Point canvasPoint = Perspective.localToCanvas(
-			client, actorLocation, plane, verticalOffset + (spotAnimation.getModelHeight() / 2));
+		Point canvasPoint = nested
+			? Perspective.localToCanvas(client, actorLocation.getX(), actorLocation.getY(),
+				(int) Math.round(location.height) - verticalOffset - spotAnimation.getModelHeight() / 2)
+			: Perspective.localToCanvas(client, actorLocation, plane, verticalOffset + spotAnimation.getModelHeight() / 2);
 		if (isInside(viewport, canvasPoint))
 		{
 			return true;
@@ -178,14 +187,30 @@ public final class BillboardTargetEligibility
 
 		for (ObjectRenderablePart part : observed.parts)
 		{
-			if (part.localPoint == null || part.renderable == null
-				|| !hasEligibleLocation(localPlayerLocation, part.localPoint, part.plane))
+			if (part.localPoint == null || part.renderable == null) continue;
+			LocalPoint mainPoint = part.localPoint;
+			int plane = part.plane;
+			WorldViewLocationResolver.ResolvedLocation location = null;
+			if (part.localPoint.getWorldView() != WorldView.TOPLEVEL)
+			{
+				WorldView view = client.getWorldView(part.localPoint.getWorldView());
+				if (view == null) continue;
+				double height = part.worldHeight != Integer.MIN_VALUE ? part.worldHeight
+					: view.getTileHeight(part.localPoint.getX(), part.localPoint.getY(), part.plane);
+				location = WorldViewLocationResolver.resolve(client, view, part.localPoint, part.plane, height);
+				if (location == null) continue;
+				mainPoint = location.mainPoint;
+				plane = client.getTopLevelWorldView().getPlane();
+			}
+			if (!hasEligibleLocation(localPlayerLocation, mainPoint, plane))
 			{
 				continue;
 			}
 
-			Point canvasPoint = Perspective.localToCanvas(
-				client, part.localPoint, part.plane, Math.max(0, part.renderable.getModelHeight() / 2));
+			Point canvasPoint = location != null
+				? Perspective.localToCanvas(client, mainPoint.getX(), mainPoint.getY(),
+					(int) Math.round(location.height) - Math.max(0, part.renderable.getModelHeight() / 2))
+				: Perspective.localToCanvas(client, mainPoint, plane, Math.max(0, part.renderable.getModelHeight() / 2));
 			if (isInside(viewport, canvasPoint))
 			{
 				return true;

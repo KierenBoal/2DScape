@@ -7,12 +7,14 @@ import static org.junit.Assert.assertEquals;
 public class BillboardAngleUtilsTest
 {
 	@Test
-	public void convertsAndWrapsLegacyAngles()
+	public void convertsAndWrapsActorAndCameraAngleUnits()
 	{
 		assertEquals(0, BillboardAngleUtils.angleToBillboardUnits(0, 2048));
 		assertEquals(4096, BillboardAngleUtils.angleToBillboardUnits(512, 2048));
 		assertEquals(12288, BillboardAngleUtils.angleToBillboardUnits(-512, 2048));
 		assertEquals(0, BillboardAngleUtils.angleToBillboardUnits(2048, 2048));
+		assertEquals(8192, BillboardAngleUtils.angleToBillboardUnits(8192, 16384));
+		assertEquals(4096, BillboardAngleUtils.angleToBillboardUnits(20480, 16384));
 	}
 
 	@Test

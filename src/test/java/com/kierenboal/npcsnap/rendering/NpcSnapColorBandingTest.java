@@ -10,61 +10,35 @@ import org.junit.Test;
 public class NpcSnapColorBandingTest
 {
 	@Test
-	public void bandPixelsReturnsNewArrayAndPreservesTransparentPixels()
+	public void copyAndInPlaceBandingQuantizePixelsAndPreserveAlpha()
 	{
 		int[] original = {
-			0x00010203,
-			0xFF336699
+			0x00000000, 0xFF808080, 0x80FFFFFF
 		};
+		int[] expected = {0x001A1A1A, 0xFF7F7F7F, 0x80E6E6E6};
 
-		int[] banded = NpcSnapColorBanding.bandPixels(original, 4);
+		int[] banded = NpcSnapColorBanding.bandPixels(original, 3);
 
 		assertNotSame(original, banded);
-		assertEquals(0, banded[0] >>> 24);
-		assertArrayEquals(new int[] {0x00010203, original[1]}, original);
-	}
-
-	@Test
-	public void applyBandsInPlaceMatchesBandPixels()
-	{
-		int[] original = {
-			0xFF102030,
-			0xFF90A0B0,
-			0x80224466
-		};
-
+		assertArrayEquals(expected, banded);
+		assertArrayEquals(new int[] {0x00000000, 0xFF808080, 0x80FFFFFF}, original);
 		int[] copied = original.clone();
-		int[] banded = NpcSnapColorBanding.bandPixels(original, 6);
-		NpcSnapColorBanding.applyBandsInPlace(copied, 6);
-
-		assertArrayEquals(banded, copied);
+		NpcSnapColorBanding.applyBandsInPlace(copied, 3);
+		assertArrayEquals(expected, copied);
 	}
 
 	@Test
-	public void bandSpritePixelsKeepsFullyTransparentPixelsZero()
+	public void spriteBandingKeepsZeroTransparentAndVisiblePixelsAsNonZeroRgb()
 	{
 		int[] original = {
 			0x00000000,
-			0x00102030,
-			0x0090A0B0
+			0x00FFFFFF,
+			0xFF000000
 		};
 
-		int[] banded = NpcSnapColorBanding.bandSpritePixels(original, 5);
+		int[] banded = NpcSnapColorBanding.bandSpritePixels(original, 3);
 
-		assertEquals(0, banded[0]);
-		assertEquals(0, banded[1] >>> 24);
-		assertEquals(0, banded[2] >>> 24);
-		assertEquals(0, banded[0]);
-		assertEquals(0, banded[1] & 0xFF000000);
-		assertEquals(0, banded[2] & 0xFF000000);
-	}
-
-	@Test
-	public void bandSpritePixelsKeepsVisibleBlackNonZero()
-	{
-		int[] banded = NpcSnapColorBanding.bandSpritePixels(new int[] {0x00010101}, 1);
-
-		assertEquals(false, banded[0] == 0);
+		assertArrayEquals(new int[] {0, 0x00E6E6E6, 0x001A1A1A}, banded);
 	}
 
 	@Test

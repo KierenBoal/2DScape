@@ -39,7 +39,7 @@ public class BillboardRedrawReasonTest
 		plan.redrawReasons.addAll(BillboardRedrawReason.cacheChanges(displayed,
 			key(3, 6, 2, 6, true, 100, 0, 0), bounds, 20));
 		assertEquals(4, plan.redrawReasons.size());
-		assertEquals("Frame count, Clickbox/hull size change, Animation change, Hover/interaction change",
+		assertEquals("Frame count, Model/hull size change, Animation change, Hover/interaction change",
 			BillboardRedrawReason.format(plan.redrawReasons));
 	}
 

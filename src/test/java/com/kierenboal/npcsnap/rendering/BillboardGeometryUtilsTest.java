@@ -113,7 +113,7 @@ public class BillboardGeometryUtilsTest
 	}
 
 	@Test
-	public void backFaceCheckHandlesWindingAndInvalidIndices()
+	public void backFaceCheckDistinguishesOppositeWindings()
 	{
 		float[] x = {0, 2, 0};
 		float[] y = {0, 0, 2};

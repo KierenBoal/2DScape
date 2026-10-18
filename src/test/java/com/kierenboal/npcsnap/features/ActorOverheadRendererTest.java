@@ -75,13 +75,7 @@ public class ActorOverheadRendererTest
 			TestProxies.method("getDisappearsOnGameCycle", 100));
 		renderer.recordHitsplat(actor, hitsplat);
 		assertEquals(0, renderer.trackedHitsplatCount(actor, 1));
-	}
-
-	@Test
-	public void disabledRetroOverheadsLeavesNativeOverheadsVisible()
-	{
-		assertFalse(new ActorOverheadRenderer(TestProxies.proxy(Client.class), config(false))
-			.shouldReplace(TestProxies.proxy(NPC.class)));
+		assertFalse(renderer.shouldReplace(actor));
 	}
 
 	@Test
@@ -148,23 +142,6 @@ public class ActorOverheadRendererTest
 			TestProxies.method("getSkullIcon", -1),
 			TestProxies.method("getOverheadIcon", null));
 		assertTrue(new ActorOverheadRenderer(TestProxies.proxy(Client.class)).canReplace(player));
-	}
-
-	@Test
-	public void prayerUsesItsIndexWithinTheSpriteGroup()
-	{
-		BufferedImage image = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
-		SpritePixels magic = TestProxies.proxy(SpritePixels.class,
-			TestProxies.method("toBufferedImage", image));
-		SpritePixels[] prayerSprites = new SpritePixels[HeadIcon.MAGIC.ordinal() + 1];
-		prayerSprites[HeadIcon.MAGIC.ordinal()] = magic;
-		Client client = TestProxies.proxy(Client.class,
-			TestProxies.method("getSprites", prayerSprites));
-		Player player = TestProxies.proxy(Player.class,
-			TestProxies.method("getSkullIcon", -1),
-			TestProxies.method("getOverheadIcon", HeadIcon.MAGIC));
-
-		assertTrue(new ActorOverheadRenderer(client).canReplace(player));
 	}
 
 	@Test

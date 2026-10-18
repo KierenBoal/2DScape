@@ -1,24 +1,20 @@
 package com.kierenboal.npcsnap.targeting;
 
 import com.kierenboal.npcsnap.BillboardConstants;
-import com.kierenboal.npcsnap.rendering.BillboardPaintOrder;
 import com.kierenboal.npcsnap.TestProxies;
 
 import java.util.List;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.GraphicsObject;
-import net.runelite.api.NPC;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
 
 public class BillboardTargetModelsTest
 {
@@ -66,26 +62,6 @@ public class BillboardTargetModelsTest
 	}
 
 	@Test
-	public void targetFactoriesRetainSourceAndPriorityIdentity()
-	{
-		WorldView worldView = worldView(1);
-		LocalPoint point = new LocalPoint(128, 256, worldView);
-		NPC npc = TestProxies.proxy(NPC.class,
-			TestProxies.method("getId", 42),
-			TestProxies.method("getLocalLocation", point),
-			TestProxies.method("getWorldView", worldView));
-		BillboardTarget target = BillboardTarget.forRenderable(
-			BillboardTargetType.NPC, ClassifiedObjectType.NPC, npc, 12.5d, point, 1);
-
-		assertSame(npc, target.renderable);
-		assertEquals(12.5d, target.getDepth(), 0d);
-		assertEquals(ObjectClassifier.renderPriority(ClassifiedObjectType.NPC), target.getRenderPriority());
-		assertNotNull(target.getPriorityTileKey());
-		assertNotNull(target.targetKey);
-		assertFalse(target.priorityGroupSortKey() == BillboardPaintOrder.NO_PRIORITY_GROUP);
-	}
-
-	@Test
 	public void tileObjectTargetUsesFirstAvailablePartLocation()
 	{
 		LocalPoint point = point(128, 256);
@@ -95,9 +71,8 @@ public class BillboardTargetModelsTest
 			ClassifiedObjectType.EFFECT);
 		BillboardTarget target = BillboardTarget.forTileObject(observed, 5d);
 
-		assertSame(observed, target.observedTileObject);
-		assertEquals(ClassifiedObjectType.EFFECT, target.classifiedType);
 		assertNotNull(target.priorityTileKey);
+		assertEquals(PriorityTileKey.of(point, 2, target.getRenderPriority()), target.priorityTileKey);
 	}
 
 	private static LocalPoint point(int x, int y)

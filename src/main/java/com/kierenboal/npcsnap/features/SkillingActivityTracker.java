@@ -35,6 +35,17 @@ public class SkillingActivityTracker
 	private final Map<Skill, Integer> lastXp = new EnumMap<>(Skill.class);
 	private final Map<Skill, Long> visibleFromMillis = new EnumMap<>(Skill.class);
 	private final Map<Skill, Long> activeUntilMillis = new EnumMap<>(Skill.class);
+	private final SkillingBubbleAnimation animation = new SkillingBubbleAnimation(this);
+
+	SkillingBubbleAnimation animation()
+	{
+		return animation;
+	}
+
+	public List<Skill> getAnimatedSkills(long nowMillis)
+	{
+		return animation.renderableSkills(nowMillis);
+	}
 
 	public Collection<Skill> getTrackedSkills()
 	{
@@ -86,7 +97,9 @@ public class SkillingActivityTracker
 			visibleFromMillis.put(skill, nowMillis);
 		}
 
-		activeUntilMillis.put(skill, nowMillis + Math.max(0L, timeoutMillis));
+		long expires = nowMillis + Math.max(0L, timeoutMillis);
+		animation.refresh(skill, nowMillis, expires);
+		activeUntilMillis.put(skill, expires);
 		return true;
 	}
 
@@ -129,6 +142,7 @@ public class SkillingActivityTracker
 
 	public void clear()
 	{
+		animation.clear();
 		lastXp.clear();
 		visibleFromMillis.clear();
 		activeUntilMillis.clear();

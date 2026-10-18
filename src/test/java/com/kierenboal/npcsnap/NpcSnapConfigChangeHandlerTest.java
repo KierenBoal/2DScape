@@ -32,36 +32,20 @@ public class NpcSnapConfigChangeHandlerTest
 	}
 
 	@Test
-	public void inventorySpriteModeClearsBillboardCache()
+	public void billboardChangesOnlyClearBillboardCache()
 	{
-		Counters counters = new Counters();
-
-		counters.handler().handle("npc-snap", "useInventorySpritesForGroundItems");
-
-		counters.assertCounts(0, 1);
-	}
-
-	@Test
-	public void cameraAwareRotationChangesOnlyClearBillboardCache()
-	{
-		Counters counters = new Counters();
-		NpcSnapConfigChangeHandler handler = counters.handler();
-		handler.handle("other", "ignoreCameraAwareRotation");
-		counters.assertCounts(0, 0);
-		handler.handle("npc-snap", "ignoreCameraAwareRotation");
-		counters.assertCounts(0, 1);
-		handler.handle("npc-snap", "ignoreCameraAwareRotation");
-		counters.assertCounts(0, 2);
-	}
-
-	@Test
-	public void actorWorldPlaneChangesClearBillboardCache()
-	{
-		Counters counters = new Counters();
-		counters.handler().handle("other", "enableActorWorldPlaneProjection");
-		counters.assertCounts(0, 0);
-		counters.handler().handle("npc-snap", "enableActorWorldPlaneProjection");
-		counters.assertCounts(0, 1);
+		for (String key : new String[] {"enableAnimationFrameSnapping", "animationFrameCount",
+			"useInventorySpritesForGroundItems", "ignoreCameraAwareRotation", "enableActorWorldPlaneProjection"})
+		{
+			Counters counters = new Counters();
+			NpcSnapConfigChangeHandler handler = counters.handler();
+			handler.handle("other", key);
+			counters.assertCounts(0, 0);
+			handler.handle("npc-snap", key);
+			counters.assertCounts(0, 1);
+			handler.handle("npc-snap", key);
+			counters.assertCounts(0, 2);
+		}
 	}
 
 	private static final class Counters

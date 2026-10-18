@@ -12,6 +12,9 @@ import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Projection;
+import net.runelite.api.FloatProjection;
+import net.runelite.api.Model;
+import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
 import net.runelite.api.Point;
@@ -24,6 +27,105 @@ import static org.junit.Assert.*;
 
 public class BillboardSceneVisibilityTest
 {
+	@Test
+	public void boatDetailsAreNotTrackedButTheirRendererCallsStillForward()
+	{
+		TestClient client = new TestClient();
+		Renderer renderer = new Renderer();
+		client.callbacks = renderer;
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		Scene scene = proxy(Scene.class, method("getWorldViewId", 7));
+		Renderable renderable = proxy(Renderable.class);
+		Model model = proxy(Model.class);
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of());
+		for (int id : new int[] {net.runelite.api.gameval.ObjectID.SAILING_TELEPORTATION_FOCUS,
+			net.runelite.api.gameval.ObjectID.SAILING_BOAT_SAIL_KANDARIN_3X8_COTTON})
+			client.callbacks.drawDynamic(null, scene, proxy(net.runelite.api.TileObject.class, method("getId", id)), renderable, model, 0, 0, 0, 0);
+		assertEquals(2, renderer.dynamicCalls);
+		assertTrue(visibility.snapshot(scene).drawnModels.isEmpty());
+		client.callbacks.drawDynamic(null, scene, proxy(net.runelite.api.TileObject.class,
+			method("getId", net.runelite.api.gameval.ObjectID.SAILING_BOAT_HULL_KANDARIN_3X8_IRONWOOD)), renderable, model, 0, 0, 0, 0);
+		assertSame(model, visibility.snapshot(scene).drawnModels.get(renderable));
+		assertEquals(3, renderer.dynamicCalls);
+		visibility.stop();
+	}
+
+	@Test
+	public void recordsModelsFromBothDynamicDrawCallbacksForThisFrameOnly()
+	{
+		TestClient client = new TestClient();
+		Renderer renderer = new Renderer();
+		client.callbacks = renderer;
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		Scene scene = proxy(Scene.class, method("getWorldViewId", 7));
+		Renderable facility = proxy(Renderable.class), sail = proxy(Renderable.class);
+		Model facilityModel = proxy(Model.class), sailModel = proxy(Model.class);
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of());
+		client.callbacks.drawPass(null, scene, DrawCallbacks.PASS_OPAQUE);
+		client.callbacks.drawDynamic(null, scene, null, facility, facilityModel, 0, 0, 0, 0);
+		client.callbacks.drawDynamic(2, null, scene, null, sail, sailModel, 0, 0, 0, 0);
+		assertSame(facilityModel, visibility.snapshot(scene).drawnModels.get(facility));
+		assertSame(sailModel, visibility.snapshot(scene).drawnModels.get(sail));
+		assertTrue(visibility.snapshot(scene).zbufRenderer);
+		assertEquals(2, renderer.dynamicCalls);
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of());
+		assertTrue(visibility.snapshot(scene).drawnModels.isEmpty());
+		assertFalse(visibility.snapshot(scene).zbufRenderer);
+		visibility.stop();
+	}
+
+	@Test
+	public void capturesAffineRendererMatrixBeforeItsStorageIsReused()
+	{
+		TestClient client = new TestClient();
+		client.callbacks = new Renderer();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		float[] matrix = {0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 512, -100, 1024, 1};
+		FloatProjection projection = proxy(FloatProjection.class, method("getProjection", matrix));
+		Scene scene = proxy(Scene.class, method("getWorldViewId", 7));
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, projection, 0, 0, 0, 0, 0, 0, 0, 3, Set.of());
+		Projection captured = visibility.snapshot(scene).projection;
+		float[] out = new float[3];
+		assertSame(out, captured.project(20, -40, 70, out));
+		assertArrayEquals(new float[] {582, -140, 1004}, out, 0f);
+		matrix[12] = 20_000;
+		assertArrayEquals(out, captured.project(20, -40, 70), 0f);
+		visibility.beginFrame();
+		assertNull(visibility.snapshot(scene));
+		visibility.stop();
+	}
+
+	@Test
+	public void smallBoatSceneUsesItsOwnVisibilityCoordinates()
+	{
+		TestClient client = new TestClient();
+		client.callbacks = new Renderer();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		Client api = proxy(Client.class, method("isGpu", true));
+		BillboardWorldOcclusionCollector collector = new BillboardWorldOcclusionCollector(api,
+			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api), new BillboardPerformanceMetrics(),
+			org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
+		byte[][][] flags = new byte[4][16][16];
+		int[][][] roofs = new int[4][16][16];
+		Scene scene = proxy(Scene.class, method("getWorldViewId", 7), method("getExtendedTileSettings", flags), method("getRoofs", roofs));
+		Tile upper = proxy(Tile.class, method("getPlane", 1), method("getSceneLocation", new Point(2, 9)));
+		BillboardWorldOcclusionCollector.TileCandidate candidate = BillboardWorldOcclusionCollector.TileCandidate.direct(upper, 1, true);
+		visibility.beginFrame();
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 0, Set.of());
+		assertFalse(collector.upperPlaneVisibility(scene, candidate, 0, false).accepted);
+		flags[1][2][9] = Constants.TILE_FLAG_VIS_BELOW;
+		assertTrue(collector.upperPlaneVisibility(scene, candidate, 0, false).accepted);
+		flags[1][2][9] = 0;
+		roofs[0][2][9] = 42;
+		client.callbacks.preSceneDraw(scene, (Projection) null, 0, 0, 0, 0, 0, 0, 0, 3, Set.of(42));
+		assertFalse(collector.upperPlaneVisibility(scene, candidate, 0, false).accepted);
+		visibility.stop();
+	}
+
 	@Test
 	public void collectorKeepsGpuUpperSceneryAndLinkedTilesButRejectsHiddenRoofs()
 	{
@@ -238,6 +340,9 @@ public class BillboardSceneVisibilityTest
 	{
 		private int sceneCalls;
 		private int overlayColor;
+		private int dynamicCalls;
+		@Override public void drawDynamic(Projection projection, Scene scene, net.runelite.api.TileObject object,
+			Renderable renderable, Model model, int orientation, int x, int y, int z) { dynamicCalls++; }
 		@Override public void draw(int color) { overlayColor = color; }
 		@Override public void swapScene(Scene scene) { }
 		@Override public boolean zoneInFrustum(int x, int z, int max, int min) { return true; }

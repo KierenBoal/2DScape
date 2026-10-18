@@ -88,6 +88,6 @@ public final class ObservedTileObjectBuilder
 
 	private static LocalPoint offsetLocalPoint(LocalPoint base, int xOffset, int yOffset)
 	{
-		return base == null ? null : new LocalPoint(base.getX() + xOffset, base.getY() + yOffset);
+		return base == null ? null : base.plus(xOffset, yOffset);
 	}
 }

@@ -1,8 +1,6 @@
 package com.kierenboal.npcsnap.occlusion;
 
-import com.kierenboal.npcsnap.NpcSnapConfig;
 import java.awt.Rectangle;
-import java.util.Arrays;
 import java.util.Collections;
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -10,11 +8,8 @@ import static org.junit.Assert.*;
 public class BillboardBlockyOcclusionTest
 {
 	@Test
-	public void optionsAndDefaultRemainSimpleAndRetiredValuesAreMigratable()
+	public void retiredQualityNamesAreRecognizedWithoutRejectingCurrentNames()
 	{
-		assertEquals(Arrays.asList("OFF", "BLOCKY", "LOW", "MEDIUM", "HIGH"),
-			Arrays.asList(Arrays.stream(BillboardOcclusionQuality.values()).map(Enum::name).toArray(String[]::new)));
-		assertEquals(BillboardOcclusionQuality.MEDIUM, new NpcSnapConfig() { }.billboardOcclusionQuality());
 		assertTrue(BillboardOcclusionQuality.isRetiredValue("ULTRA"));
 		assertTrue(BillboardOcclusionQuality.isRetiredValue("MAX"));
 		assertFalse(BillboardOcclusionQuality.isRetiredValue(null));

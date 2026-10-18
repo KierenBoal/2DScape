@@ -41,7 +41,7 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@Range(min = 0, max = 100)
-	@ConfigItem(keyName = "redrawOnClickboxResizePercent", name = "Redraw on clickbox resize", description = "Redraw an NPC or player immediately when its model or hull width or height changes by more than this percentage. 0 disables the check.", section = snappingSection, position = 1)
+	@ConfigItem(keyName = "redrawOnClickboxResizePercent", name = "Redraw on clickbox resize", description = "Redraw animated billboards immediately when their model width or height changes by more than this percentage. 0 disables the check.", section = snappingSection, position = 1)
 	default int redrawOnClickboxResizePercent()
 	{
 		return 50;
@@ -348,7 +348,8 @@ public interface NpcSnapConfig extends Config
 		return 8;
 	}
 
-	@ConfigItem(keyName = "deterministicAnimationLooping", name = "Deterministic animation looping", description = "Keep the previous animation frame when an animation loops instead of following its loop metadata.", section = retroSection, position = 10)
+	// Retired: retain the saved key for compatibility; billboard captures use native loops.
+	@ConfigItem(keyName = "deterministicAnimationLooping", name = "Deterministic animation looping", description = "Retired setting.", hidden = true)
 	default boolean deterministicAnimationLooping()
 	{
 		return false;
@@ -399,7 +400,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write billboard actor animation frames and loop metadata to the developer log for troubleshooting.", section = debugSection, position = 7)
+	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write captured animation frames and redraw reasons to the developer log for troubleshooting.", section = debugSection, position = 7)
 	default boolean logBillboardAnimationData()
 	{
 		return false;

@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap;
 
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.BillboardCanvasPoint;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
@@ -167,7 +166,7 @@ public class NpcBillboardWorldScaleTest
 				@Override public boolean useInventorySpritesForGroundItems() { return inventorySprites; }
 			};
 			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
-				new AnimationFrameSnapper(client), null);
+				null);
 		}
 
 		private BillboardDrawGeometry draw(Renderable renderable, Rectangle source, int verticalOffset)

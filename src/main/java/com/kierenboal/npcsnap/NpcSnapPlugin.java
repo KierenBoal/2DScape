@@ -8,19 +8,15 @@ import com.kierenboal.npcsnap.export.BillboardExportBatch;
 import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.export.BillboardPngExporter;
 import com.kierenboal.npcsnap.export.BillboardObjectExportTarget;
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
 
 import com.google.inject.Provides;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.awt.Color;
 import javax.inject.Inject;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
@@ -29,7 +25,6 @@ import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.GraphicsObject;
-import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
@@ -62,7 +57,6 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
 
@@ -77,8 +71,6 @@ public class NpcSnapPlugin extends Plugin
 {
 	private static final String CONFIG_GROUP = "npc-snap";
 	private static final String RETRO_OVERHEADS_KEY = "useRetroOverheads";
-	private final Map<Actor, RenderState> mutatedActors = new HashMap<>();
-	private final Runnable restoreFrameListener = this::restoreFrameState;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private final RendererAvailabilityWarning rendererAvailabilityWarning = new RendererAvailabilityWarning();
 	private final NpcSnapChangelog changelog = new NpcSnapChangelog();
@@ -95,9 +87,6 @@ public class NpcSnapPlugin extends Plugin
 
 	@Inject
 	private BillboardSceneVisibility sceneVisibility;
-
-	@Inject
-	private DrawManager drawManager;
 
 	@Inject
 	private NpcSnapConfig config;
@@ -121,9 +110,6 @@ public class NpcSnapPlugin extends Plugin
 	private NpcSnapDebug debug;
 
 	@Inject
-	private AnimationFrameSnapper animationFrameSnapper;
-
-	@Inject
 	private RenderCallbackManager renderCallbackManager;
 
 	@Inject
@@ -141,7 +127,6 @@ public class NpcSnapPlugin extends Plugin
 		migrateLegacyRetroOverheadConfig();
 		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
-		drawManager.registerEveryFrameListener(restoreFrameListener);
 		overlayManager.add(billboardOverlay);
 		overlayManager.add(skillingThoughtBubbleOverlay);
 		renderCallbackManager.register(this);
@@ -194,8 +179,6 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("render callback", () -> renderCallbackManager.unregister(this));
 		cleanupStep("thought bubble overlay", () -> overlayManager.remove(skillingThoughtBubbleOverlay));
 		cleanupStep("billboard overlay", () -> overlayManager.remove(billboardOverlay));
-		cleanupStep("frame listener", () -> drawManager.unregisterEveryFrameListener(restoreFrameListener));
-		cleanupStep("frame state", this::restoreFrameStateNow);
 		cleanupStep("ground item state", this::clearGroundItemState);
 		cleanupStep("tile object state", billboardOverlay::clearTileObjects);
 		cleanupStep("billboard cache", billboardOverlay::clearBillboardCache);
@@ -204,7 +187,6 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("skilling state", skillingActivityTracker::clear);
 		pendingSkillXpSeed = false;
 		rendererAvailabilityWarning.reset();
-		cleanupStep("animation state", animationFrameSnapper::clear);
 		cleanupStep("debug frame state", debug::clearFrameStates);
 		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
 		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
@@ -234,7 +216,6 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		sceneVisibility.beginFrame();
-		restoreFrameState();
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
 		syncUiTextureQuality();
@@ -249,66 +230,6 @@ public class NpcSnapPlugin extends Plugin
 		if (worldView == null)
 		{
 			return;
-		}
-
-		if (config.applyToNpcs())
-		{
-			for (NPC npc : worldView.npcs())
-			{
-				if (npc == null)
-				{
-					continue;
-				}
-
-				applyAnimationFrameSnap(npc);
-			}
-			if (worldView.worldViews() != null)
-			{
-				for (WorldView nested : worldView.worldViews())
-				{
-					if (nested == null || nested.npcs() == null)
-					{
-						continue;
-					}
-					for (NPC npc : nested.npcs())
-					{
-						if (npc != null)
-						{
-							applyAnimationFrameSnap(npc);
-						}
-					}
-				}
-			}
-		}
-
-		if (config.applyToPlayers())
-		{
-			for (Player player : worldView.players())
-			{
-				if (player == null)
-				{
-					continue;
-				}
-
-				applyAnimationFrameSnap(player);
-			}
-			if (worldView.worldViews() != null)
-			{
-				for (WorldView nested : worldView.worldViews())
-				{
-					if (nested == null || nested.players() == null)
-					{
-						continue;
-					}
-					for (Player player : nested.players())
-					{
-						if (player != null)
-						{
-							applyAnimationFrameSnap(player);
-						}
-					}
-				}
-			}
 		}
 
 		billboardOverlay.prepareFrame(worldView);
@@ -592,6 +513,61 @@ public class NpcSnapPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onWorldViewUnloaded(net.runelite.api.events.WorldViewUnloaded event)
+	{
+		billboardOverlay.unloadOcclusionWorldView(event.getWorldView());
+	}
+
+	@Subscribe
+	public void onGameObjectSpawned(net.runelite.api.events.GameObjectSpawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
+	}
+
+	@Subscribe
+	public void onGameObjectDespawned(net.runelite.api.events.GameObjectDespawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
+	}
+
+	@Subscribe
+	public void onGroundObjectSpawned(net.runelite.api.events.GroundObjectSpawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGroundObject());
+	}
+
+	@Subscribe
+	public void onGroundObjectDespawned(net.runelite.api.events.GroundObjectDespawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGroundObject());
+	}
+
+	@Subscribe
+	public void onWallObjectSpawned(net.runelite.api.events.WallObjectSpawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getWallObject());
+	}
+
+	@Subscribe
+	public void onWallObjectDespawned(net.runelite.api.events.WallObjectDespawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getWallObject());
+	}
+
+	@Subscribe
+	public void onDecorativeObjectSpawned(net.runelite.api.events.DecorativeObjectSpawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
+	}
+
+	@Subscribe
+	public void onDecorativeObjectDespawned(net.runelite.api.events.DecorativeObjectDespawned event)
+	{
+		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
+	}
+
+
+	@Subscribe
 	public void onPlayerDespawned(PlayerDespawned playerDespawned)
 	{
 		billboardOverlay.clearInteractionIfMatches(playerDespawned.getPlayer());
@@ -600,6 +576,11 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
+		if (CONFIG_GROUP.equals(configChanged.getGroup()) && "enableSkillingBubbles".equals(configChanged.getKey()) && !config.enableSkillingBubbles())
+		{
+			skillingActivityTracker.clear();
+			pendingSkillXpSeed = true;
+		}
 		if (CONFIG_GROUP.equals(configChanged.getGroup()) && "billboardOcclusionQuality".equals(configChanged.getKey()))
 		{
 			migrateOcclusionQuality();
@@ -703,57 +684,6 @@ public class NpcSnapPlugin extends Plugin
 		return sceneDrawCallbacks;
 	}
 
-	private void applyAnimationFrameSnap(Actor actor)
-	{
-		if (!billboardOverlay.isActorWorldViewVisible(actor) || !config.enableAnimationFrameSnapping())
-		{
-			return;
-		}
-
-		int actionFrameCount = config.animationFrameCount();
-		if (actionFrameCount <= 0)
-		{
-			return;
-		}
-
-		int originalAnimationFrame = actor.getAnimationFrame();
-		int snappedAnimationFrame = animationFrameSnapper.snapActorAnimationFrame(
-			actor, actor.getAnimation(), originalAnimationFrame, actionFrameCount,
-			config.deterministicAnimationLooping(), false, config.logBillboardAnimationData());
-		int originalPoseFrame = actor.getPoseAnimationFrame();
-		int snappedPoseFrame = animationFrameSnapper.snapActorAnimationFrame(
-			actor, actor.getPoseAnimation(), originalPoseFrame, actionFrameCount,
-			config.deterministicAnimationLooping(), true, config.logBillboardAnimationData());
-		if (billboardOverlay.shouldForceActorResizeRedraw(actor))
-		{
-			// Still advance both snapper tracks above, but capture the live pose when
-			// the geometry differs substantially from the currently displayed sprite.
-			snappedAnimationFrame = originalAnimationFrame;
-			snappedPoseFrame = originalPoseFrame;
-		}
-		debug.recordActorFrames(actor, actor.getAnimation(), originalAnimationFrame, snappedAnimationFrame, originalPoseFrame, snappedPoseFrame);
-
-		if (snappedAnimationFrame == originalAnimationFrame && snappedPoseFrame == originalPoseFrame)
-		{
-			return;
-		}
-
-		mutatedActors.put(actor, new RenderState(originalAnimationFrame, originalPoseFrame));
-
-		if (snappedAnimationFrame != originalAnimationFrame)
-		{
-			actor.setAnimationFrame(snappedAnimationFrame);
-		}
-
-		if (snappedPoseFrame != originalPoseFrame)
-		{
-			actor.setPoseAnimationFrame(snappedPoseFrame);
-		}
-
-		// RuneLite exposes Actor#getOrientation()/getCurrentOrientation(), but not a public setter.
-		// The rotation config is kept so the supported API can be wired in immediately if that changes.
-	}
-
 	private void syncUiTextureQuality()
 	{
 		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(),
@@ -811,46 +741,6 @@ public class NpcSnapPlugin extends Plugin
 		return NpcSnapUiTextureManager.SpriteSnapshot.of(sprites[0]);
 	}
 
-	private void restoreNpcState()
-	{
-		if (mutatedActors.isEmpty())
-		{
-			return;
-		}
-
-		for (Map.Entry<Actor, RenderState> entry : mutatedActors.entrySet())
-		{
-			try
-			{
-				Actor actor = entry.getKey();
-				RenderState state = entry.getValue();
-				actor.setAnimationFrame(state.getAnimationFrame());
-				actor.setPoseAnimationFrame(state.getPoseAnimationFrame());
-			}
-			catch (RuntimeException ex)
-			{
-				log.debug("Unable to restore actor animation state", ex);
-			}
-		}
-
-		mutatedActors.clear();
-	}
-
-	private void restoreFrameState()
-	{
-		if (!active)
-		{
-			return;
-		}
-
-		restoreFrameStateNow();
-	}
-
-	private void restoreFrameStateNow()
-	{
-		restoreNpcState();
-	}
-
 	private void seedCurrentSkillXp()
 	{
 		for (net.runelite.api.Skill skill : skillingActivityTracker.getTrackedSkills())
@@ -859,10 +749,4 @@ public class NpcSnapPlugin extends Plugin
 		}
 	}
 
-	@Value
-	private static class RenderState
-	{
-		int animationFrame;
-		int poseAnimationFrame;
-	}
 }

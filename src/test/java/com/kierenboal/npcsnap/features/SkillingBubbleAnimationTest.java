@@ -28,11 +28,11 @@ public class SkillingBubbleAnimationTest
 
 		assertEquals(0f, animation.skillAlpha(Skill.MINING, 1_000L), 0f);
 		assertEquals(0f, animation.bubbleAlpha(List.of(), 1_000L), 0f);
-		assertEquals(1f, animation.introProgress(List.of(), 1_000L), 0f);
+		assertEquals(0f, animation.introProgress(List.of(), 1_000L), 0f);
 	}
 
 	@Test
-	public void bubbleUsesMostVisibleSkillAndSlowestIntro()
+	public void addingSkillLeavesBubbleIntroUntouched()
 	{
 		SkillingActivityTracker tracker = new SkillingActivityTracker();
 		activate(tracker, Skill.MINING, 1_000L, 10_000L);
@@ -40,7 +40,8 @@ public class SkillingBubbleAnimationTest
 		SkillingBubbleAnimation animation = new SkillingBubbleAnimation(tracker);
 
 		assertEquals(1f, animation.bubbleAlpha(List.of(Skill.MINING, Skill.FISHING), 1_500L), 0.001f);
-		assertEquals(0.6f, animation.introProgress(List.of(Skill.MINING, Skill.FISHING), 1_500L), 0.001f);
+		assertEquals(1f, animation.introProgress(List.of(Skill.MINING, Skill.FISHING), 1_500L), 0.001f);
+		assertEquals(0.648f, animation.skillAlpha(Skill.FISHING, 1_500L), 0.001f);
 	}
 
 	private static SkillingBubbleAnimation activeAnimation(Skill skill, long start, long timeout)
@@ -48,6 +49,48 @@ public class SkillingBubbleAnimationTest
 		SkillingActivityTracker tracker = new SkillingActivityTracker();
 		activate(tracker, skill, start, timeout);
 		return new SkillingBubbleAnimation(tracker);
+	}
+
+	@Test
+	public void renewedXpReversesTheFadeWithoutAnInterveningRender()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		activate(tracker, Skill.MINING, 1_000L, 1_000L);
+		SkillingBubbleAnimation animation = new SkillingBubbleAnimation(tracker);
+		tracker.recordXp(Skill.MINING, 102, 3_250L, 10_000L);
+		assertEquals(0.5f, animation.bubbleAlpha(List.of(Skill.MINING), 3_250L), 0.001f);
+		assertEquals(0.5f, animation.skillAlpha(Skill.MINING, 3_250L), 0.001f);
+		assertEquals(1f, animation.bubbleAlpha(List.of(Skill.MINING), 3_500L), 0.001f);
+	}
+
+	@Test
+	public void expiringOneSkillDoesNotLowerTheBubbleAndCanReverseItsOwnFade()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		activate(tracker, Skill.MINING, 1_000L, 1_000L);
+		activate(tracker, Skill.FISHING, 1_000L, 10_000L);
+		SkillingBubbleAnimation animation = new SkillingBubbleAnimation(tracker);
+		assertEquals(1f, animation.introProgress(List.of(Skill.MINING, Skill.FISHING), 3_250L), 0f);
+		assertEquals(0.5f, animation.skillAlpha(Skill.MINING, 3_250L), 0.001f);
+		tracker.recordXp(Skill.MINING, 102, 3_250L, 10_000L);
+		assertEquals(0.5f, animation.skillAlpha(Skill.MINING, 3_250L), 0.001f);
+		assertEquals(1f, animation.skillAlpha(Skill.MINING, 3_500L), 0f);
+	}
+
+	@Test
+	public void fullyHiddenBubbleAndClearStartAFreshEntrance()
+	{
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		activate(tracker, Skill.MINING, 1_000L, 1_000L);
+		SkillingBubbleAnimation animation = new SkillingBubbleAnimation(tracker);
+		assertEquals(0f, animation.bubbleAlpha(List.of(), 4_500L), 0f);
+		assertEquals(List.of(), animation.renderableSkills(4_500L));
+		tracker.recordXp(Skill.MINING, 102, 5_000L, 10_000L);
+		assertEquals(0f, animation.bubbleAlpha(List.of(Skill.MINING), 5_000L), 0f);
+		assertEquals(0.5f, animation.bubbleAlpha(List.of(Skill.MINING), 5_250L), 0.001f);
+		tracker.clear();
+		assertEquals(0f, animation.bubbleAlpha(List.of(), 5_250L), 0f);
+		assertEquals(List.of(), animation.renderableSkills(5_250L));
 	}
 
 	private static void activate(SkillingActivityTracker tracker, Skill skill, long start, long timeout)

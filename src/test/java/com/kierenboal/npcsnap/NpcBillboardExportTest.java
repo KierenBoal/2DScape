@@ -2,7 +2,6 @@ package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.export.BillboardExportBatch;
 import com.kierenboal.npcsnap.export.BillboardObjectExportTarget;
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
@@ -48,7 +47,7 @@ public class NpcBillboardExportTest
 		NpcSnapConfig config = new NpcSnapConfig() { };
 		assertFalse(config.applyToObjects());
 		NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
-			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client), null);
+			new NpcSnapDebug(client, config), null);
 		BillboardObjectExportTarget target = new BillboardObjectExportTarget(1234, 2, 3, WorldView.TOPLEVEL, 0);
 		// No beginFrame, scene observation, classification or billboard cache was populated.
 		BillboardExportBatch batch = overlay.captureExport(target);

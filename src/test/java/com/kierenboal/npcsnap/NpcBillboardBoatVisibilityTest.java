@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.targeting.BillboardWorldViewVisibility;
 import java.awt.Graphics2D;
 import java.awt.Polygon;
@@ -83,6 +82,7 @@ public class NpcBillboardBoatVisibilityTest
 			java.util.List<NPC> npcs = new java.util.ArrayList<>();
 			java.util.List<Player> players = new java.util.ArrayList<>();
 			WorldView boat = proxy(WorldView.class, method("getId", 7),
+				method("getMainWorldProjection", projection(0, 0, 0, 0)),
 				method("getScene", proxy(Scene.class, method("getWorldViewId", 7))),
 				method("npcs", proxy(IndexedObjectSet.class, methodSupplier("iterator", npcs::iterator))),
 				method("players", proxy(IndexedObjectSet.class, methodSupplier("iterator", players::iterator))));
@@ -96,6 +96,7 @@ public class NpcBillboardBoatVisibilityTest
 			if (playerCrew) { players.add((Player) actor); }
 			else { npcs.add((NPC) actor); }
 			WorldEntity parent = proxy(WorldEntity.class, method("getWorldView", boat),
+				method("getLocalLocation", new LocalPoint(0, 0)),
 				methodSupplier("isHiddenForOverlap", overlap::get),
 				method("transformToMainWorld", new LocalPoint(512, 1024)));
 			topLevel = proxy(WorldView.class, method("getId", WorldView.TOPLEVEL), method("isTopLevel", true),
@@ -125,7 +126,7 @@ public class NpcBillboardBoatVisibilityTest
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
 			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
-				new AnimationFrameSnapper(client), null, new BillboardWorldViewVisibility(client, callbacks));
+				null, new BillboardWorldViewVisibility(client, callbacks));
 		}
 
 		private int drawnPixels()

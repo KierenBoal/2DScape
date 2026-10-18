@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap;
 
-import com.kierenboal.npcsnap.rendering.AnimationFrameSnapper;
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
@@ -117,7 +116,7 @@ public class NpcBillboardWorldPlaneTest
 			@Override public boolean enableAnimationFrameSnapping() { return false; }
 		};
 		private final NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
-			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client), null);
+			new NpcSnapDebug(client, config), null);
 
 		private BillboardDrawGeometry draw(Actor target, int requestedYaw)
 		{

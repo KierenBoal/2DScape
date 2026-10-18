@@ -2,20 +2,12 @@ package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.rendering.BillboardRenderQuality;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
-import com.kierenboal.npcsnap.targeting.BillboardTargetType;
 import net.runelite.api.DynamicObject;
 
 public final class BillboardUpdateScheduler
 {
 	private BillboardUpdateScheduler()
 	{
-	}
-
-	public static boolean usesAnimationCadence(BillboardTargetType type, boolean frameLimitingEnabled)
-	{
-		return frameLimitingEnabled && (type == BillboardTargetType.PROJECTILE
-			|| type == BillboardTargetType.GRAPHICS_OBJECT
-			|| type == BillboardTargetType.ACTOR_SPOT_ANIM);
 	}
 
 	public static boolean usesTileObjectAnimationCadence(Iterable<ObjectRenderablePart> parts, boolean frameLimitingEnabled)

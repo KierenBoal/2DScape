@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap.rendering;
 
-import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.TestProxies;
 
 import net.runelite.api.Client;
@@ -66,19 +65,21 @@ public class BillboardTextureResolverTest
 		Model model = model(
 			new float[] {0, 1, 0}, new float[] {0, 0, 1}, new float[] {0, 0, 0},
 			new int[] {0}, new int[] {1}, new int[] {2},
-			new byte[] {0}, new int[] {0}, new int[] {1}, new int[] {2});
+			new byte[] {0}, new int[] {1}, new int[] {2}, new int[] {0});
 		TextureUvs mapped = resolver.computeTextureUvs(model, 0);
 		assertNotNull(mapped);
 		assertEquals(0f, mapped.u0, 0.0001f);
-		assertEquals(1f, mapped.u1, 0.0001f);
-		assertEquals(1f, mapped.v2, 0.0001f);
+		assertEquals(1f, mapped.v0, 0.0001f);
+		assertEquals(0f, mapped.u1, 0.0001f);
+		assertEquals(0f, mapped.v1, 0.0001f);
+		assertEquals(1f, mapped.u2, 0.0001f);
+		assertEquals(0f, mapped.v2, 0.0001f);
 	}
 
 	private static BillboardTextureResolver resolver(TextureProvider provider)
 	{
 		Client client = TestProxies.proxy(Client.class, TestProxies.method("getTextureProvider", provider));
-		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class);
-		return new BillboardTextureResolver(client, config);
+		return new BillboardTextureResolver(client);
 	}
 
 	private static TextureProvider provider(Texture[] textures)

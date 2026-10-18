@@ -50,7 +50,7 @@ public class SkillingThoughtBubbleOverlayTest
 		AtomicInteger work = new AtomicInteger();
 		SkillingActivityTracker tracker = new SkillingActivityTracker()
 		{
-			@Override public List<Skill> getRenderableSkills(long nowMillis, long fadeOutMillis)
+			@Override public List<Skill> getAnimatedSkills(long nowMillis)
 			{
 				work.incrementAndGet();
 				return Collections.emptyList();
@@ -117,8 +117,14 @@ public class SkillingThoughtBubbleOverlayTest
 		iconGraphics.setColor(Color.MAGENTA);
 		iconGraphics.fillRect(0, 0, 24, 24);
 		iconGraphics.dispose();
+		SkillingActivityTracker tracker = new SkillingActivityTracker();
+		for (Skill skill : Arrays.asList(Skill.AGILITY, Skill.SAILING))
+		{
+			tracker.seedXp(skill, 100);
+			tracker.recordXp(skill, 101, 9_000L, 10_000L);
+		}
 		SkillingThoughtBubbleOverlay overlay = new SkillingThoughtBubbleOverlay(client, new NpcSnapConfig() {},
-			new SkillingActivityTracker(), null, null)
+			tracker, null, null)
 		{
 			@Override BufferedImage getSkillImage(Skill skill) { return icon; }
 		};

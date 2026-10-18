@@ -23,10 +23,11 @@ public class BillboardTargetEligibilityTest
 	@Test
 	public void actorRequiresPlayerAndActorLocations()
 	{
-		Actor actor = actor(null, 0, visibleTile());
+		LocalPoint location = point(128, 0, 0);
 		BillboardTargetEligibility eligibility = eligibility(0, false, 10);
 
-		assertFalse(eligibility.actor(null, null, actor, VIEWPORT));
+		assertFalse(eligibility.actor(null, location, actor(location, 0, visibleTile()), VIEWPORT));
+		assertFalse(eligibility.actor(location, null, actor(null, 0, visibleTile()), VIEWPORT));
 	}
 
 	@Test
@@ -48,6 +49,8 @@ public class BillboardTargetEligibilityTest
 		Actor actor = actor(diagonal, 0, visibleTile());
 
 		assertFalse(eligibility(0, false, 1).actor(player, diagonal, actor, VIEWPORT));
+		LocalPoint boundary = point(128, 0, 0);
+		assertTrue(eligibility(0, false, 1).actor(player, boundary, actor(boundary, 0, visibleTile()), VIEWPORT));
 	}
 
 	@Test

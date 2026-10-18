@@ -10,8 +10,9 @@ import java.util.StringJoiner;
 public enum BillboardRedrawReason
 {
 	INITIAL_DRAW("Initial sprite"),
+	CAPTURE_STATE_CHANGE("Capture identity/appearance/view change"),
 	FRAME_COUNT("Frame count"),
-	ACTOR_RESIZE("Clickbox/hull size change"),
+	ACTOR_RESIZE("Model/hull size change"),
 	ANIMATION_CHANGE("Animation change"),
 	INTERACTION_CHANGE("Hover/interaction change"),
 	VIEW_CHANGE("View angle change"),

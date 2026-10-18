@@ -56,4 +56,4 @@ I want to acknowledge and disclose usage of AI agentic engineering in creating t
 - **GPT-5.5:** First implementation of blocky occlusion culling.
 - **GPT-5.6:** Code tidy-up and SO many optimisations. Sol handled orchestration, high-level planning, and a lot of cleanup; Terra and Luna handled implementation.
 - **GPT-6.0 Astra:** Made the occlusion culling truly shine by getting rid of the blockiness and adding composite transparency, so sprites can be seen behind transparent geometry like stained glass.
-- **GPT-6.1 Sol:** Workhorse, new retro hitsplats and new improved clickbox accuracy
+- **GPT-6.1 Sol:** Workhorse, new retro hitsplats and new improved clickbox accuracy, boat occlusion culling, unified FPS 

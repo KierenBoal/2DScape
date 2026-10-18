@@ -5,7 +5,9 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderQuality;
 public final class BillboardUpdateState
 {
 	public double qualityScale;
-	private int nextEligibleGameCycle;
+	private double nextEligibleGameCycle;
+	private UpdateHeuristicSnapshot captured;
+	private double previousInterval;
 	private int lastRedrawGameCycle;
 	private long lastRedrawPositionKey;
 	private int lastRedrawAnimationHash;
@@ -37,7 +39,7 @@ public final class BillboardUpdateState
 
 	public boolean isReady(int gameCycle, boolean hasCachedBillboard)
 	{
-		return !hasCachedBillboard || gameCycle >= nextEligibleGameCycle;
+		return !hasCachedBillboard || gameCycle >= Math.ceil(nextEligibleGameCycle - 1e-9);
 	}
 
 	public boolean hasMoved(UpdateHeuristicSnapshot snapshot)
@@ -108,6 +110,27 @@ public final class BillboardUpdateState
 			&& lastRedrawTextureStateHash != snapshot.textureStateHash;
 	}
 
+	public boolean hasCaptureException(UpdateHeuristicSnapshot snapshot, int resizePercent)
+	{
+		return captured != null && snapshot != null
+			&& (captured.animationIdentityHash != snapshot.animationIdentityHash
+				|| captured.appearanceHash != snapshot.appearanceHash
+				|| captured.viewHash != snapshot.viewHash
+				|| (!snapshot.animated && captured.modelStateHash != snapshot.modelStateHash)
+				|| resized(snapshot, resizePercent));
+	}
+
+	public boolean resized(UpdateHeuristicSnapshot snapshot, int percent)
+	{
+		return captured != null && snapshot != null && snapshot.geometry != null
+			&& snapshot.geometry.exceeds(captured.geometry, percent);
+	}
+
+	public void resetCadence()
+	{
+		nextEligibleGameCycle = Integer.MIN_VALUE;
+	}
+
 	public int cyclesSinceRedraw(int gameCycle)
 	{
 		if (lastRedrawGameCycle == Integer.MIN_VALUE)
@@ -125,7 +148,7 @@ public final class BillboardUpdateState
 			return cyclesSinceRedraw(gameCycle);
 		}
 
-		return Math.max(0, gameCycle - nextEligibleGameCycle);
+		return Math.max(0, gameCycle - (int) Math.ceil(nextEligibleGameCycle - 1e-9));
 	}
 
 	public void observe(UpdateHeuristicSnapshot snapshot)
@@ -147,17 +170,25 @@ public final class BillboardUpdateState
 		nextEligibleGameCycle = gameCycle + Math.max(1, baseRefreshInterval);
 	}
 
-	public void advance(int gameCycle, int baseRefreshInterval, double fullQualityScale, UpdateHeuristicSnapshot snapshot, int minimumAnimatedRedrawInterval)
+	public void advance(int gameCycle, int baseRefreshInterval, double fullQualityScale, UpdateHeuristicSnapshot snapshot, double minimumAnimatedRedrawInterval)
 	{
 		double clampedFullQuality = BillboardRenderQuality.clamp(fullQualityScale);
 		double clampedCurrentQuality = Math.max(BillboardRenderQuality.MIN_RENDER_QUALITY, Math.min(clampedFullQuality, qualityScale));
-		double refreshRatio = clampedCurrentQuality / clampedFullQuality;
-		int nextDelay = Math.max(1, (int) Math.round(baseRefreshInterval * refreshRatio));
-		if (snapshot != null && snapshot.animated)
+		double interval = snapshot != null && snapshot.animated ? Math.max(1d, minimumAnimatedRedrawInterval) : 1d;
+		boolean reset = captured == null || previousInterval != interval || !isReady(gameCycle, true)
+			|| hasCaptureException(snapshot, 0);
+		if (reset || nextEligibleGameCycle == Integer.MIN_VALUE)
 		{
-			nextDelay = Math.max(nextDelay, Math.max(1, minimumAnimatedRedrawInterval));
+			nextEligibleGameCycle = gameCycle + interval;
 		}
-		nextEligibleGameCycle = gameCycle + nextDelay;
+		else
+		{
+			// Preserve the fractional phase, skip missed deadlines, and never catch up in bursts.
+			nextEligibleGameCycle += (Math.floor((gameCycle - nextEligibleGameCycle) / interval) + 1) * interval;
+		}
+		nextEligibleGameCycle = Math.max(gameCycle + 1d, nextEligibleGameCycle);
+		previousInterval = interval;
+		captured = snapshot;
 		qualityScale = Math.min(clampedFullQuality, clampedCurrentQuality * 2.0d);
 		lastRedrawGameCycle = gameCycle;
 		if (snapshot != null)

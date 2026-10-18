@@ -16,6 +16,27 @@ import static org.junit.Assert.assertTrue;
 public class BillboardDepthCalculatorTest
 {
 	@Test
+	public void cachedRasterProjectionMatchesRuneLiteCpuAndGpuRounding()
+	{
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			Client client = proxy(Client.class, method("isGpu", gpu),
+				method("getCameraX", 160), method("getCameraY", 240), method("getCameraZ", -320),
+				method("getCameraFpX", 160.25f), method("getCameraFpY", 240.75f), method("getCameraFpZ", -320.5f),
+				method("getCameraYaw", 555), method("getCameraPitch", 2100),
+				method("getCameraFpYaw", .2128f), method("getCameraFpPitch", .8053f),
+				method("getScale", 567), method("getViewportWidth", 801), method("getViewportHeight", 603),
+				method("getViewportXOffset", 17), method("getViewportYOffset", 29));
+			BillboardDepthCalculator calculator = new BillboardDepthCalculator(client);
+			calculator.beginFrame();
+			for (int x : new int[] {-5000, -64, 350, 1024, 18000})
+				for (int y : new int[] {240, 400, 1200, 5000})
+					for (int z : new int[] {-1500, -100, 700})
+						assertEquals(Perspective.localToCanvas(client, x, y, z), calculator.localToCanvas(x, y, z));
+		}
+	}
+
+	@Test
 	public void projectileDistanceUsesFractionalFlightOriginWithoutModelHeightOrTerrain()
 	{
 		Client client = proxy(Client.class, method("getCameraFpX", 100.0f),

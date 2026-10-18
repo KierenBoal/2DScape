@@ -30,7 +30,9 @@ final class NpcSnapConfigChangeHandler
 			markUiTexturesDirty.run();
 		}
 
-		if ("useInventorySpritesForGroundItems".equals(key)
+		if ("enableAnimationFrameSnapping".equals(key)
+			|| "animationFrameCount".equals(key)
+			|| "useInventorySpritesForGroundItems".equals(key)
 			|| "ignoreCameraAwareRotation".equals(key)
 			|| "enableActorWorldPlaneProjection".equals(key))
 		{

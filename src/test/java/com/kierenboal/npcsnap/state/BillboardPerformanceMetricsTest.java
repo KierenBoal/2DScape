@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.awt.Color;
 import java.util.List;
 import org.junit.Test;
 
@@ -67,8 +66,9 @@ public class BillboardPerformanceMetricsTest
 		try (BillboardPerformanceMetrics.Timer ignored = metrics.time("Rasterization"))
 		{
 			metrics.addElapsed("Painting triangles", 12_000_000L);
+			clock.advanceMillis(12);
 		}
-		clock.advanceMillis(500);
+		clock.advanceMillis(488);
 		metrics.finishFrame();
 
 		List<BillboardPerformanceMetrics.MetricRow> rows = metrics.rows(10);
@@ -84,27 +84,60 @@ public class BillboardPerformanceMetricsTest
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 
 		metrics.beginFrame(true);
-		metrics.addElapsed("Fast", 1_000_000L);
-		metrics.addElapsed("Slow", 5_000_000L);
+		metrics.addElapsed("Fast", 5_000_000L);
+		metrics.addElapsed("Slow", 10_000_000L);
 		clock.advanceMillis(500);
 		metrics.finishFrame();
 
 		List<BillboardPerformanceMetrics.MetricRow> rows = metrics.rows(10);
 		assertEquals("Slow", rows.get(1).name);
 		assertEquals("Fast", rows.get(2).name);
-		assertEquals(0.2d, rows.get(2).percentOfOverall, 0.0001d);
+		assertEquals(1.0d, rows.get(2).percentOfOverall, 0.0001d);
 	}
 
 	@Test
-	public void colorsAreStableAndBright()
+	public void filtersUnroundedPercentagesBeforeTheRowLimit()
 	{
-		Color first = BillboardPerformanceMetrics.colorForName("Rasterization");
-		Color second = BillboardPerformanceMetrics.colorForName("Rasterization");
+		TestClock clock = new TestClock();
+		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
+		metrics.beginFrame(true);
+		metrics.addElapsed("Below", 4_500_000L);
+		metrics.addElapsed("Almost", 4_999_999L);
+		metrics.addElapsed("Exactly", 5_000_000L);
+		clock.advanceMillis(500);
+		metrics.finishFrame();
+		assertEquals(2, metrics.rows(2).size());
+		assertEquals("Exactly", metrics.rows(2).get(1).name);
+		assertEquals(1d, metrics.rows(2).get(1).percentOfOverall, 0d);
+	}
 
-		assertEquals(first, second);
-		assertBright(first.getRed());
-		assertBright(first.getGreen());
-		assertBright(first.getBlue());
+	@Test
+	public void sparseStageUsesItsShareOfTheWholeInterval()
+	{
+		TestClock clock = new TestClock();
+		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
+		recordFrame(metrics, clock, "Occasional", 10, 100);
+		metrics.beginFrame(true);
+		clock.advanceMillis(400);
+		metrics.finishFrame();
+		assertEquals(2d, metrics.rows(10).get(1).percentOfOverall, 0d);
+	}
+
+	@Test
+	public void exposesMoreThanTwentyRowsAndPublishesCountersWithTheSnapshot()
+	{
+		TestClock clock = new TestClock();
+		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
+		metrics.beginFrame(true);
+		for (int i = 0; i < 30; i++) metrics.addElapsed("Stage " + i, 5_000_000L);
+		metrics.count("Actors", 82);
+		clock.advanceMillis(500);
+		metrics.finishFrame();
+		assertEquals(31, metrics.rows(Integer.MAX_VALUE).size());
+		assertEquals(Long.valueOf(82), metrics.counters().get("Actors"));
+		metrics.beginFrame(true);
+		metrics.count("Actors", 1);
+		assertEquals(Long.valueOf(82), metrics.counters().get("Actors"));
 	}
 
 	private static void recordFrame(BillboardPerformanceMetrics metrics, TestClock clock, String name, int elapsedMillis, int frameMillis)
@@ -113,12 +146,6 @@ public class BillboardPerformanceMetricsTest
 		metrics.addElapsed(name, elapsedMillis * 1_000_000L);
 		clock.advanceMillis(frameMillis);
 		metrics.finishFrame();
-	}
-
-	private static void assertBright(int channel)
-	{
-		assertTrue(channel >= 140);
-		assertTrue(channel <= 255);
 	}
 
 	private static final class TestClock

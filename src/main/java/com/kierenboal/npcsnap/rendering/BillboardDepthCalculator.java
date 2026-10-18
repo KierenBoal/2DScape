@@ -8,9 +8,11 @@ import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Perspective;
 import net.runelite.api.Projectile;
+import net.runelite.api.Point;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
 
@@ -18,10 +20,85 @@ public final class BillboardDepthCalculator
 {
 	private static final double MIN_CANVAS_PROJECTION_DEPTH = 50.0d;
 	private final Client client;
+	private Camera frameCamera;
+
+	public void beginFrame()
+	{
+		frameCamera = new Camera(client);
+	}
+
+	private Camera camera()
+	{
+		return frameCamera != null ? frameCamera : new Camera(client);
+	}
+
+	private static final class Camera
+	{
+		final boolean gpu;
+		final int fixedYawSin, fixedYawCos, fixedPitchSin, fixedPitchCos;
+		final double x, y, z, yawSin, yawCos, pitchSin, pitchCos, scale;
+		final double depthX, depthY, depthZ, depthYawSin, depthYawCos, depthPitchSin, depthPitchCos, zoom;
+		final int viewportX, viewportY, width, height;
+		Camera(Client client)
+		{
+			gpu = client.isGpu();
+			x = gpu ? client.getCameraFpX() : client.getCameraX();
+			y = gpu ? client.getCameraFpY() : client.getCameraY();
+			z = gpu ? client.getCameraFpZ() : client.getCameraZ();
+			int yaw = Math.floorMod(client.getCameraYaw(), Perspective.SINE14.length);
+			int pitch = Math.floorMod(client.getCameraPitch(), Perspective.SINE14.length);
+			fixedYawSin = Perspective.SINE14[yaw]; fixedYawCos = Perspective.COSINE14[yaw];
+			fixedPitchSin = Perspective.SINE14[pitch]; fixedPitchCos = Perspective.COSINE14[pitch];
+			depthX = client.getCameraFpX(); depthY = client.getCameraFpY(); depthZ = client.getCameraFpZ();
+			int depthYaw = Math.floorMod((int) Math.round(yaw / 8d), Perspective.SINE.length);
+			int depthPitch = Math.floorMod((int) Math.round(pitch / 8d), Perspective.SINE.length);
+			depthYawSin = Perspective.SINE[depthYaw] / 65536d; depthYawCos = Perspective.COSINE[depthYaw] / 65536d;
+			depthPitchSin = Perspective.SINE[depthPitch] / 65536d; depthPitchCos = Perspective.COSINE[depthPitch] / 65536d;
+			zoom = client.get3dZoom();
+			yawSin = gpu ? Math.sin(client.getCameraFpYaw()) : Perspective.SINE14[yaw] / 65536d;
+			yawCos = gpu ? Math.cos(client.getCameraFpYaw()) : Perspective.COSINE14[yaw] / 65536d;
+			pitchSin = gpu ? Math.sin(client.getCameraFpPitch()) : Perspective.SINE14[pitch] / 65536d;
+			pitchCos = gpu ? Math.cos(client.getCameraFpPitch()) : Perspective.COSINE14[pitch] / 65536d;
+			scale = client.getScale();
+			viewportX = client.getViewportXOffset(); viewportY = client.getViewportYOffset();
+			width = client.getViewportWidth(); height = client.getViewportHeight();
+		}
+	}
 
 	public BillboardDepthCalculator(Client client)
 	{
 		this.client = client;
+	}
+
+	/** Matches RuneLite Perspective's integer CPU and float GPU rasterization. */
+	public Point localToCanvas(int x, int y, int z)
+	{
+		int extension = (Constants.EXTENDED_SCENE_SIZE - Constants.SCENE_SIZE) / 2;
+		int minimum = -extension << Perspective.LOCAL_COORD_BITS;
+		int maximum = (Constants.SCENE_SIZE + extension) << Perspective.LOCAL_COORD_BITS;
+		if (x < minimum || y < minimum || x > maximum || y > maximum) return null;
+		Camera camera = camera();
+		if (camera.gpu)
+		{
+			float fx = x - (float) camera.x, fy = y - (float) camera.y, fz = z - (float) camera.z;
+			float ys = (float) camera.yawSin, yc = (float) camera.yawCos;
+			float ps = (float) camera.pitchSin, pc = (float) camera.pitchCos;
+			float right = fx * yc + fy * ys;
+			float forward = fy * yc - fx * ys;
+			float vertical = fz * pc - forward * ps;
+			float depth = forward * pc + fz * ps;
+			if (depth < MIN_CANVAS_PROJECTION_DEPTH) return null;
+			return new Point(camera.viewportX + Math.round(camera.width / 2f + right * (int) camera.scale / depth),
+				camera.viewportY + Math.round(camera.height / 2f + vertical * (int) camera.scale / depth));
+		}
+		x -= (int) camera.x; y -= (int) camera.y; z -= (int) camera.z;
+		int right = (x * camera.fixedYawCos + y * camera.fixedYawSin) >> 16;
+		int forward = (y * camera.fixedYawCos - x * camera.fixedYawSin) >> 16;
+		int vertical = (z * camera.fixedPitchCos - forward * camera.fixedPitchSin) >> 16;
+		int depth = (forward * camera.fixedPitchCos + z * camera.fixedPitchSin) >> 16;
+		return depth < MIN_CANVAS_PROJECTION_DEPTH ? null
+			: new Point(camera.viewportX + camera.width / 2 + right * (int) camera.scale / depth,
+				camera.viewportY + camera.height / 2 + vertical * (int) camera.scale / depth);
 	}
 
 	public double depth(Projectile projectile)
@@ -45,8 +122,15 @@ public final class BillboardDepthCalculator
 
 	public double depth(ActorSpotAnim actorSpotAnim, Actor actor)
 	{
+		if (actor != null && actor.getWorldView() != null && !actor.getWorldView().isTopLevel())
+		{
+			WorldViewLocationResolver.ResolvedLocation location = WorldViewLocationResolver.resolve(client, actor);
+			return location == null ? Double.NEGATIVE_INFINITY
+				: cameraDistance(location.mainPoint.getX(), location.mainPoint.getY(), location.height
+					- BillboardEffectGeometry.actorSpotVerticalOffset(actorSpotAnim) - actorSpotAnim.getModelHeight() / 2d);
+		}
 		LocalPoint localPoint = actor != null
-			? WorldViewLocationResolver.toMainWorld(client.getTopLevelWorldView(), actor)
+			? WorldViewLocationResolver.toMainWorld(client, actor)
 			: null;
 		if (localPoint == null)
 		{
@@ -86,7 +170,18 @@ public final class BillboardDepthCalculator
 
 			// Sort scenery by its fixed world origin, independently of the live
 			// animated height while a previously captured sprite is displayed.
-			double distance = cameraDistance(part.localPoint, part.plane, 0);
+			double distance;
+			if (part.localPoint.getWorldView() != net.runelite.api.WorldView.TOPLEVEL)
+			{
+				net.runelite.api.WorldView view = client.getWorldView(part.localPoint.getWorldView());
+				if (view == null) continue;
+				double height = part.worldHeight != Integer.MIN_VALUE ? part.worldHeight
+					: view.getTileHeight(part.localPoint.getX(), part.localPoint.getY(), part.plane);
+				WorldViewLocationResolver.ResolvedLocation location = WorldViewLocationResolver.resolve(client, view, part.localPoint, part.plane, height);
+				if (location == null) continue;
+				distance = cameraDistance(location.mainPoint.getX(), location.mainPoint.getY(), location.height);
+			}
+			else distance = cameraDistance(part.localPoint, part.plane, 0);
 			if (distance < nearest)
 			{
 				nearest = distance;
@@ -104,9 +199,10 @@ public final class BillboardDepthCalculator
 
 	private double cameraDistance(double localX, double localY, double worldZ)
 	{
-		double dx = localX - client.getCameraFpX();
-		double dy = localY - client.getCameraFpY();
-		double dz = worldZ - client.getCameraFpZ();
+		Camera camera = camera();
+		double dx = localX - camera.depthX;
+		double dy = localY - camera.depthY;
+		double dz = worldZ - camera.depthZ;
 		return Math.sqrt((dx * dx) + (dy * dy) + (dz * dz));
 	}
 
@@ -133,37 +229,26 @@ public final class BillboardDepthCalculator
 
 	public double cameraForwardDepth(int localX, int localY, double worldHeight)
 	{
-		double x = localX - client.getCameraFpX();
-		double y = localY - client.getCameraFpY();
-		double z = worldHeight - client.getCameraFpZ();
-		int yaw = cameraYawIndex();
-		int pitch = cameraPitchIndex();
-		double yawSin = Perspective.SINE[yaw] / 65536.0d;
-		double yawCos = Perspective.COSINE[yaw] / 65536.0d;
-		double pitchSin = Perspective.SINE[pitch] / 65536.0d;
-		double pitchCos = Perspective.COSINE[pitch] / 65536.0d;
-		double cameraY = (y * yawCos) - (x * yawSin);
-		return (z * pitchSin) + (cameraY * pitchCos);
+		Camera camera = camera();
+		double forward = (localY - camera.depthY) * camera.depthYawCos - (localX - camera.depthX) * camera.depthYawSin;
+		return (worldHeight - camera.depthZ) * camera.depthPitchSin + forward * camera.depthPitchCos;
 	}
 
 	public double cameraForwardDepthOnVerticalPlane(int localX, int localY, int canvasY)
 	{
-		double x = localX - client.getCameraFpX();
-		double y = localY - client.getCameraFpY();
-		int yaw = cameraYawIndex();
-		int pitch = cameraPitchIndex();
-		double yawSin = Perspective.SINE[yaw] / 65536.0d;
-		double yawCos = Perspective.COSINE[yaw] / 65536.0d;
-		double pitchSin = Perspective.SINE[pitch] / 65536.0d;
-		double pitchCos = Perspective.COSINE[pitch] / 65536.0d;
+		Camera camera = camera();
+		double x = localX - camera.depthX;
+		double y = localY - camera.depthY;
+		double yawSin = camera.depthYawSin, yawCos = camera.depthYawCos;
+		double pitchSin = camera.depthPitchSin, pitchCos = camera.depthPitchCos;
 		double cameraY = (y * yawCos) - (x * yawSin);
-		double zoom = client.get3dZoom();
+		double zoom = camera.zoom;
 		if (!Double.isFinite(cameraY) || cameraY <= 0.0d || !Double.isFinite(zoom) || zoom <= 0.0d)
 		{
 			return Double.NaN;
 		}
 
-		double viewportCenterY = client.getViewportYOffset() + (client.getViewportHeight() / 2.0d);
+		double viewportCenterY = camera.viewportY + (camera.height / 2.0d);
 		double screenSlope = (canvasY - viewportCenterY) / zoom;
 		double denominator = pitchCos - (screenSlope * pitchSin);
 		if (!Double.isFinite(denominator) || denominator <= 0.0d)
@@ -193,38 +278,10 @@ public final class BillboardDepthCalculator
 		// Match Perspective.localToCanvas's GPU/CPU camera conventions, retaining
 		// subpixel precision until rasterization. RuneLite's vertical axis points
 		// down, so world-up is decreasing worldZ.
-		double cameraX;
-		double cameraY;
-		double cameraZ;
-		double yawSin;
-		double yawCos;
-		double pitchSin;
-		double pitchCos;
-		if (client.isGpu())
-		{
-			cameraX = client.getCameraFpX();
-			cameraY = client.getCameraFpY();
-			cameraZ = client.getCameraFpZ();
-			double yaw = client.getCameraFpYaw();
-			double pitch = client.getCameraFpPitch();
-			yawSin = Math.sin(yaw);
-			yawCos = Math.cos(yaw);
-			pitchSin = Math.sin(pitch);
-			pitchCos = Math.cos(pitch);
-		}
-		else
-		{
-			cameraX = client.getCameraX();
-			cameraY = client.getCameraY();
-			cameraZ = client.getCameraZ();
-			int yaw = Math.floorMod(client.getCameraYaw(), Perspective.SINE14.length);
-			int pitch = Math.floorMod(client.getCameraPitch(), Perspective.SINE14.length);
-			yawSin = Perspective.SINE14[yaw] / 65536.0d;
-			yawCos = Perspective.COSINE14[yaw] / 65536.0d;
-			pitchSin = Perspective.SINE14[pitch] / 65536.0d;
-			pitchCos = Perspective.COSINE14[pitch] / 65536.0d;
-		}
-
+		Camera camera = camera();
+		double cameraX = camera.x, cameraY = camera.y, cameraZ = camera.z;
+		double yawSin = camera.yawSin, yawCos = camera.yawCos;
+		double pitchSin = camera.pitchSin, pitchCos = camera.pitchCos;
 		double translatedX = localX - cameraX;
 		double translatedY = localY - cameraY;
 		double translatedZ = worldZ - cameraZ;
@@ -232,16 +289,16 @@ public final class BillboardDepthCalculator
 		double cameraForward = (translatedY * yawCos) - (translatedX * yawSin);
 		double cameraVertical = (translatedZ * pitchCos) - (cameraForward * pitchSin);
 		double depth = (cameraForward * pitchCos) + (translatedZ * pitchSin);
-		double scale = client.getScale();
+		double scale = camera.scale;
 		if (!Double.isFinite(depth) || depth < MIN_CANVAS_PROJECTION_DEPTH
 			|| !Double.isFinite(scale) || scale <= 0.0d)
 		{
 			return null;
 		}
 
-		double canvasX = client.getViewportXOffset() + (client.getViewportWidth() / 2.0d)
+		double canvasX = camera.viewportX + (camera.width / 2.0d)
 			+ ((cameraRight * scale) / depth);
-		double canvasY = client.getViewportYOffset() + (client.getViewportHeight() / 2.0d)
+		double canvasY = camera.viewportY + (camera.height / 2.0d)
 			+ ((cameraVertical * scale) / depth);
 		// Differentiate the perspective divide with respect to world-up. Removing
 		// the common scale/depth factor gives (right*sin(pitch)/depth, forward/depth)

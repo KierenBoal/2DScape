@@ -101,6 +101,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	{
 		if (!active || !config.enableSkillingBubbles() || client.getGameState() != GameState.LOGGED_IN)
 		{
+			skillingActivityTracker.animation().clear();
 			return null;
 		}
 
@@ -111,7 +112,7 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		}
 
 		long nowMillis = System.currentTimeMillis();
-		List<Skill> activeSkills = skillingActivityTracker.getRenderableSkills(nowMillis, FADE_OUT_MILLIS);
+		List<Skill> activeSkills = skillingActivityTracker.getAnimatedSkills(nowMillis);
 		if (activeSkills.isEmpty())
 		{
 			return null;
@@ -136,6 +137,10 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	public void setActive(boolean active)
 	{
 		this.active = active;
+		if (!active)
+		{
+			skillingActivityTracker.animation().clear();
+		}
 	}
 
 	private Point getBubbleAnchor(Player player)
@@ -181,8 +186,12 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 	private void drawBubbleAtReferenceScale(Graphics2D graphics, Player player, Point anchor, List<Skill> activeSkills,
 		long nowMillis, float alpha, AffineTransform bubbleTransform)
 	{
-		int iconCount = activeSkills.size();
-		int iconsWidth = (iconCount * ICON_SIZE) + ((iconCount - 1) * ICON_GAP);
+		double totalWeight = 0d;
+		for (Skill skill : activeSkills)
+		{
+			totalWeight += animation.skillAlpha(skill, nowMillis);
+		}
+		int iconsWidth = Math.max(0, (int) Math.round(totalWeight * (ICON_SIZE + ICON_GAP) - ICON_GAP));
 		int bubbleWidth = Math.max(MIN_BUBBLE_SIZE, iconsWidth + (BUBBLE_PADDING * 2));
 		int bubbleHeight = MIN_BUBBLE_SIZE;
 		double time = nowMillis / 1000.0d;
@@ -203,17 +212,20 @@ public class SkillingThoughtBubbleOverlay extends Overlay
 		graphics.setColor(BUBBLE_OUTLINE);
 		graphics.draw(bubbleShape);
 
-		int iconX = bubbleX + ((bubbleWidth - iconsWidth) / 2);
+		double iconX = bubbleX + ((bubbleWidth - iconsWidth) / 2.0d);
 		int iconY = bubbleY + ((bubbleHeight - ICON_SIZE) / 2);
 		for (Skill skill : activeSkills)
 		{
+			float iconAlpha = animation.skillAlpha(skill, nowMillis);
+			double slotWidth = iconAlpha * (ICON_SIZE + ICON_GAP);
+			graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha * iconAlpha));
 			BufferedImage image = getSkillImage(skill);
 			if (image != null)
 			{
-				drawContainedImage(graphics, image, iconX, iconY, ICON_SIZE, ICON_SIZE);
+				drawContainedImage(graphics, image, (int) Math.round(iconX + (slotWidth - ICON_GAP - ICON_SIZE) / 2d), iconY, ICON_SIZE, ICON_SIZE);
 			}
 
-			iconX += ICON_SIZE + ICON_GAP;
+			iconX += slotWidth;
 		}
 
 	}

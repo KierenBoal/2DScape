@@ -13,6 +13,25 @@ public final class TestProxies
 	{
 	}
 
+	public static net.runelite.api.Projection projection(float xOffset, float heightOffset, float yOffset, int orientation)
+	{
+		return new net.runelite.api.Projection()
+		{
+			@Override public float[] project(float x, float height, float y)
+			{
+				return project(x, height, y, new float[3]);
+			}
+			@Override public float[] project(float x, float height, float y, float[] out)
+			{
+				double angle = orientation * Math.PI / 1024d;
+				out[0] = (float) (xOffset + x * Math.cos(angle) + y * Math.sin(angle));
+				out[1] = heightOffset + height;
+				out[2] = (float) (yOffset + y * Math.cos(angle) - x * Math.sin(angle));
+				return out;
+			}
+		};
+	}
+
 	public static MethodResult method(String name, Object result)
 	{
 		return new MethodResult(name, result);

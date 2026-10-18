@@ -35,7 +35,7 @@ public class NpcSnapDebug
 	private static final Color TEXT_FOREGROUND = Color.WHITE;
 	private static final Color METRIC_VALUE_FOREGROUND = new Color(220, 220, 220, 255);
 	private static final Color METRIC_HOTSPOT_FOREGROUND = new Color(255, 80, 80, 255);
-	private static final String[] METRIC_HEADERS = {"Method", "Min", "Avg", "Max", "Total"};
+	private static final String[] METRIC_HEADERS = {"Method", "Min ms", "Avg ms", "Max ms", "% plugin"};
 	private static final int HOTSPOT_METRIC_COUNT = 3;
 
 	private final Client client;
@@ -152,6 +152,74 @@ public class NpcSnapDebug
 
 	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
 	{
+		drawPerformanceMetrics(graphics, viewport, rows, java.util.Collections.emptyMap());
+	}
+
+	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, Map<String, Long> counters)
+	{
+		if (graphics == null || viewport == null)
+		{
+			return;
+		}
+		Graphics2D clipped = (Graphics2D) graphics.create();
+		try
+		{
+			clipped.clip(new Rectangle(viewport.x + 8, viewport.y + 8,
+				Math.max(0, viewport.width - 16), Math.max(0, viewport.height - 16)));
+			drawPerformanceTable(clipped, viewport, rows, performanceContext(counters));
+		}
+		finally
+		{
+			clipped.dispose();
+		}
+	}
+
+	List<String> performanceContext(Map<String, Long> counters)
+	{
+		List<String> lines = new ArrayList<>(4);
+		net.runelite.api.Player player = client.getLocalPlayer();
+		net.runelite.api.WorldView top = client.getTopLevelWorldView();
+		com.kierenboal.npcsnap.targeting.WorldViewLocationResolver.ResolvedLocation location =
+			player != null && top != null ? com.kierenboal.npcsnap.targeting.WorldViewLocationResolver.resolve(client, player) : null;
+		String source = location != null && !location.source.isTopLevel()
+			? String.format(Locale.ROOT, ", Source: %d/%d, View: %d", location.sourcePoint.getX(), location.sourcePoint.getY(), location.source.getId()) : "";
+		lines.add(location != null
+			? String.format(Locale.ROOT, "Player (X: %d, Y: %d, Z: %.1f, Plane: %d%s)",
+				top.getBaseX() + location.mainPoint.getSceneX(), top.getBaseY() + location.mainPoint.getSceneY(), location.height, top.getPlane(), source)
+			: "Player (unavailable)");
+		lines.add(String.format(Locale.ROOT, "Camera (X: %.1f, Y: %.1f, Z: %.1f, Pitch: %d, Yaw: %d, Zoom: %d, %s %dx%d)",
+			client.getCameraFpX(), client.getCameraFpY(), client.getCameraFpZ(), client.getCameraPitch(), client.getCameraYaw(), client.get3dZoom(),
+			client.isGpu() ? "GPU" : "CPU", client.getViewportWidth(), client.getViewportHeight()));
+		lines.add(String.format(Locale.ROOT, "Renderables (Actors: %s, Items: %s, Effects: %s, Boats: %s, Hidden: %s, Objects: %s/%s)",
+			compactCount(counters.getOrDefault("Actors", 0L)), compactCount(counters.getOrDefault("Items", 0L)),
+			compactCount(counters.getOrDefault("Effects", 0L)), compactCount(counters.getOrDefault("Boats", 0L)),
+			compactCount(counters.getOrDefault("Boats skipped", 0L)), compactCount(counters.getOrDefault("Objects accepted", 0L)),
+			compactCount(counters.getOrDefault("Objects checked", 0L))));
+		lines.add(String.format(Locale.ROOT, "Geometry (Faces: %s, Inspected: %s, Accepted: %s, Terrain: %s/%s)",
+			compactCount(counters.getOrDefault("Faces available", 0L)), compactCount(counters.getOrDefault("Faces inspected", 0L)),
+			compactCount(counters.getOrDefault("Faces accepted", 0L)), compactCount(counters.getOrDefault("Terrain tris accepted", 0L)),
+			compactCount(counters.getOrDefault("Terrain tris checked", 0L))));
+		return lines;
+	}
+
+	static String compactCount(long value)
+	{
+		return value >= 1_000_000L ? String.format(Locale.ROOT, "%.1fm", value / 1_000_000d)
+			: value >= 1_000L ? String.format(Locale.ROOT, "%.1fk", value / 1_000d) : Long.toString(value);
+	}
+
+	static int performanceRowCapacity(int viewportHeight, int lineHeight, int contextLines)
+	{
+		return performanceRowCapacityForContextHeight(viewportHeight, lineHeight, contextLines * lineHeight);
+	}
+
+	static int performanceRowCapacityForContextHeight(int viewportHeight, int lineHeight, int contextHeight)
+	{
+		return Math.max(0, (viewportHeight - 16 - 10 - contextHeight) / Math.max(1, lineHeight) - 1);
+	}
+
+	private void drawPerformanceTable(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, List<String> context)
+	{
 		if (graphics == null || viewport == null || rows == null || rows.isEmpty())
 		{
 			return;
@@ -165,9 +233,14 @@ public class NpcSnapDebug
 		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 		graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
 		FontMetrics metrics = graphics.getFontMetrics();
+		Font contextFont = font.deriveFont(Math.max(1f, font.getSize2D() - 2f));
+		FontMetrics contextMetrics = graphics.getFontMetrics(contextFont);
 		int padding = 5;
 		int gap = 12;
 		int lineHeight = metrics.getHeight();
+		int contextHeight = context.size() * contextMetrics.getHeight();
+		int capacity = performanceRowCapacityForContextHeight(viewport.height, lineHeight, contextHeight);
+		rows = rows.subList(0, Math.min(rows.size(), capacity));
 		int[] columnWidths = new int[METRIC_HEADERS.length];
 		for (int column = 0; column < METRIC_HEADERS.length; column++)
 		{
@@ -189,12 +262,24 @@ public class NpcSnapDebug
 		{
 			width += columnWidth;
 		}
-		int height = (lineHeight * (rows.size() + 1)) + (padding * 2);
+		for (String line : context)
+		{
+			width = Math.max(width, contextMetrics.stringWidth(line) + padding * 2);
+		}
+		int height = (lineHeight * (rows.size() + 1)) + contextHeight + (padding * 2);
 		graphics.setColor(TEXT_BACKGROUND);
 		graphics.fillRect(x, y, width, height);
 		int[] columnX = metricColumnPositions(x + padding, columnWidths, gap);
-		int headerY = y + padding + metrics.getAscent();
+		int contextY = y + padding + contextMetrics.getAscent();
 		graphics.setColor(METRIC_VALUE_FOREGROUND);
+		graphics.setFont(contextFont);
+		for (String line : context)
+		{
+			graphics.drawString(line, x + padding, contextY);
+			contextY += contextMetrics.getHeight();
+		}
+		graphics.setFont(font);
+		int headerY = y + padding + contextHeight + metrics.getAscent();
 		for (int column = 0; column < METRIC_HEADERS.length; column++)
 		{
 			graphics.drawString(METRIC_HEADERS[column], columnX[column], headerY);
@@ -208,7 +293,7 @@ public class NpcSnapDebug
 				continue;
 			}
 
-			int lineY = y + padding + ((i + 1) * lineHeight) + metrics.getAscent();
+			int lineY = headerY + ((i + 1) * lineHeight);
 			graphics.setColor(row.color);
 			String[] values = metricValues(row);
 			graphics.drawString(values[0], columnX[0], lineY);
@@ -294,7 +379,7 @@ public class NpcSnapDebug
 			String.format(Locale.ROOT, "%.1f", row.minMillis),
 			String.format(Locale.ROOT, "%.1f", row.avgMillis),
 			String.format(Locale.ROOT, "%.1f", row.maxMillis),
-			String.format(Locale.ROOT, "%.0f%%", row.percentOfOverall)
+			String.format(Locale.ROOT, "%.1f%%", row.percentOfOverall)
 		};
 	}
 

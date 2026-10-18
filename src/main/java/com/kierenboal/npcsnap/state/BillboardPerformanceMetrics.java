@@ -14,6 +14,21 @@ public final class BillboardPerformanceMetrics
 	private final List<MetricNode> stack = new ArrayList<>();
 	private final LongSupplier nanoTime;
 	private List<MetricRow> publishedRows = Collections.emptyList();
+	private final java.util.Map<String, Long> counters = new java.util.LinkedHashMap<>();
+	private java.util.Map<String, Long> publishedCounters = Collections.emptyMap();
+
+	public void count(String name, long value)
+	{
+		if (enabled)
+		{
+			counters.put(name, value);
+		}
+	}
+
+	public java.util.Map<String, Long> counters()
+	{
+		return publishedCounters;
+	}
 	private boolean enabled;
 	private long rootStartNanos = -1L;
 	private long intervalStartNanos = -1L;
@@ -30,6 +45,7 @@ public final class BillboardPerformanceMetrics
 
 	public void beginFrame(boolean enabled)
 	{
+		counters.clear();
 		long now = nanoTime.getAsLong();
 		if (!enabled)
 		{
@@ -37,6 +53,7 @@ public final class BillboardPerformanceMetrics
 			rootStartNanos = -1L;
 			intervalStartNanos = -1L;
 			publishedRows = Collections.emptyList();
+			publishedCounters = Collections.emptyMap();
 			stack.clear();
 			resetCurrent(root);
 			resetInterval(root);
@@ -100,6 +117,7 @@ public final class BillboardPerformanceMetrics
 		if (now - intervalStartNanos >= SNAPSHOT_INTERVAL_NANOS)
 		{
 			publishedRows = buildRows(Integer.MAX_VALUE);
+			publishedCounters = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(counters));
 			resetInterval(root);
 			intervalStartNanos = now;
 		}
@@ -198,7 +216,11 @@ public final class BillboardPerformanceMetrics
 			return;
 		}
 
-		rows.add(MetricRow.from(node, depth));
+		MetricRow row = MetricRow.from(node, depth);
+		if (depth == 0 || row.percentOfOverall >= 1.0d)
+		{
+			rows.add(row);
+		}
 		if (rows.size() >= maxRows)
 		{
 			return;
@@ -263,7 +285,7 @@ public final class BillboardPerformanceMetrics
 		private static MetricRow from(MetricNode node, int depth)
 		{
 			double overallAverage = node.root().sampleAverageNanos();
-			double percentOfOverall = overallAverage > 0.0d ? (node.sampleAverageNanos() * 100.0d) / overallAverage : 0.0d;
+			double percentOfOverall = overallAverage > 0.0d ? (node.sampleTotalNanos * 100.0d) / node.root().sampleTotalNanos : 0.0d;
 			return new MetricRow(
 				node.name,
 				depth,

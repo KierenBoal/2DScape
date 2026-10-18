@@ -57,10 +57,11 @@ public class BillboardRenderRequestFactoryTest
 	@Test
 	public void nestedActorBodyUsesMainWorldViewingRayAndOwningEntityOrientation()
 	{
-		WorldView nested = TestProxies.proxy(WorldView.class);
+		WorldView nested = TestProxies.proxy(WorldView.class, TestProxies.method("getMainWorldProjection", TestProxies.projection(800, 0, 700, 0)));
 		WorldView top = worldView(0);
 		LocalPoint mainLocation = new LocalPoint(1000, 1000, top);
 		WorldEntity owner = TestProxies.proxy(WorldEntity.class, TestProxies.method("getWorldView", nested),
+			TestProxies.method("getLocalLocation", new LocalPoint(0, 0)),
 			TestProxies.method("getOrientation", 512), TestProxies.method("transformToMainWorld", mainLocation));
 		WorldView main = TestProxies.proxy(WorldView.class, TestProxies.method("isTopLevel", true),
 			TestProxies.method("worldEntities", TestProxies.proxy(IndexedObjectSet.class,
@@ -76,10 +77,10 @@ public class BillboardRenderRequestFactoryTest
 				@Override public boolean ignoreCameraAwareRotation() { return ignore; }
 			};
 			BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
-				new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+				new NpcSnapDebug(client, config),
 				new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
 			BillboardRenderRequest request = factory.buildActor(actor);
-			assertSame(mainLocation, request.localPoint);
+			assertEquals(mainLocation, request.localPoint);
 			assertEquals(ignore ? 6144 : 4096, request.relativeYaw);
 			assertEquals(2048, factory.buildActorSpotAnimation(TestProxies.proxy(ActorSpotAnim.class), actor).relativeYaw);
 		}
@@ -200,7 +201,6 @@ public class BillboardRenderRequestFactoryTest
 			client,
 			config,
 			new NpcSnapDebug(client, config),
-			new AnimationFrameSnapper(client),
 			new BillboardOrientationCalculator(client, config),
 			new BillboardInteractionState());
 
@@ -259,7 +259,7 @@ public class BillboardRenderRequestFactoryTest
 	}
 
 	@Test
-	public void effectsAndProjectilesFollowTheMasterFrameRateSwitch()
+	public void effectsAndProjectilesReportTheLivePoseWithEitherFrameRateSetting()
 	{
 		Animation animation = TestProxies.proxy(Animation.class,
 			TestProxies.method("getId", 88),
@@ -276,9 +276,9 @@ public class BillboardRenderRequestFactoryTest
 			TestProxies.method("getAnimation", animation),
 			TestProxies.method("getAnimationFrame", 4));
 
-		assertEquals(3, factory(true, animation).buildGraphicsObject(effect).animationFrame);
+		assertEquals(4, factory(true, animation).buildGraphicsObject(effect).animationFrame);
 		assertEquals(4, factory(false, animation).buildGraphicsObject(effect).animationFrame);
-		assertEquals(3, factory(true, animation).buildProjectile(projectile).animationFrame);
+		assertEquals(4, factory(true, animation).buildProjectile(projectile).animationFrame);
 		assertEquals(4, factory(false, animation).buildProjectile(projectile).animationFrame);
 	}
 
@@ -302,18 +302,6 @@ public class BillboardRenderRequestFactoryTest
 		ObjectRenderablePart part = new ObjectRenderablePart(renderable, new LocalPoint(128, 128, worldView(0)), 0);
 
 		assertNull(factory().buildStaticObjectPart(part));
-	}
-
-	@Test
-	public void staticObjectPartUsesTheAvailableModel()
-	{
-		Model model = TestProxies.proxy(Model.class);
-		net.runelite.api.Renderable renderable = TestProxies.proxy(
-			net.runelite.api.Renderable.class,
-			TestProxies.method("getModel", model));
-		ObjectRenderablePart part = new ObjectRenderablePart(renderable, new LocalPoint(128, 128, worldView(0)), 0);
-
-		assertSame(model, factory().buildStaticObjectPart(part).model);
 	}
 
 	@Test
@@ -341,7 +329,6 @@ public class BillboardRenderRequestFactoryTest
 			client,
 			config,
 			new NpcSnapDebug(client, config),
-			new AnimationFrameSnapper(client),
 			orientation,
 			new BillboardInteractionState());
 
@@ -363,7 +350,7 @@ public class BillboardRenderRequestFactoryTest
 			@Override public boolean enableRotationSnapping() { return false; }
 		};
 		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
-			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+			new NpcSnapDebug(client, config),
 			new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
 		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", worldView(0)),
 			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)));
@@ -384,7 +371,7 @@ public class BillboardRenderRequestFactoryTest
 			@Override public boolean ignoreCameraAwareRotation() { return true; }
 		};
 		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
-			new NpcSnapDebug(client, config), new AnimationFrameSnapper(client),
+			new NpcSnapDebug(client, config),
 			new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
 		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", worldView(0)),
 			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)),
@@ -415,7 +402,6 @@ public class BillboardRenderRequestFactoryTest
 			client,
 			config,
 			new NpcSnapDebug(client, config),
-			new AnimationFrameSnapper(client),
 			new BillboardOrientationCalculator(client, config),
 			new BillboardInteractionState());
 	}

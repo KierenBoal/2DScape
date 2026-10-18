@@ -71,6 +71,10 @@ public final class BillboardSceneDrawCallbacks
 		}
 
 		overlay.noteSceneRenderable(renderable);
+		if (renderable instanceof Actor)
+		{
+			overlay.noteSceneActorDraw((Actor) renderable);
+		}
 		return !overlay.shouldHideRenderable(renderable);
 	}
 

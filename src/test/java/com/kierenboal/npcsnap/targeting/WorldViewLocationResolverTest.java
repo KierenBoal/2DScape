@@ -56,6 +56,40 @@ public class WorldViewLocationResolverTest
 		assertEquals(768, WorldViewLocationResolver.toMainWorldOrientation(top, actor));
 	}
 
+	@Test
+	public void resolvesRotatedDeckHeightAndRejectsHiddenOrUnprojectedBoats()
+	{
+		java.util.concurrent.atomic.AtomicBoolean hidden = new java.util.concurrent.atomic.AtomicBoolean();
+		net.runelite.api.Projection projection = TestProxies.projection(512, 10, 1024, 512);
+		WorldView nested = TestProxies.proxy(WorldView.class, method("getMainWorldProjection", projection), method("getTileHeight", -40));
+		WorldEntity owner = TestProxies.proxy(WorldEntity.class, method("getWorldView", nested), method("getLocalLocation", new LocalPoint(64, 64)),
+			TestProxies.methodSupplier("isHiddenForOverlap", hidden::get));
+		WorldView top = TestProxies.proxy(WorldView.class, method("isTopLevel", true), method("getTileHeight", 100), method("worldEntities", indexed(owner)));
+		net.runelite.api.Client client = TestProxies.proxy(net.runelite.api.Client.class, method("getTopLevelWorldView", top));
+		Actor actor = TestProxies.proxy(Actor.class, method("getWorldView", nested), method("getLocalLocation", new LocalPoint(64, 96, nested)));
+		WorldViewLocationResolver.ResolvedLocation resolved = WorldViewLocationResolver.resolve(client, actor);
+		assertEquals(608, resolved.mainPoint.getX());
+		assertEquals(960, resolved.mainPoint.getY());
+		assertEquals(70d, resolved.height, 0d);
+		assertSame(nested, resolved.source);
+		hidden.set(true);
+		org.junit.Assert.assertNull(WorldViewLocationResolver.resolve(client, actor));
+		hidden.set(false);
+		WorldView missing = TestProxies.proxy(WorldView.class);
+		org.junit.Assert.assertNull(WorldViewLocationResolver.resolve(client, missing, new LocalPoint(64, 64), 0, 0));
+	}
+
+	@Test
+	public void sourceTileKeysStayDistinctAcrossBoatsAndWorldViewReplacement()
+	{
+		WorldView first = TestProxies.proxy(WorldView.class, method("getId", 7));
+		WorldView second = TestProxies.proxy(WorldView.class, method("getId", 7));
+		OccupiedTileKey key = OccupiedTileKey.of(first, new LocalPoint(128, 128), 0);
+		assertEquals(key, OccupiedTileKey.of(first, new LocalPoint(160, 160), 0));
+		org.junit.Assert.assertNotEquals(key, OccupiedTileKey.of(second, new LocalPoint(128, 128), 0));
+		org.junit.Assert.assertNotEquals(key, OccupiedTileKey.of(first, new LocalPoint(128, 128), 1));
+	}
+
 	@SuppressWarnings("unchecked")
 	private static <T> IndexedObjectSet<T> indexed(T value)
 	{
