@@ -3,19 +3,89 @@ package com.kierenboal.npcsnap;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static com.kierenboal.npcsnap.TestProxies.proxy;
+import static com.kierenboal.npcsnap.TestProxies.method;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
+import com.kierenboal.npcsnap.rendering.VerticalAnchor;
+import com.kierenboal.npcsnap.state.BillboardCacheKey;
 import com.kierenboal.npcsnap.state.BillboardRedrawReason;
+import com.kierenboal.npcsnap.state.CachedBillboard;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.EnumSet;
 import net.runelite.api.Client;
+import net.runelite.api.Model;
+import net.runelite.api.NPC;
+import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
+import org.slf4j.LoggerFactory;
 
 public class NpcSnapDebugTest
 {
+	@Test
+	public void redrawLoggingIsOptInAndIndependentOfVisualDebug()
+	{
+		java.util.concurrent.atomic.AtomicBoolean logging = new java.util.concurrent.atomic.AtomicBoolean();
+		NpcSnapConfig config = new NpcSnapConfig()
+		{
+			@Override public boolean debugLogBillboardRedraws() { return logging.get(); }
+		};
+		assertEquals(false, new NpcSnapConfig() {}.debugLogBillboardRedraws());
+		assertEquals(false, config.debugShowFrameRedraws());
+		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class, method("getGameCycle", 123)), config);
+		NPC npc = proxy(NPC.class, method("getId", 42), method("getIndex", 7));
+		BillboardRenderRequest request = new BillboardRenderRequest(npc, proxy(Model.class), new LocalPoint(128, 256),
+			0, 0, 0, 0, 10, 2, 20, 3, -1, false, false, VerticalAnchor.BOTTOM, null);
+		BillboardCacheKey key = BillboardCacheKey.create(request, config, 1, 8, 100, 0, 0);
+		CachedBillboard previous = new CachedBillboard(key, new Rectangle(0, 0, 10, 10),
+			new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10);
+		CachedBillboard current = new CachedBillboard(key, new Rectangle(0, 0, 20, 20),
+			new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 20);
+		Logger logger = (Logger) LoggerFactory.getLogger(NpcSnapDebug.class);
+		Level previousLevel = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.DEBUG);
+		try
+		{
+			debug.recordBillboardRedraw(request, previous, current, EnumSet.of(BillboardRedrawReason.BOUNDS_CHANGE));
+			assertTrue(appender.list.isEmpty());
+			logging.set(true);
+			debug.recordBillboardRedraw(request, previous, current, EnumSet.of(BillboardRedrawReason.BOUNDS_CHANGE));
+			assertEquals(1, appender.list.size());
+			assertEquals(Level.DEBUG, appender.list.get(0).getLevel());
+			String message = appender.list.get(0).getFormattedMessage();
+			assertTrue(message.contains("cycle=123 target=NPC id=42 index=7@"));
+			assertTrue(message.contains("reasons=[Sprite bounds change]"));
+			assertTrue(message.contains("before=[animation=10:2 pose=20:3"));
+			assertTrue(message.contains("after=[animation=10:2 pose=20:3"));
+			assertTrue(message.contains("width=10,height=10"));
+			assertTrue(message.contains("width=20,height=20"));
+			for (int width = 3; width > 0; width--)
+			{
+				assertEquals(width, current.consumeDebugRedrawOutlineWidth());
+			}
+			assertEquals(1, appender.list.size());
+			debug.recordBillboardRedraw(request, null, current, EnumSet.of(BillboardRedrawReason.INITIAL_DRAW));
+			assertEquals(2, appender.list.size());
+			assertTrue(appender.list.get(1).getFormattedMessage().contains("before=[none]"));
+		}
+		finally
+		{
+			logger.detachAppender(appender);
+			logger.setLevel(previousLevel);
+			appender.stop();
+		}
+	}
+
 	@Test
 	public void metricsContextHasFourCompactLines()
 	{
@@ -83,14 +153,14 @@ public class NpcSnapDebugTest
 			@Override public boolean debugShowFrameRedraws() { return true; }
 		};
 		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), config);
-		for (boolean redrawn : new boolean[] {false, true})
+		for (int width : new int[] {0, 1, 2, 3})
 		{
 			BufferedImage image = new BufferedImage(700, 200, BufferedImage.TYPE_INT_ARGB);
 			Graphics2D graphics = image.createGraphics();
 			try
 			{
 				debug.drawBillboardDebugForeground(graphics, NpcSnapDebug.RenderDebug.forGeometry(
-					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 180, 160)), 0, redrawn, false, null, null,
+					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 180, 160)), 0, width, 123, false, null, null,
 					EnumSet.of(BillboardRedrawReason.FRAME_COUNT, BillboardRedrawReason.ACTOR_RESIZE)));
 			}
 			finally
@@ -108,7 +178,14 @@ public class NpcSnapDebugTest
 					}
 				}
 			}
-			assertTrue(redrawn ? whitePixels > 0 : whitePixels == 0);
+			assertTrue(width > 0 ? whitePixels > 0 : whitePixels == 0);
+			// Sample the middle of the top edge, away from text and side strokes.
+			int strokePixels = 0;
+			for (int y = 10; y < 30; y++)
+			{
+				if ((image.getRGB(100, y) >>> 24) != 0) strokePixels++;
+			}
+			assertEquals(width, strokePixels);
 		}
 	}
 }

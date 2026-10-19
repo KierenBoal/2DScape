@@ -15,7 +15,7 @@ final class NpcSnapChangelog
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
 		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
 		new Release("1.0.3", "Improved click accuracy mode in Rendering config (less RSC, better accuracy though); Retro hitsplats now respect damage types and max hits."),
-		new Release("1.0.4", "Land/boat/animation occlusion fixes, skilling XP bubble improvements, unified frame rates across players/projectiles/objects/etc"));
+		new Release("1.0.4", "Land/boat/animation occlusion fixes; Skilling XP bubble improvements; Unified frame rates across players/projectiles/objects/etc; Improved transparency blending"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
@@ -50,8 +50,23 @@ final class NpcSnapChangelog
 	void check(boolean loggedIn, Supplier<String> readVersion, Consumer<String> sendMessage,
 		Consumer<String> saveVersion)
 	{
+		check(loggedIn, false, readVersion, sendMessage, saveVersion);
+	}
+
+	void check(boolean loggedIn, boolean developerMode, Supplier<String> readVersion, Consumer<String> sendMessage,
+		Consumer<String> saveVersion)
+	{
 		if (!pending || !loggedIn)
 		{
+			return;
+		}
+		if (developerMode)
+		{
+			if (!releases.isEmpty())
+			{
+				announce(releases.get(releases.size() - 1), sendMessage);
+			}
+			pending = false;
 			return;
 		}
 		String seenVersion = readVersion.get();
@@ -70,17 +85,22 @@ final class NpcSnapChangelog
 			{
 				if (compareVersions(release.version, seenVersion) > 0)
 				{
-					sendMessage.accept("2DScape (v" + release.version + "):");
-					for (String change : release.changes)
-					{
-						sendMessage.accept("* " + change);
-					}
+					announce(release, sendMessage);
 				}
 			}
 			// Advance only after all missed changes have actually been sent to chat.
 			saveVersion.accept(currentVersion);
 		}
 		pending = false;
+	}
+
+	private static void announce(Release release, Consumer<String> sendMessage)
+	{
+		sendMessage.accept("2DScape has been updated to v" + release.version + ":");
+		for (String change : release.changes)
+		{
+			sendMessage.accept(" - " + change);
+		}
 	}
 
 	static int compareVersions(String left, String right)

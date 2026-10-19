@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.awt.Color;
 import javax.inject.Inject;
+import javax.inject.Named;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
@@ -71,6 +72,7 @@ public class NpcSnapPlugin extends Plugin
 {
 	private static final String CONFIG_GROUP = "npc-snap";
 	private static final String RETRO_OVERHEADS_KEY = "useRetroOverheads";
+	private static final int CHANGELOG_LOGIN_DELAY_TICKS = 20;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private final RendererAvailabilityWarning rendererAvailabilityWarning = new RendererAvailabilityWarning();
 	private final NpcSnapChangelog changelog = new NpcSnapChangelog();
@@ -81,9 +83,14 @@ public class NpcSnapPlugin extends Plugin
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
 	private volatile boolean active;
+	private int changelogLoginTicksRemaining;
 
 	@Inject
 	private Client client;
+
+	@Inject
+	@Named("developerMode")
+	private boolean developerMode;
 
 	@Inject
 	private BillboardSceneVisibility sceneVisibility;
@@ -122,6 +129,8 @@ public class NpcSnapPlugin extends Plugin
 		rendererAvailabilityWarning.reset();
 		active = true;
 		changelog.requestCheck();
+		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
+			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
 		migrateLegacyRetroOverheadConfig();
@@ -275,10 +284,19 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
-		changelog.check(active && client.getGameState() == GameState.LOGGED_IN,
-			() -> configManager.getConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY),
-			message -> client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape", message, null),
-			version -> configManager.setConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY, version));
+		boolean loggedIn = active && client.getGameState() == GameState.LOGGED_IN;
+		if (loggedIn && changelogLoginTicksRemaining > 0)
+		{
+			changelogLoginTicksRemaining--;
+		}
+		if (!loggedIn || changelogLoginTicksRemaining == 0)
+		{
+			changelog.check(loggedIn, developerMode,
+				() -> configManager.getConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY),
+				message -> client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE,
+					ColorUtil.wrapWithColorTag("2DScape", Color.RED), ColorUtil.wrapWithColorTag(message, Color.RED), null),
+				version -> configManager.setConfiguration(CONFIG_GROUP, NpcSnapChangelog.LAST_SEEN_VERSION_KEY, version));
+		}
 		loginXpDropGuard.advanceTick();
 		if (rendererAvailabilityWarning.shouldWarn(
 			client.getGameState() == GameState.LOGGED_IN && config.enable2dBillboardSprites(),
@@ -304,6 +322,7 @@ public class NpcSnapPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			changelog.requestCheck();
+			changelogLoginTicksRemaining = CHANGELOG_LOGIN_DELAY_TICKS;
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = true;
 			loginXpDropGuard.onLoggedIn();
@@ -312,6 +331,7 @@ public class NpcSnapPlugin extends Plugin
 		}
 		else
 		{
+			changelogLoginTicksRemaining = 0;
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = false;
 			loginXpDropGuard.onLoggedOut();

@@ -22,7 +22,7 @@ public final class CachedBillboard implements TimedCacheEntry
 	private long lastUsedMillis;
 	private long lastRedrawMillis;
 	private boolean dirty;
-	private boolean debugFrameRedrawn;
+	private int debugRedrawFramesRemaining;
 	private Set<BillboardRedrawReason> debugRedrawReasons = Collections.singleton(BillboardRedrawReason.INITIAL_DRAW);
 	private boolean debugFrameInvalidated;
 	private java.awt.Color debugFrameInvalidatedColor;
@@ -66,7 +66,7 @@ public final class CachedBillboard implements TimedCacheEntry
 		this.lastUsedMillis = lastUsedMillis;
 		this.lastRedrawMillis = lastUsedMillis;
 		this.dirty = true;
-		this.debugFrameRedrawn = true;
+		this.debugRedrawFramesRemaining = 3;
 		this.debugFrameInvalidated = false;
 		this.debugFrameInvalidatedColor = null;
 		this.stateDebugInfo = null;
@@ -129,23 +129,24 @@ public final class CachedBillboard implements TimedCacheEntry
 		EnumSet<BillboardRedrawReason> capturedReasons = EnumSet.noneOf(BillboardRedrawReason.class);
 		capturedReasons.addAll(reasons);
 		debugRedrawReasons = Collections.unmodifiableSet(capturedReasons);
-		debugFrameRedrawn = true;
+		debugRedrawFramesRemaining = 3;
 		debugFrameInvalidated = false;
 		debugFrameInvalidatedColor = null;
 	}
 
-	public boolean consumeDebugFrameRedrawn()
+	public int consumeDebugRedrawOutlineWidth()
 	{
-		boolean wasRedrawn = debugFrameRedrawn;
-		debugFrameRedrawn = false;
-		return wasRedrawn;
+		if (debugRedrawFramesRemaining == 0)
+		{
+			debugRedrawReasons = Collections.emptySet();
+			return 0;
+		}
+		return debugRedrawFramesRemaining--;
 	}
 
-	public Set<BillboardRedrawReason> consumeDebugRedrawReasons()
+	public Set<BillboardRedrawReason> debugRedrawReasons()
 	{
-		Set<BillboardRedrawReason> reasons = debugRedrawReasons;
-		debugRedrawReasons = Collections.emptySet();
-		return reasons;
+		return debugRedrawReasons;
 	}
 
 	public void markDebugFrameInvalidated()

@@ -424,7 +424,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Mark sprites when their picture is redrawn and show the comma-separated redraw reasons inside.", section = debugSection, position = 4)
+	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Show redraw reasons for three frames with a 3px, 2px, then 1px outline.", section = debugSection, position = 4)
 	default boolean debugShowFrameRedraws()
 	{
 		return false;
@@ -462,6 +462,12 @@ public interface NpcSnapConfig extends Config
 
 	@ConfigItem(keyName = "debugLogProjectionSkew", name = "Log projection skew", description = "Write projection and shear calculations for the hovered or interacted actor to the developer log.", section = debugSection, position = 10)
 	default boolean debugLogProjectionSkew()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "debugLogBillboardRedraws", name = "Log sprite redraws", description = "Write each sprite redraw's target, reasons, and before/after state to the developer log, even when redraw outlines are disabled.", section = debugSection, position = 11)
+	default boolean debugLogBillboardRedraws()
 	{
 		return false;
 	}

@@ -92,8 +92,10 @@ public class BillboardCacheModelsTest
 		assertEquals(2, cached.contentBounds.x);
 		assertTrue(cached.consumeDirty());
 		assertFalse(cached.consumeDirty());
-		assertTrue(cached.consumeDebugFrameRedrawn());
-		assertFalse(cached.consumeDebugFrameRedrawn());
+		assertEquals(3, cached.consumeDebugRedrawOutlineWidth());
+		assertEquals(2, cached.consumeDebugRedrawOutlineWidth());
+		assertEquals(1, cached.consumeDebugRedrawOutlineWidth());
+		assertEquals(0, cached.consumeDebugRedrawOutlineWidth());
 	}
 
 	private static NpcSnapConfig config()

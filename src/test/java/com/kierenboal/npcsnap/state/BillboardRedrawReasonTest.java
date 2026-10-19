@@ -63,17 +63,36 @@ public class BillboardRedrawReasonTest
 	}
 
 	@Test
-	public void successfulSpriteCapturesAnIndependentConsumableReasonList()
+	public void successfulSpriteRetainsIndependentReasonsForExactlyThreeDraws()
 	{
 		CachedBillboard sprite = cached(key(1, 5, 2, 6, false, 100, 0, 0));
 		EnumSet<BillboardRedrawReason> reasons = EnumSet.of(BillboardRedrawReason.FRAME_COUNT, BillboardRedrawReason.ACTOR_RESIZE);
 		sprite.markDebugFrameRedrawn(reasons);
 		reasons.clear();
-		assertTrue(sprite.consumeDebugFrameRedrawn());
-		assertEquals(EnumSet.of(BillboardRedrawReason.FRAME_COUNT, BillboardRedrawReason.ACTOR_RESIZE),
-			sprite.consumeDebugRedrawReasons());
-		assertFalse(sprite.consumeDebugFrameRedrawn());
-		assertTrue(sprite.consumeDebugRedrawReasons().isEmpty());
+		for (int width = 3; width > 0; width--)
+		{
+			assertEquals(width, sprite.consumeDebugRedrawOutlineWidth());
+			assertEquals(EnumSet.of(BillboardRedrawReason.FRAME_COUNT, BillboardRedrawReason.ACTOR_RESIZE),
+				sprite.debugRedrawReasons());
+		}
+		assertEquals(0, sprite.consumeDebugRedrawOutlineWidth());
+		assertTrue(sprite.debugRedrawReasons().isEmpty());
+		assertEquals(0, sprite.consumeDebugRedrawOutlineWidth());
+	}
+
+	@Test
+	public void aNewRedrawRestartsTheOutlineAndReplacesTheOldReasons()
+	{
+		CachedBillboard sprite = cached(key(1, 5, 2, 6, false, 100, 0, 0));
+		assertEquals(3, sprite.consumeDebugRedrawOutlineWidth());
+		assertEquals(EnumSet.of(BillboardRedrawReason.INITIAL_DRAW), sprite.debugRedrawReasons());
+		assertEquals(2, sprite.consumeDebugRedrawOutlineWidth());
+		sprite.markDebugFrameRedrawn(EnumSet.of(BillboardRedrawReason.ANIMATION_CHANGE));
+		assertEquals(3, sprite.consumeDebugRedrawOutlineWidth());
+		assertEquals(EnumSet.of(BillboardRedrawReason.ANIMATION_CHANGE), sprite.debugRedrawReasons());
+		assertEquals(2, sprite.consumeDebugRedrawOutlineWidth());
+		assertEquals(1, sprite.consumeDebugRedrawOutlineWidth());
+		assertEquals(0, sprite.consumeDebugRedrawOutlineWidth());
 	}
 
 	private CachedBillboard cached(BillboardCacheKey key)

@@ -11,8 +11,10 @@ final class SceneryModelSnapshot
 	final BillboardWorldOcclusionCollector.ModelGeometry geometry;
 	final int[] colors1, colors2, colors3;
 	final short[] unlitColors;
+	final short[] textures;
 	final byte[] transparencies;
 	final byte transparency;
+	final int overrideHue, overrideSaturation, overrideLuminance, overrideAmount;
 
 	private SceneryModelSnapshot(Model model)
 	{
@@ -24,9 +26,15 @@ final class SceneryModelSnapshot
 		colors3 = copy(model.getFaceColors3(), faces);
 		short[] unlit = model.getUnlitFaceColors();
 		unlitColors = unlit == null ? null : Arrays.copyOf(unlit, Math.min(unlit.length, faces));
+		short[] faceTextures = model.getFaceTextures();
+		textures = faceTextures == null ? null : Arrays.copyOf(faceTextures, Math.min(faceTextures.length, faces));
 		byte[] alpha = model.getFaceTransparencies();
 		transparencies = alpha == null ? null : Arrays.copyOf(alpha, Math.min(alpha.length, faces));
 		transparency = model.getTransparency();
+		overrideHue = model.getOverrideHue();
+		overrideSaturation = model.getOverrideSaturation();
+		overrideLuminance = model.getOverrideLuminance();
+		overrideAmount = model.getOverrideAmount();
 	}
 
 	static SceneryModelSnapshot capture(Model model)

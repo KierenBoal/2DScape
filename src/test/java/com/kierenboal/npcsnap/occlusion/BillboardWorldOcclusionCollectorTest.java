@@ -76,7 +76,7 @@ public class BillboardWorldOcclusionCollectorTest
 		assertEquals(0, BillboardWorldOcclusionCollector.faceTransmittance(0, null));
 		assertEquals(128, BillboardWorldOcclusionCollector.faceTransmittance(4, transparencies));
 		assertEquals(255, BillboardWorldOcclusionCollector.faceTransmittance(3, transparencies));
-		assertEquals(0xFFFFFF, BillboardWorldOcclusionCollector.faceTintRgb(0, null, null, null, null));
+		assertEquals(0xFFFFFF, new SceneryFaceColors().faceTintRgb(0, null, null, null, null, -1, -1, -1, 0));
 	}
 	@Test
 	public void directCandidatePlanesStartAtTheCurrentPlane()

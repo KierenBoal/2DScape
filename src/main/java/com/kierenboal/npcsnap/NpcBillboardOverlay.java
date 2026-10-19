@@ -999,8 +999,10 @@ class NpcBillboardOverlay extends Overlay
 			&& (cached == null || inventoryPlan.isForcedRedraw() || !cached.key.equals(cacheKey)))
 		{
 			Set<BillboardRedrawReason> reasons = BillboardRedrawReason.cacheChanges(cached, cacheKey, bounds, nowMillis);
+			reasons.addAll(inventoryPlan.redrawReasons);
+			CachedBillboard previous = cached;
 			cached = new CachedBillboard(cacheKey, bounds, prepareGroundItemSprite(inventorySprite, request), nowMillis);
-			cached.markDebugFrameRedrawn(reasons);
+			debug.recordBillboardRedraw(request, previous, cached, reasons);
 			billboardCache.put(item, cached);
 		}
 
@@ -1152,11 +1154,12 @@ class NpcBillboardOverlay extends Overlay
 		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forGeometry(
 			result.geometry,
 			paintOrder,
-			cached != null && cached.consumeDebugFrameRedrawn(),
+			cached != null ? cached.consumeDebugRedrawOutlineWidth() : 0,
+			cached != null ? Long.hashCode(cached.lastRedrawMillis()) ^ System.identityHashCode(request.renderable) : 0,
 			cached != null && cached.consumeDebugFrameInvalidated(),
 			cached != null ? cached.consumeDebugFrameInvalidatedColor() : null,
 			cached != null ? cached.stateDebugInfo() : null,
-			cached != null ? cached.consumeDebugRedrawReasons() : Collections.emptySet()
+			cached != null ? cached.debugRedrawReasons() : Collections.emptySet()
 		);
 		debug.drawBillboardDebugForeground(graphics, renderDebug);
 	}
@@ -3157,13 +3160,14 @@ class NpcBillboardOverlay extends Overlay
 						if (rendered != null)
 						{
 							BillboardModelBounds modelBounds = BillboardModelBounds.sample(model, renderable instanceof Projectile);
+							CachedBillboard previous = cached;
 							cached = new CachedBillboard(cacheKey, imageBounds, sourceBounds, rendered, nowMillis,
 								null, modelBounds);
 							if (config.logBillboardAnimationData())
 								log.debug("Billboard capture: type={} animation={} frame={} pose={} poseFrame={} reasons={}",
 									renderable.getClass().getSimpleName(), request.animationId, request.animationFrame,
 									request.poseAnimationId, request.poseAnimationFrame, updatePlan.redrawReasons);
-							cached.markDebugFrameRedrawn(updatePlan.redrawReasons);
+							debug.recordBillboardRedraw(request, previous, cached, updatePlan.redrawReasons);
 							billboardCache.put(renderable, cached);
 							actorResizeObservations.remove(renderable);
 							forceActorResizeRedraws.remove(renderable);

@@ -21,10 +21,10 @@ public class NpcSnapChangelogTest
 		new NpcSnapChangelog.Release("1.1.0", "Minor release"),
 		new NpcSnapChangelog.Release("2.0.0", "Major release"));
 	private static final List<String> ALL_MESSAGES = List.of(
-		"2DScape (v1.0.1):", "* First change", "* Second change",
-		"2DScape (v1.0.10):", "* Tenth patch",
-		"2DScape (v1.1.0):", "* Minor release",
-		"2DScape (v2.0.0):", "* Major release");
+		"2DScape has been updated to v1.0.1:", " - First change", " - Second change",
+		"2DScape has been updated to v1.0.10:", " - Tenth patch",
+		"2DScape has been updated to v1.1.0:", " - Minor release",
+		"2DScape has been updated to v2.0.0:", " - Major release");
 
 	@Test
 	public void missingVersionAndBaselineAnnounceAllReleasesInOrderBeforeSaving()
@@ -44,8 +44,9 @@ public class NpcSnapChangelogTest
 	{
 		Memory memory = new Memory("1.0.2");
 		memory.check(changelog(), true);
-		assertEquals(List.of("2DScape (v1.0.10):", "* Tenth patch",
-			"2DScape (v1.1.0):", "* Minor release", "2DScape (v2.0.0):", "* Major release"), memory.messages);
+		assertEquals(List.of("2DScape has been updated to v1.0.10:", " - Tenth patch",
+			"2DScape has been updated to v1.1.0:", " - Minor release",
+			"2DScape has been updated to v2.0.0:", " - Major release"), memory.messages);
 		assertEquals("2.0.0", memory.version);
 	}
 
@@ -125,7 +126,7 @@ public class NpcSnapChangelogTest
 	{
 		Memory memory = new Memory("1.0.0");
 		memory.check(new NpcSnapChangelog(List.of(new NpcSnapChangelog.Release("1.0.1", " a; b ;; ;c; d; "))), true);
-		assertEquals(List.of("2DScape (v1.0.1):", "* a", "* b", "* c", "* d"), memory.messages);
+		assertEquals(List.of("2DScape has been updated to v1.0.1:", " - a", " - b", " - c", " - d"), memory.messages);
 		assertEquals("1.0.1", memory.version);
 	}
 

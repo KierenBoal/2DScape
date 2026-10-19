@@ -40,6 +40,8 @@ public final class BillboardOcclusionMask
 	private int[] coverageOffsets = new int[0];
 	private int[] candidateTransmittance = new int[0];
 	private int[] candidateTintRgb = new int[0];
+	private int[] tintReferences = new int[8];
+	private float[] tintDepths = new float[8];
 	private int coverageRowCount;
 	private float[] candidateFar = new float[0];
 	private float[] lower = new float[0];
@@ -389,7 +391,7 @@ public final class BillboardOcclusionMask
 	}
 
 	/**
-	 * Applies closer translucent face colours over an opaque billboard pixel,
+	 * Applies closer translucent face colours from farthest to nearest,
 	 * preserving the billboard's original alpha rather than making it ghostly.
 	 */
 	public int tintPixel(int x, int y, double depth, int pixel)
@@ -407,47 +409,72 @@ public final class BillboardOcclusionMask
 		int localX = (x - bounds.x) % step;
 		int localY = (y - bounds.y) % step;
 		int bit = 1 << localX;
-		int tinted = pixel;
+		int count = 0;
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
-			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			Occluder occluder = occluders.get(candidates[ref]);
+			if (occluder.belongsTo(ignoredTileObject))
 			{
 				continue;
 			}
-			if ((coverageBits(ref, localY) & bit) == 0 || candidateTransmittance[ref] == 0)
+			if ((coverageBits(ref, localY) & bit) == 0
+				|| candidateTransmittance[ref] == 0 || candidateTransmittance[ref] == 255)
 			{
 				continue;
 			}
-			if (candidateFar[ref] + depthBias() >= depth)
+			// Exact depth is needed for layer ordering even when the whole face is
+			// known to be in front. Blocky deliberately retains its coarse depth.
+			float value = blocky ? candidateFar[ref] : occluder.depthAt(x, y);
+			if (!Float.isFinite(value) || value + depthBias() >= depth)
 			{
-				if (blocky)
-				{
-					continue;
-				}
-				float value = occluders.get(candidates[ref]).depthAt(x, y);
-				if (!Float.isFinite(value) || value + depthBias() >= depth)
-				{
-					continue;
-				}
+				continue;
 			}
-			tinted = blendScreenTint(tinted, candidateTintRgb[ref], candidateTransmittance[ref]);
+			if (count == tintReferences.length)
+			{
+				tintReferences = Arrays.copyOf(tintReferences, count * 2);
+				tintDepths = Arrays.copyOf(tintDepths, count * 2);
+			}
+			// Small per-cell lists favour insertion sorting without per-pixel allocations.
+			// Equal depths retain the original occluder order, not linked-list order.
+			int position = count;
+			while (position > 0 && (tintDepths[position - 1] < value
+				|| (tintDepths[position - 1] == value
+					&& candidates[tintReferences[position - 1]] > candidates[ref])))
+			{
+				tintReferences[position] = tintReferences[position - 1];
+				tintDepths[position] = tintDepths[position - 1];
+				position--;
+			}
+			tintReferences[position] = ref;
+			tintDepths[position] = value;
+			count++;
+		}
+		if (count == 0)
+		{
+			return pixel;
+		}
+		int first = tintReferences[0];
+		int tinted = blendTint(pixel, candidateTintRgb[first], candidateTransmittance[first]);
+		for (int i = 1; i < count; i++)
+		{
+			int ref = tintReferences[i];
+			tinted = blendTint(tinted, candidateTintRgb[ref], candidateTransmittance[ref]);
 		}
 		return tinted;
 	}
 
-	private static int blendScreenTint(int pixel, int tintRgb, int transmittance)
+	private static int blendTint(int pixel, int tintRgb, int transmittance)
 	{
 		int foregroundOpacity = 255 - transmittance;
-		int red = screenBlend((pixel >>> 16) & 0xFF, (tintRgb >>> 16) & 0xFF, transmittance, foregroundOpacity);
-		int green = screenBlend((pixel >>> 8) & 0xFF, (tintRgb >>> 8) & 0xFF, transmittance, foregroundOpacity);
-		int blue = screenBlend(pixel & 0xFF, tintRgb & 0xFF, transmittance, foregroundOpacity);
+		int red = blendChannel((pixel >>> 16) & 0xFF, (tintRgb >>> 16) & 0xFF, transmittance, foregroundOpacity);
+		int green = blendChannel((pixel >>> 8) & 0xFF, (tintRgb >>> 8) & 0xFF, transmittance, foregroundOpacity);
+		int blue = blendChannel(pixel & 0xFF, tintRgb & 0xFF, transmittance, foregroundOpacity);
 		return (pixel & 0xFF000000) | (red << 16) | (green << 8) | blue;
 	}
 
-	private static int screenBlend(int source, int tint, int transmittance, int foregroundOpacity)
+	private static int blendChannel(int source, int tint, int transmittance, int foregroundOpacity)
 	{
-		int screened = 255 - (((255 - source) * (255 - tint) + 127) / 255);
-		return (source * transmittance + screened * foregroundOpacity + 127) / 255;
+		return (source * transmittance + tint * foregroundOpacity + 127) / 255;
 	}
 
 	private static int multiplyTransmittance(int left, int right)

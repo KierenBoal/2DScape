@@ -103,6 +103,26 @@ public class AnimatedSceneryOcclusionTest
 	}
 
 	@Test
+	public void portalTintUsesCapturedColourWithTheCurrentRendererBrightness()
+	{
+		Fixture fixture = new Fixture();
+		for (double brightness : new double[] {0.8d, 0.6d})
+		{
+			fixture.brightness.set(brightness);
+			fixture.begin();
+			Model model = fixture.setModel(0, 128);
+			fixture.colors[0] = 0xC320;
+			fixture.callbacks.get().drawDynamic(null, fixture.scene, fixture.firstObject, fixture.first,
+				model, 0, 512, 0, 1024);
+			fixture.setModel(20_000, 255); // Overwrite the live face colour before collection.
+			BillboardOcclusionMask mask = fixture.collect();
+			assertEquals(128, mask.transmittanceAt(400, 250, 2000));
+			assertEquals(brightness == 0.8d ? 0xFF2C0B43 : 0xFF3A144F,
+				mask.tintPixel(400, 250, 2000, 0xFF000000));
+		}
+	}
+
+	@Test
 	public void regeneratedObjectsSharingOneModelDoNotReuseAnotherObjectsBounds()
 	{
 		Fixture fixture = new Fixture();
@@ -119,6 +139,7 @@ public class AnimatedSceneryOcclusionTest
 		final float[] x = {-100, 100, 0};
 		final int[] a = {0}, colors = {1234};
 		final byte[] alpha = {(byte) 128};
+		final AtomicReference<Double> brightness = new AtomicReference<>(0.8d);
 		final java.util.concurrent.atomic.AtomicInteger zbufReads = new java.util.concurrent.atomic.AtomicInteger();
 		final java.util.concurrent.atomic.AtomicInteger tempCalls = new java.util.concurrent.atomic.AtomicInteger();
 		final java.util.concurrent.atomic.AtomicInteger firstHeight = new java.util.concurrent.atomic.AtomicInteger(200);
@@ -148,6 +169,7 @@ public class AnimatedSceneryOcclusionTest
 			view = proxy(WorldView.class, method("isTopLevel", true), method("getScene", scene),
 				method("getTileSettings", new byte[4][16][16]), method("getTileHeights", new int[4][17][17]));
 			Client client = proxy(Client.class, method("getWorldView", view), method("getTopLevelWorldView", view),
+				method("getTextureProvider", proxy(net.runelite.api.TextureProvider.class, methodSupplier("getBrightness", brightness::get))),
 				method("getLocalPlayer", proxy(Player.class, method("getWorldView", view))),
 				method("getCameraX", 512), method("getCameraFpX", 512f), method("getScale", 512),
 				method("getViewportWidth", 800), method("getViewportHeight", 600));

@@ -211,20 +211,110 @@ public class BillboardOcclusionMaskTest
 	}
 
 	@Test
-	public void screenTintDoesNotDarkenOpaqueBillboardColours()
+	public void faceColoursBlendNormallyAndPreserveSpriteAlphaAtEveryQuality()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
-			new Rectangle(0, 0, 8, 8), 20f, "glass", 128, 0x102030)),
-			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
-			0, 0, 8, 8, null, null);
+		int[] colours = {0x000000, 0x102030, 0xFFFFFF};
+		int[] expected = {0x402010, 0x483028, 0xBF9F8F};
+		for (BillboardOcclusionQuality quality : BillboardOcclusionQuality.values())
+		{
+			for (int i = 0; i < colours.length; i++)
+			{
+				mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+					new Rectangle(0, 0, 16, 16), 20f, "glass", 128, colours[i])),
+					quality, 0, 0, 16, 16);
+				for (int alpha : new int[] {0x80, 0xFF})
+				{
+					int source = (alpha << 24) | 0x804020;
+					assertEquals("Colour " + i + " at " + quality,
+						quality == BillboardOcclusionQuality.OFF ? source : (alpha << 24) | expected[i],
+						mask.tintPixel(2, 2, 100d, source));
+				}
+			}
+		}
+	}
 
-		int source = 0xFF804020;
-		int tinted = mask.tintPixel(2, 2, 40d, source);
-		assertEquals(0xFF, tinted >>> 24);
-		assertTrue(((tinted >>> 16) & 0xFF) >= ((source >>> 16) & 0xFF));
-		assertTrue(((tinted >>> 8) & 0xFF) >= ((source >>> 8) & 0xFF));
-		assertTrue((tinted & 0xFF) >= (source & 0xFF));
+	@Test
+	public void differentlyColouredLayersUseDepthRatherThanCollectionOrder()
+	{
+		BillboardOcclusionMask.Occluder red = new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 16, 16), 200f, "far red", 128, 0xFF0000);
+		BillboardOcclusionMask.Occluder blue = new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 16, 16), 100f, "near blue", 128, 0x0000FF);
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		for (BillboardOcclusionQuality quality : BillboardOcclusionQuality.values())
+		{
+			for (boolean reverse : new boolean[] {false, true})
+			{
+				mask.prepare(reverse ? Arrays.asList(blue, red) : Arrays.asList(red, blue),
+					quality, 0, 0, 16, 16);
+				assertEquals("Layer order at " + quality,
+					quality == BillboardOcclusionQuality.OFF ? 0xFF000000 : 0xFF40007F,
+					mask.tintPixel(2, 2, 500d, 0xFF000000));
+			}
+		}
+	}
+
+	@Test
+	public void intersectingFacesSortAtEachPixelEvenWhenBothAreEntirelyInFront()
+	{
+		BillboardOcclusionMask.Occluder red = BillboardOcclusionMask.Occluder.triangle(
+			0, 0, 100f, 16, 0, 300f, 0, 16, 100f, "red", 128, 0xFF0000);
+		BillboardOcclusionMask.Occluder blue = BillboardOcclusionMask.Occluder.triangle(
+			0, 0, 300f, 16, 0, 100f, 0, 16, 300f, "blue", 128, 0x0000FF);
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.LOW, BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
+		{
+			for (boolean reverse : new boolean[] {false, true})
+			{
+				mask.prepare(reverse ? Arrays.asList(blue, red) : Arrays.asList(red, blue),
+					quality, 0, 0, 16, 16);
+				assertEquals(0xFF7F0040, mask.tintPixel(1, 1, 500d, 0xFF000000));
+				assertEquals(0xFF40007F, mask.tintPixel(12, 1, 500d, 0xFF000000));
+				// Equal depths apply colours in original occluder index order.
+				assertEquals(reverse ? 0xFF7F0040 : 0xFF40007F,
+					mask.tintPixel(8, 1, 500d, 0xFF000000));
+			}
+		}
+		mask.prepare(Arrays.asList(red, blue), BillboardOcclusionQuality.BLOCKY, 0, 0, 16, 16);
+		assertEquals(0xFF40007F, mask.tintPixel(1, 1, 500d, 0xFF000000));
+		assertEquals(0xFF40007F, mask.tintPixel(12, 1, 500d, 0xFF000000));
+	}
+
+	@Test
+	public void tintSkipsIgnoredOwnersInvisibleFacesAndGeometryBehindTheSprite()
+	{
+		TileObject owner = proxy(TileObject.class);
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
+		{
+			mask.prepare(Arrays.asList(
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 100f, "self", 128, 0xFF0000, owner),
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 100f, "invisible", 255, 0x00FF00),
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 500f, "behind", 128, 0x00FF00),
+				new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 16, 16), 200f, "blue", 128, 0x0000FF)),
+				quality, 0, 0, 16, 16);
+			assertEquals(0x8000007F, mask.tintPixel(2, 2, 400d, 0x80000000, owner));
+			assertEquals(0x80000000, mask.tintPixel(2, 2, 200d + mask.occlusionDepthBias(), 0x80000000, owner));
+			assertEquals(0x80000000, mask.tintPixel(2, 2, Double.NaN, 0x80000000));
+			assertEquals(0x80000000, mask.tintPixel(-1, 2, 400d, 0x80000000));
+		}
+	}
+
+	@Test
+	public void layerScratchGrowsAndDoesNotLeakAcrossPixelsOrFrames()
+	{
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		mask.prepare(Collections.nCopies(20, new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 8, 8), 20f, "dark glass", 128, 0)),
+			BillboardOcclusionQuality.HIGH, 0, 0, 16, 16);
+		assertEquals(0xFF010101, mask.tintPixel(2, 2, 100d, 0xFFFFFFFF));
+		assertEquals(0xFFFFFFFF, mask.tintPixel(12, 2, 100d, 0xFFFFFFFF));
+		mask.prepare(Collections.emptyList(), BillboardOcclusionQuality.HIGH, 0, 0, 16, 16);
+		assertEquals(0xFFFFFFFF, mask.tintPixel(2, 2, 100d, 0xFFFFFFFF));
 	}
 
 	@Test
@@ -232,7 +322,7 @@ public class BillboardOcclusionMaskTest
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
-			new Rectangle(0, 0, 4, 4), 20f, "canopy", 128)),
+			new Rectangle(0, 0, 4, 4), 20f, "canopy", 128, 0x102030)),
 			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
 			0, 0, 4, 4, null, null);
 		Client client = proxy(
@@ -261,7 +351,7 @@ public class BillboardOcclusionMaskTest
 		buffer.blit(new PreparedBillboardDraw(null,
 			new BillboardRenderResult(new Rectangle(0, 0, 4, 4), far, new Rectangle(0, 0, 4, 4)), 5), 0, 0, 4, 4, false);
 
-		assertEquals(0xFFFFFFFF, buffer.image().getRGB(1, 1));
+		assertEquals(0xFF889098, buffer.image().getRGB(1, 1));
 	}
 
 	@Test

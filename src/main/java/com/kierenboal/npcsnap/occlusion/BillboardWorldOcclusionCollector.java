@@ -9,7 +9,6 @@ import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.ObservedTileObject;
 import com.kierenboal.npcsnap.targeting.ObservedTileObjectBuilder;
 
-import java.awt.Color;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.util.ArrayList;
@@ -32,6 +31,7 @@ import net.runelite.api.SceneTileModel;
 import net.runelite.api.SceneTilePaint;
 import net.runelite.api.Tile;
 import net.runelite.api.TileObject;
+import net.runelite.api.TextureProvider;
 import net.runelite.api.WallObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.WorldEntity;
@@ -57,6 +57,7 @@ public final class BillboardWorldOcclusionCollector
 	private final BillboardPerformanceMetrics performanceMetrics;
 	private final Logger log;
 	private final BillboardSceneVisibility sceneVisibility;
+	private final SceneryFaceColors sceneryFaceColors = new SceneryFaceColors();
 	private final List<BillboardOcclusionMask.Occluder> worldOccluders = new ArrayList<>();
 	private final List<Rectangle> interestRegions = new ArrayList<>();
 	private final BillboardTileVisits tileVisits = new BillboardTileVisits();
@@ -1694,7 +1695,14 @@ public final class BillboardWorldOcclusionCollector
 		int[] colors2 = captured != null ? captured.colors2 : model.getFaceColors2();
 		int[] colors3 = captured != null ? captured.colors3 : model.getFaceColors3();
 		short[] unlitColors = captured != null ? captured.unlitColors : model.getUnlitFaceColors();
+		short[] textures = captured != null ? captured.textures : model.getFaceTextures();
 		byte[] transparencies = captured != null ? captured.transparencies : model.getFaceTransparencies();
+		TextureProvider textureProvider = client.getTextureProvider();
+		sceneryFaceColors.brightness(textureProvider != null ? textureProvider.getBrightness() : 0.8d);
+		int overrideHue = captured != null ? captured.overrideHue : model.getOverrideHue();
+		int overrideSaturation = captured != null ? captured.overrideSaturation : model.getOverrideSaturation();
+		int overrideLuminance = captured != null ? captured.overrideLuminance : model.getOverrideLuminance();
+		int overrideAmount = captured != null ? captured.overrideAmount : model.getOverrideAmount();
 		int baseHeight = partBaseHeight(part);
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Model face traversal"))
 		{
@@ -1705,8 +1713,10 @@ public final class BillboardWorldOcclusionCollector
 				if (!visibleModelFaces[face]) continue;
 				debugModelFacesInspected++;
 				int transmittance = faceTransmittance(face, transparencies, modelTransparency);
+				boolean textured = textures != null && face < textures.length && textures[face] != -1;
 				int tintRgb = transmittance > 0 && transmittance < 255
-					? faceTintRgb(face, colors1, colors2, colors3, unlitColors) : 0xFFFFFF;
+					? sceneryFaceColors.faceTintRgb(face, colors1, colors2, colors3, unlitColors,
+						overrideHue, overrideSaturation, overrideLuminance, textured ? 0 : overrideAmount) : 0xFFFFFF;
 				if (transmittance == 255 || isInvisibleFace(face, colors3, transparencies))
 				{
 					debugHiddenFaces++;
@@ -1758,22 +1768,6 @@ public final class BillboardWorldOcclusionCollector
 		int modelValue = modelTransparency & 255;
 		return modelValue > 0 && faceTransparency < 253
 			? faceTransparency + (((253 - faceTransparency) * modelValue) >> 8) : faceTransparency;
-	}
-
-	static int faceTintRgb(int face, int[] colors1, int[] colors2, int[] colors3, short[] unlitColors)
-	{
-		if (!hasFaceColor(face, colors1) && !hasFaceColor(face, colors2) && !hasFaceColor(face, colors3)
-			&& (unlitColors == null || face < 0 || face >= unlitColors.length || unlitColors[face] == -1))
-		{
-			return 0xFFFFFF;
-		}
-		Color color = BillboardColorUtils.resolveFaceColor(face, colors1, colors2, colors3, unlitColors, 255);
-		return color.getRGB() & 0xFFFFFF;
-	}
-
-	private static boolean hasFaceColor(int face, int[] colors)
-	{
-		return colors != null && face >= 0 && face < colors.length && colors[face] >= 0;
 	}
 
 	static int modelWorldHeight(int baseHeight, float vertexY)
