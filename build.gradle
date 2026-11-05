@@ -92,3 +92,25 @@ tasks.register('shadowJar', Jar) {
 	archiveClassifier.set('shadow')
 	archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
 }
+
+if (findProject(':retroNpcSwapper') != null) {
+    project(':retroNpcSwapper').afterEvaluate {
+        project(':retroNpcSwapper').extensions.getByType(JavaPluginExtension).toolchain.languageVersion = JavaLanguageVersion.of(JavaVersion.current().majorVersion)
+
+    }
+    sourceSets {
+        retroNpcCompat {
+            compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+            runtimeClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        }
+    }
+    dependencies {
+        retroNpcCompatImplementation project(':retroNpcSwapper')
+    }
+    tasks.register('runWithRetroNpcSwapper', JavaExec) {
+        classpath = sourceSets.retroNpcCompat.runtimeClasspath
+        mainClass = 'com.kierenboal.npcsnap.RetroNpcCompatLauncher'
+        jvmArgs '-ea'
+        args '--developer-mode', '--debug', '--disable-telemetry'
+    }
+}

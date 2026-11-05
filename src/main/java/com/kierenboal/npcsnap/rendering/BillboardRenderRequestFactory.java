@@ -24,6 +24,7 @@ import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardRenderRequestFactory
 {
+	public com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility;
 	private final Client client;
 	private final NpcSnapConfig config;
 	private final NpcSnapDebug debug;
@@ -77,7 +78,8 @@ public final class BillboardRenderRequestFactory
 			return null;
 		}
 		DynamicObject dynamicObject = part.renderable instanceof DynamicObject ? (DynamicObject) part.renderable : null;
-		int originalFrame = dynamicObject != null ? dynamicObject.getAnimFrame() : -1;
+		int originalFrame = dynamicObject != null ? dynamicObject.getAnimFrame()
+            : compatibility != null && compatibility.isStandIn(part.renderable) ? BillboardModelStateHash.hash(model) : -1;
 		// DynamicObject has no public frame setter. Its model is the live frame;
 		// the sprite update scheduler holds that capture for the configured interval.
 		int animationId = dynamicObject != null && dynamicObject.getAnimation() != null
@@ -88,11 +90,11 @@ public final class BillboardRenderRequestFactory
 			: null;
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return objectRequest(request(
-			part.renderable, model, part.localPoint, part.plane, 0,
+			part.renderable, model, part.localPoint, part.plane, sceneryVerticalOffset(part),
 			// World objects follow the same camera pitch as actors. Low-profile is
 			// still carried on the request for depth/occlusion decisions, but it must
 			// not activate the ground-item minimum pitch here.
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
+			sceneryYaw(part), orientationCalculator.relativePitch(),
 			animationId, originalFrame, -1, -1, -1, false, false, lowProfile,
 			VerticalAnchor.BOTTOM, frameDebugInfo), part);
 	}
@@ -109,7 +111,7 @@ public final class BillboardRenderRequestFactory
 			&& actor == interactionState.frameHoveredTarget();
 		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
 		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
-		Model model = actor.getModel();
+		Model model = compatibility == null ? actor.getModel() : compatibility.model(actor);
 		return actorRequest(request(
 			actor, model, mainWorldLocation,
 			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
@@ -137,8 +139,8 @@ public final class BillboardRenderRequestFactory
 		}
 		boolean lowProfile = isLowProfile(part.renderable, model);
 		return objectRequest(request(
-			part.renderable, model, part.localPoint, part.plane, 0,
-			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(),
+			part.renderable, model, part.localPoint, part.plane, sceneryVerticalOffset(part),
+			sceneryYaw(part), orientationCalculator.relativePitch(),
 			-1, -1, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM, null), part);
 	}
 
@@ -266,7 +268,22 @@ public final class BillboardRenderRequestFactory
 			lowProfile);
 	}
 
-	private boolean isLowProfile(Renderable renderable, Model model)
+	private int sceneryYaw(ObjectRenderablePart part)
+    {
+        int yaw = orientationCalculator.relativeYaw();
+        return compatibility != null && compatibility.isStandIn(part.renderable)
+            ? Math.floorMod(yaw + BillboardAngleUtils.angleToBillboardUnits(part.modelOrientation,
+                BillboardAngleUtils.ACTOR_FULL_CIRCLE), BillboardAngleUtils.BILLBOARD_FULL_CIRCLE) : yaw;
+    }
+
+    private int sceneryVerticalOffset(ObjectRenderablePart part)
+    {
+        if (compatibility == null || !compatibility.isStandIn(part.renderable)
+            || part.worldHeight == Integer.MIN_VALUE || part.localPoint.getWorldView() != net.runelite.api.WorldView.TOPLEVEL) return 0;
+        return net.runelite.api.Perspective.getTileHeight(client, part.localPoint, part.plane) - part.worldHeight;
+    }
+
+    private boolean isLowProfile(Renderable renderable, Model model)
 	{
 		return model != null && renderable != null
 			&& BillboardModelProfile.isLowProfile(model, renderable.getModelHeight());

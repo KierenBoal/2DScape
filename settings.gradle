@@ -1,1 +1,6 @@
 rootProject.name = '2dscape'
+
+if (hasProperty('retroNpcSwapperDir')) {
+    include ':retroNpcSwapper'
+    project(':retroNpcSwapper').projectDir = file(retroNpcSwapperDir)
+}

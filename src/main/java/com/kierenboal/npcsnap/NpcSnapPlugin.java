@@ -92,6 +92,21 @@ public class NpcSnapPlugin extends Plugin
 	@Inject
 	private Client client;
 
+	@Inject private net.runelite.client.eventbus.EventBus eventBus;
+	@Inject private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility modelCompatibility;
+
+	@Subscribe
+	public void onPluginChanged(net.runelite.client.events.PluginChanged event)
+	{
+		if (active && event.getPlugin() == this && event.isLoaded()) eventBus.post(modelCompatibility.request());
+	}
+
+	@Subscribe
+	public void onPluginMessage(net.runelite.client.events.PluginMessage event)
+	{
+		if (active) clientThread.invoke(() -> { if (active && modelCompatibility.accept(event)) billboardOverlay.invalidateModelCompatibility(); });
+	}
+
 	@Inject
 	private ClientThread clientThread;
 
@@ -139,6 +154,7 @@ public class NpcSnapPlugin extends Plugin
 		rendererAvailabilityWarning.reset();
 		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
 		active = true;
+        modelCompatibility.visible = sceneVisibility::isObjectVisible;
 		changelog.requestCheck();
 		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
 			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
@@ -193,6 +209,7 @@ public class NpcSnapPlugin extends Plugin
 		// PluginManager removes us from the event bus before calling this method. Keep
 		// the direct render hooks harmless even if one cleanup step below fails.
 		active = false;
+		clientThread.invoke(modelCompatibility::clear);
 		cleanupStep("static scenery", () -> clientThread.invoke(billboardOverlay::restoreStaticScenery));
 		cleanupStep("billboard overlay activity", () -> billboardOverlay.setActive(false));
 		cleanupStep("thought bubble overlay activity", () -> skillingThoughtBubbleOverlay.setActive(false));
@@ -554,6 +571,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameObjectSpawned(net.runelite.api.events.GameObjectSpawned event)
 	{
+        modelCompatibility.track(event.getGameObject());
 		billboardOverlay.addStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
 	}
@@ -561,6 +579,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameObjectDespawned(net.runelite.api.events.GameObjectDespawned event)
 	{
+        modelCompatibility.untrack(event.getGameObject());
 		billboardOverlay.removeStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
 	}
@@ -592,12 +611,14 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onDecorativeObjectSpawned(net.runelite.api.events.DecorativeObjectSpawned event)
 	{
+        modelCompatibility.track(event.getDecorativeObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
 	}
 
 	@Subscribe
 	public void onDecorativeObjectDespawned(net.runelite.api.events.DecorativeObjectDespawned event)
 	{
+        modelCompatibility.untrack(event.getDecorativeObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
 	}
 

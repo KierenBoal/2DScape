@@ -51,6 +51,7 @@ public final class BillboardWorldOcclusionCollector
 	private static final String[] TERRAIN_OCCLUDER_SOURCES =
 		{"terrain plane=0", "terrain plane=1", "terrain plane=2", "terrain plane=3"};
 
+	public com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility;
 	private final Client client;
 	private final NpcSnapConfig config;
 	private final BillboardDepthCalculator depthCalculator;
@@ -955,7 +956,8 @@ public final class BillboardWorldOcclusionCollector
 		ObservedTileObject observed;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Scenery part discovery"))
 		{
-			observed = ObservedTileObjectBuilder.build(tileObject);
+			observed = compatibility == null ? null : compatibility.observed(tileObject);
+            if (observed == null) observed = ObservedTileObjectBuilder.build(tileObject);
 		}
 		if (observed == null || observed.parts.isEmpty())
 		{
