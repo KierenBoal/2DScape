@@ -27,6 +27,26 @@ import static org.junit.Assert.*;
 
 public class BillboardSceneVisibilityTest
 {
+    @Test
+    public void observerExposesDelegateAndRepeatedEnableDoesNotStack()
+    {
+        AtomicReference<DrawCallbacks> callbacks = new AtomicReference<>(new Renderer());
+        DrawCallbacks base = callbacks.get();
+        BillboardSceneVisibility visibility = new BillboardSceneVisibility(callbacks::get, callbacks::set);
+        visibility.beginFrame();
+        DrawCallbacks observer = callbacks.get();
+        assertTrue(observer instanceof java.util.function.Supplier);
+        DrawCallbacks partner = observer;
+        callbacks.set(partner);
+        visibility.beginFrame();
+        assertSame(partner, callbacks.get());
+        assertSame(base, BillboardSceneVisibility.renderer(partner));
+        visibility.stop();
+        assertSame(base, callbacks.get());
+        visibility.beginFrame();
+        assertSame(base, BillboardSceneVisibility.renderer(callbacks.get()));
+    }
+
 	@Test
 	public void diagnosticsExplainUnavailableRoofState()
 	{

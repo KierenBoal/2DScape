@@ -180,6 +180,17 @@ class NpcBillboardOverlay extends Overlay
 	private final ActorDrawOrderTracker actorDrawOrderTracker = new ActorDrawOrderTracker();
 	private int lastEffectiveLightBoostPercent = Integer.MIN_VALUE;
 	private final BillboardRenderRequestFactory requestFactory;
+	private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility modelCompatibility;
+
+	@Inject
+	void setCompatibility(com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility)
+	{
+		requestFactory.compatibility = compatibility;
+        modelCompatibility = compatibility;
+        compatibility.hide = object -> active && config.enable2dBillboardSprites() && config.applyToObjects()
+            && shouldHideTileObject(object);
+        worldOcclusionCollector.compatibility = compatibility;
+	}
 	private final BillboardTargetEligibility targetEligibility;
 	private final ActorOverheadRenderer actorOverheadRenderer;
 	private Actor lastSkewDebugActor;
@@ -280,9 +291,11 @@ class NpcBillboardOverlay extends Overlay
 					drawableScenery.add(draw.occlusionIgnoredTileObject);
 				}
 			}
-			staticScenery.update(drawableScenery, client.getDrawCallbacks());
+			if (modelCompatibility != null) drawableScenery.removeIf(modelCompatibility::replaces);
+            staticScenery.update(drawableScenery, client.getDrawCallbacks());
 			preparedDraws.removeIf(draw -> staticScenery.manages(draw.occlusionIgnoredTileObject)
-				&& !staticScenery.isReplaced(draw.occlusionIgnoredTileObject));
+				&& !staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
+                && (modelCompatibility == null || !modelCompatibility.replaces(draw.occlusionIgnoredTileObject)));
 			compositePreparedDraws(graphics, preparedDraws);
 			actorOverheadRenderer.render(graphics, preparedDraws);
 			publishDrawableActor2d(preparedDraws);
@@ -412,6 +425,12 @@ class NpcBillboardOverlay extends Overlay
 		textureResolver.clear();
 	}
 
+	void invalidateModelCompatibility()
+    {
+        clearBillboardCache();
+        worldOcclusionCollector.clear();
+    }
+
 	void clearBillboardCache()
 	{
 		billboardCache.clear();
@@ -445,7 +464,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 		BillboardTarget target = activeRenderableTargets.get(actor);
 		UpdateHeuristicSnapshot snapshot = target != null ? frameSnapshots.get(target.targetKey) : null;
-		BillboardModelBounds current = snapshot != null ? snapshot.geometry : BillboardModelBounds.sample(actor.getModel(), false);
+		BillboardModelBounds current = snapshot != null ? snapshot.geometry : BillboardModelBounds.sample(modelCompatibility == null ? actor.getModel() : modelCompatibility.model(actor), false);
 		boolean resized = current != null && current.exceeds(cached.modelBounds, config.redrawOnClickboxResizePercent());
 		actorResizeObservations.put(actor, resized);
 		if (resized)
@@ -640,7 +659,7 @@ class NpcBillboardOverlay extends Overlay
 				context.identifier, context.sceneX, context.sceneY, context.worldViewId, context.plane);
 			return null;
 		}
-		ObservedTileObject observed = ObservedTileObjectBuilder.build(object);
+		ObservedTileObject observed = buildObservedTileObject(object);
 		if (observed == null)
 		{
 			log.debug("Object export target has no renderable parts: id={}", object.getId());
@@ -783,7 +802,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		TileObject object = BillboardObjectExportResolver.resolve(client, BillboardObjectExportTarget.snapshot(client, entry));
-		ObservedTileObject observed = ObservedTileObjectBuilder.build(object);
+		ObservedTileObject observed = buildObservedTileObject(object);
 		return observed == null ? null : BillboardTarget.forTileObject(observed, depthCalculator.depth(observed));
 	}
 
@@ -1367,7 +1386,8 @@ class NpcBillboardOverlay extends Overlay
 						worldOcclusionCollector.addInterest(draw.bounds, viewportBounds);
 						if (draw.occlusionIgnoredTileObject != null && (!gpuScenery
 							|| staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
-							|| suppressedTileObjects.containsCurrent(draw.occlusionIgnoredTileObject)))
+							|| suppressedTileObjects.containsCurrent(draw.occlusionIgnoredTileObject)
+                            || (modelCompatibility != null && modelCompatibility.replaces(draw.occlusionIgnoredTileObject))))
 						{
 							billboardedObjects.add(draw.occlusionIgnoredTileObject);
 						}
@@ -2203,9 +2223,13 @@ class NpcBillboardOverlay extends Overlay
 			if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 			{
 				staticScenery.addCandidates(visibleTileObjects);
+                if (modelCompatibility != null) modelCompatibility.candidates(worldView.getScene(), visibleTileObjects);
 			}
-			for (ObservedTileObject observed : visibleTileObjects.values())
-			{
+			for (Map.Entry<TileObject, ObservedTileObject> entry : visibleTileObjects.entrySet())
+            {
+                ObservedTileObject observed = buildObservedTileObject(entry.getKey());
+                if (observed == null) continue;
+                entry.setValue(observed);
 				if (worldViewVisibility != null && observed.tileObject.getWorldView() != null && !worldViewVisibility.isVisible(observed.tileObject.getWorldView())) continue;
 				if (!targetEligibility.tileObject(localPlayerLocation, observed, viewport))
 				{
@@ -3680,7 +3704,8 @@ class NpcBillboardOverlay extends Overlay
 
 	private ObservedTileObject buildObservedTileObject(TileObject tileObject)
 	{
-		return ObservedTileObjectBuilder.build(tileObject);
+		ObservedTileObject replacement = modelCompatibility == null ? null : modelCompatibility.observed(tileObject);
+        return replacement != null ? replacement : ObservedTileObjectBuilder.build(tileObject);
 	}
 
 	private int modelWorldHeight(BillboardRenderRequest request, int localX, int localY, float vertexY)

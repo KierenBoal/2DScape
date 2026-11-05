@@ -32,6 +32,8 @@ public final class BillboardSceneVisibility
 	private final Supplier<GameState> gameStateReader;
 	private final Consumer<BooleanSupplier> clientThreadInvoker;
 	private final Map<Scene, Snapshot> snapshots = Collections.synchronizedMap(new IdentityHashMap<>());
+	@Inject private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility;
+	private final Map<Scene, Snapshot> previousSnapshots = new IdentityHashMap<>();
 	private Observer observer;
 	private boolean enabled;
 
@@ -61,12 +63,19 @@ public final class BillboardSceneVisibility
 	public void beginFrame()
 	{
 		enabled = true;
+        previousSnapshots.clear();
+        previousSnapshots.putAll(snapshots);
 		snapshots.clear();
 		DrawCallbacks active = callbackReader.get();
-		if (active == observer && observer != null)
+		if (observer != null && contains(active, observer))
 		{
 			return;
 		}
+		for (int depth = 0; depth < 8 && active != null; depth++, active = next(active))
+		{
+			if (active instanceof BillboardSceneVisibility.Observer) { observer = (Observer) active; return; }
+		}
+		active = callbackReader.get();
 		observer = null;
 		// 117 HD and GPU replace their callbacks while loading a scene. Changing
 		// them again during LOADING can make the renderer load the scene twice.
@@ -79,6 +88,24 @@ public final class BillboardSceneVisibility
 		observer = installedObserver;
 	}
 
+    public boolean isObjectVisible(TileObject object)
+    {
+        WorldView view = object.getWorldView();
+        if (!enabled || view == null || view.getScene() == null) return false;
+        Scene scene = view.getScene();
+        Snapshot state = snapshots.get(scene);
+        if (state == null) state = previousSnapshots.get(scene);
+        if (state == null) return false;
+        int offset = view.isTopLevel() ? (net.runelite.api.Constants.EXTENDED_SCENE_SIZE - net.runelite.api.Constants.SCENE_SIZE) / 2 : 0;
+        int x = (object.getX() >> net.runelite.api.Perspective.LOCAL_COORD_BITS) + offset;
+        int y = (object.getY() >> net.runelite.api.Perspective.LOCAL_COORD_BITS) + offset;
+        int plane = object.getPlane();
+        int[][][] roofs = scene.getRoofs();
+        int roof = roofs != null && plane >= 0 && plane < roofs.length && x >= 0 && x < roofs[plane].length
+            && y >= 0 && y < roofs[plane][x].length ? roofs[plane][x][y] : 0;
+        return state.visible(plane, roof);
+    }
+
 	public void stop()
 	{
 		clientThreadInvoker.accept(this::stopNow);
@@ -87,6 +114,7 @@ public final class BillboardSceneVisibility
 	private boolean stopNow()
 	{
 		enabled = false;
+        previousSnapshots.clear();
 		snapshots.clear();
 		Observer installedObserver = observer;
 		if (installedObserver == null || callbackReader.get() != installedObserver)
@@ -105,13 +133,18 @@ public final class BillboardSceneVisibility
 
 	Snapshot snapshot(Scene scene)
 	{
-		return enabled && callbackReader.get() == observer ? snapshots.get(scene) : null;
+		return enabled && observer != null && contains(callbackReader.get(), observer) ? snapshots.get(scene) : null;
 	}
 
 	public static DrawCallbacks renderer(DrawCallbacks callbacks)
 	{
-		return callbacks instanceof BillboardSceneVisibility.Observer
-			? ((BillboardSceneVisibility.Observer) callbacks).delegate : callbacks;
+		for (int i = 0; i < 8; i++)
+        {
+            DrawCallbacks next = next(callbacks);
+            if (next == null) break;
+            callbacks = next;
+        }
+        return callbacks;
 	}
 
 	String describe(Scene scene)
@@ -168,10 +201,29 @@ public final class BillboardSceneVisibility
 
 	// Lombok emits ordinary forwarding methods for the complete installed API,
 	// including overloaded/default methods. No reflection or renderer replacement.
-	private final class Observer implements DrawCallbacks
+	private static DrawCallbacks next(DrawCallbacks callbacks)
+    {
+        if (callbacks == null || !(callbacks instanceof Supplier)) return null;
+        String name = callbacks.getClass().getName();
+        if (!Set.of("com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility$Observer",
+            "com.retronpcswapper.RetroDrawCallbacks", "com.customnpcmodels.CustomDrawCallbacks",
+            "com.customservants.ServantDrawCallbacks").contains(name)) return null;
+        Object next = ((Supplier<?>) callbacks).get();
+        return next instanceof DrawCallbacks && next != callbacks ? (DrawCallbacks) next : null;
+    }
+
+    private static boolean contains(DrawCallbacks top, DrawCallbacks target)
+    {
+        for (int i = 0; i < 8 && top != null; i++, top = next(top)) if (top == target) return true;
+        return false;
+    }
+
+    private final class Observer implements DrawCallbacks, Supplier<DrawCallbacks>
 	{
 		@Delegate(excludes = SceneStart.class)
 		private final DrawCallbacks delegate;
+
+		public DrawCallbacks get() { return delegate; }
 
 		private Observer(DrawCallbacks delegate)
 		{
@@ -225,6 +277,7 @@ public final class BillboardSceneVisibility
 		public void drawTemp(Projection projection, Scene scene, GameObject object, Model model,
 			int orientation, int x, int y, int z)
 		{
+			if (enabled && compatibility != null && compatibility.hidden(scene, object, model)) return;
 			// Animated locs also use this path. getModelZbuf() cannot reproduce
 			// their animated pose later when the overlay gathers occluders.
 			recordModel(scene, object, object != null ? object.getRenderable() : null, model);
