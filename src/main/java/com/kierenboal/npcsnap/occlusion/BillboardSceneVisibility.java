@@ -117,8 +117,14 @@ public final class BillboardSceneVisibility
 	String describe(Scene scene)
 	{
 		Snapshot snapshot = snapshot(scene);
-		return snapshot == null ? "unavailable" : "min=" + snapshot.minLevel + ":current=" + snapshot.level
+		if (snapshot != null) return "min=" + snapshot.minLevel + ":current=" + snapshot.level
 			+ ":max=" + snapshot.maxLevel + ":hiddenRoofIds=" + snapshot.hiddenRoofIds;
+		if (!enabled) return "unavailable:stopped";
+		DrawCallbacks active = callbackReader.get();
+		if (active == null) return "unavailable:no-renderer-callbacks";
+		if (observer != null && active != observer) return "unavailable:callback-replaced";
+		if (observer == null) return "unavailable:observer-not-installed:" + gameStateReader.get();
+		return "unavailable:no-scene-callback";
 	}
 
 	private void capture(Scene scene, Projection projection, int minLevel, int level, int maxLevel, Set<Integer> hidden)

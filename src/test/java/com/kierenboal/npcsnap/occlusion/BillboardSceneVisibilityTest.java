@@ -28,6 +28,21 @@ import static org.junit.Assert.*;
 public class BillboardSceneVisibilityTest
 {
 	@Test
+	public void diagnosticsExplainUnavailableRoofState()
+	{
+		TestClient client = new TestClient();
+		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
+		Scene scene = proxy(Scene.class);
+		visibility.beginFrame();
+		assertEquals("unavailable:no-renderer-callbacks", visibility.describe(scene));
+		client.callbacks = new Renderer();
+		visibility.beginFrame();
+		assertEquals("unavailable:no-scene-callback", visibility.describe(scene));
+		client.callbacks = new Renderer();
+		assertEquals("unavailable:callback-replaced", visibility.describe(scene));
+	}
+
+	@Test
 	public void temporaryDrawsPreserveBoatFilteringAndDoNotCaptureActors()
 	{
 		TestClient client = new TestClient();

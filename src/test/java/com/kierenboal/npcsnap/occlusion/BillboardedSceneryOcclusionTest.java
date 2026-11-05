@@ -19,6 +19,7 @@ import net.runelite.api.Tile;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.gameval.ObjectID;
 import org.junit.Test;
 
 import static com.kierenboal.npcsnap.TestProxies.method;
@@ -93,7 +94,8 @@ public class BillboardedSceneryOcclusionTest
 
 		private GameObject object(Renderable renderable)
 		{
-			return proxy(GameObject.class, method("getLocalLocation", location), method("getRenderable", renderable),
+			return proxy(GameObject.class, method("getId", ObjectID.TREE),
+				method("getLocalLocation", location), method("getRenderable", renderable),
 				method("getCanvasLocation", new Point(400, 300)),
 				methodSupplier("getConvexHull", () -> { hullReads.incrementAndGet(); return new Rectangle(350, 200, 100, 100); }));
 		}

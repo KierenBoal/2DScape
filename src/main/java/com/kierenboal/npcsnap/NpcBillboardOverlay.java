@@ -106,6 +106,8 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Model;
+import net.runelite.api.GameObject;
+import com.kierenboal.npcsnap.targeting.StaticScenerySprites;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
@@ -153,6 +155,9 @@ class NpcBillboardOverlay extends Overlay
 	private final Map<Renderable, BillboardTarget> activeRenderableTargets = new IdentityHashMap<>();
 	private final BillboardVisibilityState visibility = new BillboardVisibilityState();
 	private final FrameRenderableTracker<Renderable> sceneRenderables = new FrameRenderableTracker<>();
+	private final FrameRenderableTracker<TileObject> suppressedTileObjects = new FrameRenderableTracker<>();
+	private final StaticScenerySprites staticScenery = new StaticScenerySprites();
+	private volatile boolean gpuScenery;
 	private final BillboardUpdateQueue updateQueue = new BillboardUpdateQueue();
 	private final BillboardClassificationDebug classificationDebug;
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
@@ -267,6 +272,17 @@ class NpcBillboardOverlay extends Overlay
 			{
 				renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
 			}
+			Set<TileObject> drawableScenery = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (PreparedBillboardDraw draw : preparedDraws)
+			{
+				if (draw.occlusionIgnoredTileObject != null && draw.image != null && draw.bounds != null && !draw.bounds.isEmpty())
+				{
+					drawableScenery.add(draw.occlusionIgnoredTileObject);
+				}
+			}
+			staticScenery.update(drawableScenery, client.getDrawCallbacks());
+			preparedDraws.removeIf(draw -> staticScenery.manages(draw.occlusionIgnoredTileObject)
+				&& !staticScenery.isReplaced(draw.occlusionIgnoredTileObject));
 			compositePreparedDraws(graphics, preparedDraws);
 			actorOverheadRenderer.render(graphics, preparedDraws);
 			publishDrawableActor2d(preparedDraws);
@@ -495,6 +511,7 @@ class NpcBillboardOverlay extends Overlay
 			occlusionWorldView = null;
 			occlusionDebugSampler.clear();
 			sceneRenderables.advanceFrame();
+			suppressedTileObjects.advanceFrame();
 			actorDrawOrderTracker.advanceFrame();
 			synchronized (observedTileObjectsLock)
 			{
@@ -513,6 +530,51 @@ class NpcBillboardOverlay extends Overlay
 		{
 			ensureActiveBillboardsCurrent(worldView);
 		}
+	}
+
+	void prepareStaticScenery(boolean gpu, WorldView view)
+	{
+		gpuScenery = gpu;
+		staticScenery.useScene(gpu && view != null ? view.getScene() : null);
+		if (!config.enable2dBillboardSprites() || !config.applyToObjects())
+		{
+			staticScenery.update(Collections.emptySet(), client.getDrawCallbacks());
+		}
+	}
+
+	void restoreStaticScenery()
+	{
+		staticScenery.update(Collections.emptySet(), client.getDrawCallbacks());
+		staticScenery.useScene(null);
+	}
+
+	void addStaticScenery(GameObject object)
+	{
+		WorldView view = object.getWorldView();
+		if (view != null) staticScenery.add(view.getScene(), object);
+	}
+
+	void removeStaticScenery(GameObject object)
+	{
+		staticScenery.remove(object);
+	}
+
+	Boolean drawStaticScenery(Scene scene, TileObject object)
+	{
+		Boolean decision = staticScenery.drawObject(scene, object);
+		// A new scene can upload before BeforeRender seeds its placements.
+		// Always let those uploads through until the new scene has ready sprites.
+		if (decision == null && gpuScenery && scene != null && scene.getWorldViewId() == WorldView.TOPLEVEL
+			&& object instanceof GameObject && ((GameObject) object).getRenderable() instanceof Model)
+		{
+			return true;
+		}
+		return decision;
+	}
+
+	void noteSuppressedTileObject(TileObject object)
+	{
+		suppressedTileObjects.record(object);
 	}
 
 	void noteActorInteraction(Actor actor, int tickCount)
@@ -1303,7 +1365,9 @@ class NpcBillboardOverlay extends Overlay
 					for (PreparedBillboardDraw draw : preparedDraws)
 					{
 						worldOcclusionCollector.addInterest(draw.bounds, viewportBounds);
-						if (draw.occlusionIgnoredTileObject != null)
+						if (draw.occlusionIgnoredTileObject != null && (!gpuScenery
+							|| staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
+							|| suppressedTileObjects.containsCurrent(draw.occlusionIgnoredTileObject)))
 						{
 							billboardedObjects.add(draw.occlusionIgnoredTileObject);
 						}
@@ -2136,6 +2200,10 @@ class NpcBillboardOverlay extends Overlay
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config) || ObjectClassifier.isEnabled(ClassifiedObjectType.EFFECT, config))
 		{
+			if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
+			{
+				staticScenery.addCandidates(visibleTileObjects);
+			}
 			for (ObservedTileObject observed : visibleTileObjects.values())
 			{
 				if (worldViewVisibility != null && observed.tileObject.getWorldView() != null && !worldViewVisibility.isVisible(observed.tileObject.getWorldView())) continue;

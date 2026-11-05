@@ -51,6 +51,7 @@ import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.client.callback.Hooks;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -58,6 +59,8 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.plugins.gpu.GpuPlugin;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
 
@@ -83,10 +86,17 @@ public class NpcSnapPlugin extends Plugin
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
 	private volatile boolean active;
+	private Plugin gpuPlugin;
 	private int changelogLoginTicksRemaining;
 
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private PluginManager pluginManager;
 
 	@Inject
 	@Named("developerMode")
@@ -127,6 +137,7 @@ public class NpcSnapPlugin extends Plugin
 	{
 		migrateOcclusionQuality();
 		rendererAvailabilityWarning.reset();
+		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
 		active = true;
 		changelog.requestCheck();
 		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
@@ -182,6 +193,7 @@ public class NpcSnapPlugin extends Plugin
 		// PluginManager removes us from the event bus before calling this method. Keep
 		// the direct render hooks harmless even if one cleanup step below fails.
 		active = false;
+		cleanupStep("static scenery", () -> clientThread.invoke(billboardOverlay::restoreStaticScenery));
 		cleanupStep("billboard overlay activity", () -> billboardOverlay.setActive(false));
 		cleanupStep("thought bubble overlay activity", () -> skillingThoughtBubbleOverlay.setActive(false));
 		cleanupStep("scene visibility", sceneVisibility::stop);
@@ -235,6 +247,7 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		WorldView worldView = client.getTopLevelWorldView();
+		billboardOverlay.prepareStaticScenery(gpuPlugin != null && pluginManager.isPluginActive(gpuPlugin), worldView);
 		ensureGroundItemsSeeded(worldView);
 		if (worldView == null)
 		{
@@ -541,12 +554,14 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameObjectSpawned(net.runelite.api.events.GameObjectSpawned event)
 	{
+		billboardOverlay.addStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
 	}
 
 	@Subscribe
 	public void onGameObjectDespawned(net.runelite.api.events.GameObjectDespawned event)
 	{
+		billboardOverlay.removeStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
 	}
 
@@ -655,7 +670,17 @@ public class NpcSnapPlugin extends Plugin
 			return true;
 		}
 
-		return ensureSceneDrawCallbacks().drawObject(tileObject);
+		Boolean staticDecision = billboardOverlay.drawStaticScenery(scene, tileObject);
+		if (staticDecision != null)
+		{
+			return staticDecision;
+		}
+		boolean draw = ensureSceneDrawCallbacks().drawObject(tileObject);
+		if (!draw)
+		{
+			billboardOverlay.noteSuppressedTileObject(tileObject);
+		}
+		return draw;
 	}
 
 	private BillboardSceneDrawCallbacks ensureSceneDrawCallbacks()

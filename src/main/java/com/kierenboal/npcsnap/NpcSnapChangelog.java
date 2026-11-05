@@ -15,7 +15,8 @@ final class NpcSnapChangelog
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
 		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
 		new Release("1.0.3", "Improved click accuracy mode in Rendering config (less RSC, better accuracy though); Retro hitsplats now respect damage types and max hits."),
-		new Release("1.0.4", "Land/boat/animation occlusion fixes; Skilling XP bubble improvements; Unified frame rates across players/projectiles/objects/etc; Improved transparency blending"));
+		new Release("1.0.4", "Land/boat/animation occlusion fixes; Skilling XP bubble improvements; Unified frame rates across players/projectiles/objects/etc; Improved transparency blending"),
+		new Release("1.0.5", "Reduced changelog spam; Roof and static scenery now occlude better"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
@@ -70,19 +71,24 @@ final class NpcSnapChangelog
 			return;
 		}
 		String seenVersion = readVersion.get();
+		boolean firstInstall = seenVersion == null;
 		try
 		{
 			parseVersion(seenVersion);
 		}
 		catch (IllegalArgumentException ex)
 		{
+			firstInstall = true;
 			seenVersion = BASELINE_VERSION;
 		}
 		// Never move the cache backwards when an older development build is run.
 		if (compareVersions(seenVersion, currentVersion) < 0)
 		{
-			for (Release release : releases)
+			int firstRelease = firstInstall ? Math.max(0, releases.size() - 1)
+				: Math.max(0, releases.size() - 2);
+			for (int i = firstRelease; i < releases.size(); i++)
 			{
+				Release release = releases.get(i);
 				if (compareVersions(release.version, seenVersion) > 0)
 				{
 					announce(release, sendMessage);

@@ -247,6 +247,8 @@ public final class BillboardWorldOcclusionCollector
 	private int debugTerrainTilesConsidered;
 	private int debugTerrainTilesAccepted;
 	private int debugTerrainFacesAccepted;
+	private int debugRoofSurfacesAccepted;
+	private int debugRoofSurfacesHidden;
 	private int debugFlatTerrainFacesSkipped;
 	private int debugBridgeTerrainTilesSkipped;
 	private int debugBridgeTilesIncluded;
@@ -410,9 +412,24 @@ public final class BillboardWorldOcclusionCollector
 			{
 				for (TileCandidate candidate : tileCandidates)
 				{
-					if (candidate.terrainEligible || candidate.bridgeLinked)
+					if (candidate.bridgeLinked)
 					{
 						collectTerrainTileOccluder(candidate.tile, candidate.bridgeLinked);
+					}
+					else
+					{
+						boolean upper = candidate.isUpperDirectPlane(currentPlane);
+						if (!upper && !candidate.terrainEligible) continue;
+						// Static GPU uploads are not evidence of this frame's roof visibility.
+						if (upper && collectionSnapshot() == null) continue;
+						if (!upperPlaneVisibility(scene, candidate, currentPlane, false).accepted)
+						{
+							if (upper) debugRoofSurfacesHidden++;
+							continue;
+						}
+						int before = debugTerrainFacesAccepted;
+						collectTerrainTileOccluder(candidate.tile, false, upper);
+						if (upper && debugTerrainFacesAccepted > before) debugRoofSurfacesAccepted++;
 					}
 				}
 			}
@@ -454,6 +471,7 @@ public final class BillboardWorldOcclusionCollector
 		debugLastLoggedCycle = gameCycle;
 		log.debug("Billboard adaptive occlusion {}", occlusionMask.drainDebugStats());
 		log.debug("Billboard renderer visibility at collection {}", collectedVisibility);
+		log.debug("Billboard roof surfaces accepted={} hidden={}", debugRoofSurfacesAccepted, debugRoofSurfacesHidden);
 		log.debug("Billboard projection snapshot {} rasterizerZoom={}", depthCalculator.projectionDebugState(), client.get3dZoom());
 		WorldView worldView = client.getTopLevelWorldView();
 		if (worldView != null)
@@ -523,6 +541,8 @@ public final class BillboardWorldOcclusionCollector
 		debugTerrainTilesConsidered = 0;
 		debugTerrainTilesAccepted = 0;
 		debugTerrainFacesAccepted = 0;
+		debugRoofSurfacesAccepted = 0;
+		debugRoofSurfacesHidden = 0;
 		debugFlatTerrainFacesSkipped = 0;
 		debugBridgeTerrainTilesSkipped = 0;
 		debugBridgeTilesIncluded = 0;
@@ -717,6 +737,11 @@ public final class BillboardWorldOcclusionCollector
 		Tile tile,
 		boolean bridgeLinked)
 	{
+		collectTerrainTileOccluder(tile, bridgeLinked, false);
+	}
+
+	private void collectTerrainTileOccluder(Tile tile, boolean bridgeLinked, boolean upperSurface)
+	{
 		if (tile == null)
 		{
 			return;
@@ -737,7 +762,7 @@ public final class BillboardWorldOcclusionCollector
 			{
 				geometry = terrainGeometry(tile, localPoint);
 			}
-			debugFlatTerrainFacesSkipped += geometry.flatTriangleCount;
+			if (!upperSurface && !nested()) debugFlatTerrainFacesSkipped += geometry.flatTriangleCount;
 			boolean intersects;
 			try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Terrain broad-phase"))
 			{
@@ -753,7 +778,8 @@ public final class BillboardWorldOcclusionCollector
 				{
 					for (WorldTriangle triangle : geometry.triangles)
 					{
-						addTerrainTriangleOccluder(triangle, tile.getPlane());
+						if (!upperSurface && !nested() && !isUnevenTerrainTriangle(triangle.z0, triangle.z1, triangle.z2)) continue;
+						addTerrainTriangleOccluder(triangle, tile.getPlane(), upperSurface);
 					}
 				}
 			}
@@ -1055,9 +1081,10 @@ public final class BillboardWorldOcclusionCollector
 			int drawLevel = roof.visibleBelow ? 0 : candidate.sourcePlane;
 			if (!snapshot.visible(drawLevel, roof.roofId))
 			{
-				return UpperPlaneVisibility.notRendered();
+				return new UpperPlaneVisibility(UpperPlaneVisibilityKind.NOT_RENDERED, false, "renderer-hidden-floor-or-roof", roof);
 			}
-			return candidate.bridgeLinked ? UpperPlaneVisibility.bridge() : UpperPlaneVisibility.nonRoof(roof);
+			return candidate.bridgeLinked ? UpperPlaneVisibility.bridge()
+				: roof.kind == RoofClassificationKind.ROOF ? UpperPlaneVisibility.renderedRoof(roof) : UpperPlaneVisibility.nonRoof(roof);
 		}
 		if (candidate.bridgeLinked)
 		{
@@ -1079,7 +1106,8 @@ public final class BillboardWorldOcclusionCollector
 		if (gpuRenderer)
 		{
 			// Missing GPU callbacks do not establish that an object was hidden.
-			return UpperPlaneVisibility.nonRoof(roof);
+			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.ROOF_VISIBILITY_UNKNOWN, true,
+				"upper-roof-visibility-unavailable", roof);
 		}
 		return canUseRenderedRoofEvidence(gpuRenderer, hasRenderEvidence)
 			? UpperPlaneVisibility.renderedRoof(roof)
@@ -1881,12 +1909,12 @@ public final class BillboardWorldOcclusionCollector
 
 		TerrainGeometry geometry = model != null
 			? buildTerrainModelGeometry(model)
-			: buildTerrainPaintGeometry(localPoint, tile.getPlane(), paint);
+			: buildTerrainPaintGeometry(tile, localPoint, paint);
 		terrainGeometryCache.put(tile, geometry);
 		return geometry;
 	}
 
-	private TerrainGeometry buildTerrainPaintGeometry(LocalPoint localPoint, int plane, SceneTilePaint paint)
+	private TerrainGeometry buildTerrainPaintGeometry(Tile tile, LocalPoint localPoint, SceneTilePaint paint)
 	{
 		if (paint == null || paint.getNeColor() == HIDDEN_TILE_COLOR)
 		{
@@ -1897,13 +1925,29 @@ public final class BillboardWorldOcclusionCollector
 		int halfSize = size / 2;
 		int x = localPoint.getX() - halfSize;
 		int y = localPoint.getY() - halfSize;
-		int swHeight = tileHeightAt(x, y, plane);
-		int seHeight = tileHeightAt(x + size, y, plane);
-		int neHeight = tileHeightAt(x + size, y + size, plane);
-		int nwHeight = tileHeightAt(x, y + size, plane);
+		// Read the same corners as the uploader; Perspective adds bridge adjustments
+		// intended for entities standing on tiles, not the tile's own surface.
+		Scene scene = collectionView.getScene();
+		if (scene == null || tile.getSceneLocation() == null) return TerrainGeometry.empty(null, paint);
+		int[][][] heights = scene.getTileHeights();
+		int plane = tile.getRenderLevel();
+		if (heights == null || plane < 0 || plane >= heights.length || heights[plane] == null)
+			return TerrainGeometry.empty(null, paint);
+		int tileX = extendedSceneCoordinate(tile.getSceneLocation().getX(), heights[plane].length - 1,
+			scene.getWorldViewId() == WorldView.TOPLEVEL);
+		if (tileX < 0 || tileX + 1 >= heights[plane].length || heights[plane][tileX] == null
+			|| heights[plane][tileX + 1] == null) return TerrainGeometry.empty(null, paint);
+		int tileY = extendedSceneCoordinate(tile.getSceneLocation().getY(), heights[plane][tileX].length - 1,
+			scene.getWorldViewId() == WorldView.TOPLEVEL);
+		if (tileY < 0 || tileY + 1 >= heights[plane][tileX].length
+			|| tileY + 1 >= heights[plane][tileX + 1].length) return TerrainGeometry.empty(null, paint);
+		int swHeight = heights[plane][tileX][tileY];
+		int seHeight = heights[plane][tileX + 1][tileY];
+		int neHeight = heights[plane][tileX + 1][tileY + 1];
+		int nwHeight = heights[plane][tileX][tileY + 1];
 		List<WorldTriangle> triangles = new ArrayList<>(2);
-		int flatTriangleCount = addUnevenTriangle(triangles, x, y, swHeight, x + size, y, seHeight, x + size, y + size, neHeight);
-		flatTriangleCount += addUnevenTriangle(triangles, x, y, swHeight, x + size, y + size, neHeight, x, y + size, nwHeight);
+		int flatTriangleCount = addUnevenTriangle(triangles, x + size, y + size, neHeight, x, y + size, nwHeight, x + size, y, seHeight);
+		flatTriangleCount += addUnevenTriangle(triangles, x, y, swHeight, x + size, y, seHeight, x, y + size, nwHeight);
 		return new TerrainGeometry(null, paint, triangles, flatTriangleCount);
 	}
 
@@ -1958,16 +2002,11 @@ public final class BillboardWorldOcclusionCollector
 		int y2,
 		int z2)
 	{
-		if (!nested() && !isUnevenTerrainTriangle(z0, z1, z2))
-		{
-			return 1;
-		}
-
 		triangles.add(new WorldTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2));
-		return 0;
+		return isUnevenTerrainTriangle(z0, z1, z2) ? 0 : 1;
 	}
 
-	private void addTerrainTriangleOccluder(WorldTriangle triangle, int plane)
+	private void addTerrainTriangleOccluder(WorldTriangle triangle, int plane, boolean upperSurface)
 	{
 		terrainTrianglesConsidered++;
 		int x0 = triangle.x0;
@@ -2006,7 +2045,7 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		double bias = nested() ? 0d : TERRAIN_OCCLUSION_DEPTH_BIAS;
+		double bias = nested() || upperSurface ? 0d : TERRAIN_OCCLUSION_DEPTH_BIAS;
 		double depth0 = rawDepth0 + bias;
 		double depth1 = rawDepth1 + bias;
 		double depth2 = rawDepth2 + bias;
@@ -2443,11 +2482,6 @@ public final class BillboardWorldOcclusionCollector
 			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.ROOF_GPU_CONSERVATIVE, false, "upper-roof-gpu-conservative", roof);
 		}
 
-		private static UpperPlaneVisibility notRendered()
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.NOT_RENDERED, false, "renderer-hidden-floor-or-roof", null);
-		}
-
 		private static UpperPlaneVisibility unknown(RoofClassification roof)
 		{
 			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.UNKNOWN_METADATA, true, "upper-roof-metadata-unknown", roof);
@@ -2470,6 +2504,7 @@ public final class BillboardWorldOcclusionCollector
 		BRIDGE_LINKED,
 		NON_ROOF,
 		ROOF_RENDERED,
+		ROOF_VISIBILITY_UNKNOWN,
 		ROOF_NOT_RENDERED,
 		ROOF_GPU_CONSERVATIVE,
 		NOT_RENDERED,
