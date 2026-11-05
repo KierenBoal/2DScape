@@ -732,6 +732,8 @@ public final class BillboardOcclusionMask
 	}
 	public static final class Occluder
 	{
+		float depthOffset;
+		boolean excludeThirdWeightZero;
 		private final Shape shape;
 		private final float depth;
 		private final boolean triangle;
@@ -934,7 +936,7 @@ public final class BillboardOcclusionMask
 			int ea = edgeCoverage(a, ax * (w - 1), ay * (h - 1));
 			int eb = edgeCoverage(b, bx * (w - 1), by * (h - 1));
 			int ec = edgeCoverage(1d - a - b, (-ax - bx) * (w - 1), (-ay - by) * (h - 1));
-			return ea == 0 || eb == 0 || ec == 0 ? 0 : Math.min(ea, Math.min(eb, ec));
+			return ea == 0 || eb == 0 || ec == 0 ? 0 : excludeThirdWeightZero ? 1 : Math.min(ea, Math.min(eb, ec));
 		}
 
 		private int coverageRow(int x, int y, int w)
@@ -946,7 +948,7 @@ public final class BillboardOcclusionMask
 				{
 					double a = ax * (x + dx - x2) + ay * (y - y2);
 					double b = bx * (x + dx - x2) + by * (y - y2);
-					if (a >= -1.0e-6d && b >= -1.0e-6d && 1d - a - b >= -1.0e-6d)
+					if (a >= -1.0e-6d && b >= -1.0e-6d && (excludeThirdWeightZero ? 1d - a - b > 1.0e-6d : 1d - a - b >= -1.0e-6d))
 					{
 						bits |= 1 << dx;
 					}
@@ -980,7 +982,7 @@ public final class BillboardOcclusionMask
 			}
 			float min = Math.min(depth0, Math.min(depth1, depth2));
 			float max = Math.max(depth0, Math.max(depth1, depth2));
-			return Math.nextDown((float) (min - 3.0e-6d * ((double) max - min)));
+			return Math.nextDown((float) (min + depthOffset - 3.0e-6d * ((double) max - min)));
 		}
 
 		private float maximumDepth(int y, int h)
@@ -997,7 +999,7 @@ public final class BillboardOcclusionMask
 			}
 			float min = Math.min(depth0, Math.min(depth1, depth2));
 			float max = Math.max(depth0, Math.max(depth1, depth2));
-			return Math.nextUp((float) (max + 3.0e-6d * ((double) max - min)));
+			return Math.nextUp((float) (max + depthOffset + 3.0e-6d * ((double) max - min)));
 		}
 
 		private float verticalDepth(int y)
@@ -1035,7 +1037,9 @@ public final class BillboardOcclusionMask
 				return Float.NaN;
 			}
 
-			double interpolated = (a * depth0) + (b * depth1) + (c * depth2);
+			if (excludeThirdWeightZero && c <= 1.0e-6d) return Float.NaN;
+			double reciprocal = a / depth0 + b / depth1 + c / depth2;
+			double interpolated = reciprocal > 0d ? 1d / reciprocal + depthOffset : Double.NaN;
 			return Double.isFinite(interpolated) ? (float) interpolated : Float.NaN;
 		}
 	}

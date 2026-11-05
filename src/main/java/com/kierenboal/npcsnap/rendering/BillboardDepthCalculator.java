@@ -54,6 +54,7 @@ public final class BillboardDepthCalculator
 	private static final class Camera
 	{
 		final boolean gpu;
+		final double sceneNearDepth;
 		final int fixedYawSin, fixedYawCos, fixedPitchSin, fixedPitchCos;
 		final double x, y, z, yawSin, yawCos, pitchSin, pitchCos, scale;
 		final double distanceX, distanceY, distanceZ;
@@ -62,6 +63,8 @@ public final class BillboardDepthCalculator
 		Camera(Client client)
 		{
 			gpu = client.isGpu();
+			sceneNearDepth = com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility.renderer(client.getDrawCallbacks())
+				instanceof net.runelite.client.plugins.gpu.GpuPlugin ? 100d : 50d;
 			x = gpu ? client.getCameraFpX() : client.getCameraX();
 			y = gpu ? client.getCameraFpY() : client.getCameraY();
 			z = gpu ? client.getCameraFpZ() : client.getCameraZ();
@@ -115,6 +118,51 @@ public final class BillboardDepthCalculator
 		return depth < MIN_CANVAS_PROJECTION_DEPTH ? null
 			: new Point(camera.viewportX + camera.width / 2 + right * (int) camera.scale / depth,
 				camera.viewportY + camera.height / 2 + vertical * (int) camera.scale / depth);
+	}
+
+	/** Scene clipping is independent of the 50-unit sprite anchor projection. */
+	public double sceneNearDepth()
+	{
+		return camera().sceneNearDepth;
+	}
+
+	public void cameraSpace(double x, double y, double z, double[] out)
+	{
+		Camera c = camera();
+		double dx = x - c.x, dy = y - c.y, dz = z - c.z;
+		double forward = dy * c.yawCos - dx * c.yawSin;
+		out[0] = dx * c.yawCos + dy * c.yawSin;
+		out[1] = dz * c.pitchCos - forward * c.pitchSin;
+		out[2] = forward * c.pitchCos + dz * c.pitchSin;
+		if (!c.gpu)
+		{
+			int ix = (int) x - (int) c.x, iy = (int) y - (int) c.y, iz = (int) z - (int) c.z;
+			int f = (iy * c.fixedYawCos - ix * c.fixedYawSin) >> 16;
+			out[0] = (ix * c.fixedYawCos + iy * c.fixedYawSin) >> 16;
+			out[1] = (iz * c.fixedPitchCos - f * c.fixedPitchSin) >> 16;
+			out[2] = (f * c.fixedPitchCos + iz * c.fixedPitchSin) >> 16;
+		}
+		else
+		{
+			float fx = (float) x - (float) c.x, fy = (float) y - (float) c.y, fz = (float) z - (float) c.z;
+			float f = fy * (float) c.yawCos - fx * (float) c.yawSin;
+			out[0] = fx * (float) c.yawCos + fy * (float) c.yawSin;
+			out[1] = fz * (float) c.pitchCos - f * (float) c.pitchSin;
+			out[2] = f * (float) c.pitchCos + fz * (float) c.pitchSin;
+		}
+	}
+
+	public Point projectCameraSpace(double[] point)
+	{
+		Camera c = camera();
+		if (!Double.isFinite(point[0]) || !Double.isFinite(point[1])
+			|| !Double.isFinite(point[2]) || point[2] < sceneNearDepth()) return null;
+		double x = c.gpu ? c.viewportX + Math.round(c.width / 2f + (float) point[0] * (int) c.scale / (float) point[2])
+			: c.viewportX + c.width / 2 + (int) (point[0] * c.scale / point[2]);
+		double y = c.gpu ? c.viewportY + Math.round(c.height / 2f + (float) point[1] * (int) c.scale / (float) point[2])
+			: c.viewportY + c.height / 2 + (int) (point[1] * c.scale / point[2]);
+		return Double.isFinite(x) && Double.isFinite(y) && Math.abs(x) < Integer.MAX_VALUE / 4d
+			&& Math.abs(y) < Integer.MAX_VALUE / 4d ? new Point((int) Math.round(x), (int) Math.round(y)) : null;
 	}
 
 	public double depth(Projectile projectile)

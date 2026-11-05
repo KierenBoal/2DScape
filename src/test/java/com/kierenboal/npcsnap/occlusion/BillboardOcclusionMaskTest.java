@@ -539,9 +539,9 @@ public class BillboardOcclusionMaskTest
 			12
 		);
 
-		assertEquals(40f, mask.depthAt(1, 1), 0.01f);
-		assertEquals(110f, mask.depthAt(8, 1), 0.01f);
-		assertEquals(180f, mask.depthAt(1, 8), 0.01f);
+		assertEquals(1f / (.8f / 10f + .1f / 110f + .1f / 210f), mask.depthAt(1, 1), 0.01f);
+		assertEquals(1f / (.1f / 10f + .8f / 110f + .1f / 210f), mask.depthAt(8, 1), 0.01f);
+		assertEquals(1f / (.1f / 10f + .1f / 110f + .8f / 210f), mask.depthAt(1, 8), 0.01f);
 	}
 
 	@Test
