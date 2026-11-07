@@ -179,6 +179,7 @@ class NpcBillboardOverlay extends Overlay
 	private final ActorStackTracker actorStackTracker = new ActorStackTracker();
 	private final ActorDrawOrderTracker actorDrawOrderTracker = new ActorDrawOrderTracker();
 	private int lastEffectiveLightBoostPercent = Integer.MIN_VALUE;
+	private int lastEffectiveRetroNpcSwapperBrightness = Integer.MIN_VALUE;
 	private final BillboardRenderRequestFactory requestFactory;
 	private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility modelCompatibility;
 
@@ -520,10 +521,14 @@ class NpcBillboardOverlay extends Overlay
 		{
 			int effectiveLightBoost = BillboardBrightness.effectiveLightBoostPercent(client,
 				config.billboardLightBoostPercent());
-			if (lastEffectiveLightBoostPercent != effectiveLightBoost)
+			int effectiveRetroNpcSwapperBrightness = BillboardBrightness.effectiveLightBoostPercent(client,
+				config.retroNpcSwapperBrightness());
+			if (lastEffectiveLightBoostPercent != effectiveLightBoost
+				|| lastEffectiveRetroNpcSwapperBrightness != effectiveRetroNpcSwapperBrightness)
 			{
 				clearBillboardCache();
 				lastEffectiveLightBoostPercent = effectiveLightBoost;
+				lastEffectiveRetroNpcSwapperBrightness = effectiveRetroNpcSwapperBrightness;
 			}
 			expireCaches(System.currentTimeMillis());
 			worldOcclusionCollector.resetFrame();
@@ -2783,7 +2788,8 @@ class NpcBillboardOverlay extends Overlay
 
 	private int captureStyleHash(BillboardRenderRequest request)
 	{
-		int hash = 31 * config.billboardColorBands() + config.billboardLightBoostPercent();
+		int hash = 31 * config.billboardColorBands()
+			+ BillboardBrightness.configuredLightBoostPercent(config, request.model);
 		hash = 31 * hash + qualityKey();
 		hash = 31 * hash + (request.shouldHoverOutline ? 1 : 0);
 		hash = 31 * hash + (request.shouldInteractOutline ? 1 : 0);
@@ -3015,8 +3021,7 @@ class NpcBillboardOverlay extends Overlay
 		short[] textures = model.getFaceTextures();
 		int textureStateHash = 1;
 		int debugColorLogs = 0;
-		int lightBoostPercent = BillboardBrightness.effectiveLightBoostPercent(client,
-			config.billboardLightBoostPercent());
+		int lightBoostPercent = BillboardBrightness.effectiveLightBoostPercent(client, config, model);
 
 		for (int face = 0; face < model.getFaceCount(); face++)
 		{
@@ -3327,7 +3332,7 @@ class NpcBillboardOverlay extends Overlay
 			renderQualityKey,
 			textureStateHash,
 			animatedTextureOffsetStateHash,
-			BillboardBrightness.effectiveLightBoostPercent(client, config.billboardLightBoostPercent()));
+			BillboardBrightness.effectiveLightBoostPercent(client, config, request.model));
 	}
 
 	private BillboardCachePreviewKey buildPreviewCacheKey(BillboardRenderRequest request, double qualityScale, long nowMillis)
@@ -3338,7 +3343,7 @@ class NpcBillboardOverlay extends Overlay
 			outlinePadding(qualityScale),
 			qualityKey(qualityScale),
 			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis),
-			BillboardBrightness.effectiveLightBoostPercent(client, config.billboardLightBoostPercent()));
+			BillboardBrightness.effectiveLightBoostPercent(client, config, request.model));
 	}
 
 	private Rectangle buildDrawRect(Rectangle cachedBounds, int anchorX, int anchorY, int targetWidth, int targetHeight)

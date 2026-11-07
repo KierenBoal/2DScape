@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
+import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.TestProxies;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
@@ -17,6 +18,28 @@ public class BillboardAppearanceStateTest
 		assertEquals(125, BillboardBrightness.effectiveLightBoostPercent(clientAtBrightness(0.9d), 125));
 		assertEquals(188, BillboardBrightness.effectiveLightBoostPercent(clientAtBrightness(0.75d), 125));
 		assertEquals(250, BillboardBrightness.effectiveLightBoostPercent(clientAtBrightness(0.6d), 125));
+	}
+
+	@Test
+	public void retroModelsUseTheirIndependentLightBoost()
+	{
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("billboardLightBoostPercent", 180),
+			TestProxies.method("retroNpcSwapperBrightness", 64));
+		Model ordinary = model((byte) 0);
+		Model retro = new OwnedModel(model((byte) 0));
+
+		assertEquals(180, BillboardBrightness.configuredLightBoostPercent(config, ordinary));
+		assertEquals(64, BillboardBrightness.configuredLightBoostPercent(config, retro));
+		assertEquals(360, BillboardBrightness.effectiveLightBoostPercent(clientAtBrightness(0.6d), config, ordinary));
+		assertEquals(128, BillboardBrightness.effectiveLightBoostPercent(clientAtBrightness(0.6d), config, retro));
+	}
+
+	@Test
+	public void retroBrightnessDefaultsToSixtyFour()
+	{
+		NpcSnapConfig config = new NpcSnapConfig() {};
+		assertEquals(64, config.retroNpcSwapperBrightness());
 	}
 
 	@Test

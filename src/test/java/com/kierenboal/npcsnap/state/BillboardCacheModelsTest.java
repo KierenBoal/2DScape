@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
+import com.kierenboal.npcsnap.rendering.OwnedModel;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
 import com.kierenboal.npcsnap.TestProxies;
 
@@ -75,6 +76,50 @@ public class BillboardCacheModelsTest
 	}
 
 	@Test
+	public void brightnessSettingsInvalidateOnlyTheirModelSource()
+	{
+		NpcSnapConfig baseline = config(180, 64);
+		NpcSnapConfig generalChanged = config(120, 64);
+		NpcSnapConfig retroChanged = config(180, 80);
+		BillboardRenderRequest ordinary = request(false, false);
+		BillboardRenderRequest retro = request(false, false, new OwnedModel(model()));
+
+		BillboardCacheKey ordinaryBase = key(ordinary, baseline);
+		BillboardCacheKey retroBase = key(retro, baseline);
+		CachedBillboard ordinaryCached = new CachedBillboard(ordinaryBase,
+			new Rectangle(0, 0, 1, 1), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 0L);
+		CachedBillboard retroCached = new CachedBillboard(retroBase,
+			new Rectangle(0, 0, 1, 1), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 0L);
+		assertNotEquals(ordinaryBase, key(ordinary, generalChanged));
+		assertEquals(ordinaryBase, key(ordinary, retroChanged));
+		assertEquals(retroBase, key(retro, generalChanged));
+		assertNotEquals(retroBase, key(retro, retroChanged));
+		assertFalse(ordinaryCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+			ordinary, generalChanged, 1, 50, 0)));
+		assertTrue(ordinaryCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+			ordinary, retroChanged, 1, 50, 0)));
+		assertTrue(retroCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+			retro, generalChanged, 1, 50, 0)));
+		assertFalse(retroCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+			retro, retroChanged, 1, 50, 0)));
+
+		assertEquals(180, ordinaryBase.lightBoost);
+		assertEquals(64, retroBase.lightBoost);
+	}
+
+	@Test
+	public void previewKeysUseTheSameSourceSpecificBrightness()
+	{
+		NpcSnapConfig config = config(180, 64);
+		BillboardCachePreviewKey ordinary = BillboardCachePreviewKey.create(request(false, false), config, 1, 50, 0);
+		BillboardCachePreviewKey retro = BillboardCachePreviewKey.create(
+			request(false, false, new OwnedModel(model())), config, 1, 50, 0);
+
+		assertEquals(180, ordinary.lightBoost);
+		assertEquals(64, retro.lightBoost);
+	}
+
+	@Test
 	public void cachedBillboardStateIsConsumableAndBoundsAreDefensivelyCopied()
 	{
 		Rectangle sourceBounds = new Rectangle(1, 2, 3, 4);
@@ -100,9 +145,20 @@ public class BillboardCacheModelsTest
 
 	private static NpcSnapConfig config()
 	{
+		return config(180, 64);
+	}
+
+	private static BillboardCacheKey key(BillboardRenderRequest request, NpcSnapConfig config)
+	{
+		return BillboardCacheKey.create(request, config, 1, config.billboardColorBands(), 50, 0, 0);
+	}
+
+	private static NpcSnapConfig config(int lightBoost, int retroBrightness)
+	{
 		return TestProxies.proxy(NpcSnapConfig.class,
 			TestProxies.method("billboardColorBands", 12),
-			TestProxies.method("billboardLightBoostPercent", 180),
+			TestProxies.method("billboardLightBoostPercent", lightBoost),
+			TestProxies.method("retroNpcSwapperBrightness", retroBrightness),
 			TestProxies.method("enableBillboardHighlightOutline", true),
 			TestProxies.method("enableBillboardShadowOutline", false),
 			TestProxies.method("enableBillboardSpriteOutline", true),
@@ -117,11 +173,20 @@ public class BillboardCacheModelsTest
 
 	private static BillboardRenderRequest request(boolean hover, boolean interact)
 	{
-		Model model = TestProxies.proxy(Model.class,
-			TestProxies.method("getVerticesCount", 0),
-			TestProxies.method("getModelHeight", 10));
+		return request(hover, interact, model());
+	}
+
+	private static BillboardRenderRequest request(boolean hover, boolean interact, Model model)
+	{
 		return new BillboardRenderRequest(
 			null, model, null, 0, 0, 10, 20, 30, 40, 50, 60, -1,
 			hover, interact, VerticalAnchor.BOTTOM, null);
+	}
+
+	private static Model model()
+	{
+		return TestProxies.proxy(Model.class,
+			TestProxies.method("getVerticesCount", 0),
+			TestProxies.method("getModelHeight", 10));
 	}
 }
