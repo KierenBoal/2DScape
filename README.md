@@ -34,11 +34,11 @@ If you are doing content that requiers click precision, I'd suggest enabling the
 
 ![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
 
-Get a skilling XP drop and a little retro bubble pops up above your character, just like in RSC. The bubble, icons, and trailing puffs shrink gently with camera zoom, using 1024 as their normal-size reference and retaining about 87% of that size at 512 and 79% at 315.
+Optional skilling bubbles display whenever you gain non-combat XP, it will fade away after a few seconds. You can even stack them together for multi-skilling!
 
 ![Exported sprite frames](md_imgs/retro.jpg)
 
-Get extra retro wih 2005 NPC and object models using [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
+Get extra retro wih classic NPC and object models using [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
 
 ![Exported sprite frames](md_imgs/sprite_export.jpg)
 
