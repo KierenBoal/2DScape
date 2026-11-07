@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
+import com.kierenboal.npcsnap.rendering.BillboardBrightness;
 import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 
@@ -39,7 +40,8 @@ public final class BillboardCachePreviewKey
 		int animatedTextureOffsetStateHash)
 	{
 		return create(request, config, outlinePadding, renderQuality,
-			animatedTextureOffsetStateHash, config.billboardLightBoostPercent());
+			animatedTextureOffsetStateHash,
+			BillboardBrightness.configuredLightBoostPercent(config, request.model));
 	}
 
 	public static BillboardCachePreviewKey create(

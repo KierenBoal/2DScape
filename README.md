@@ -15,7 +15,7 @@ If you are doing content that requiers click precision, I'd suggest enabling the
 - "Rendering config" -> "Improved click accuracy mode": this makes the billboards fit the space the NPC actually takes which makes it look more "flat" but for FAR greater click accuracy
 - "Retro" -> "Use retro HP bar, overhead chat, hitsplats and prayers": This moves the hitsplats to more accurately represent where they actually are on the sprite; if you enable 'Improved click accuracy mode' you don't really need this; but it does add to the asthetic!
 
-![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.png)
+![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.jpg)
 
 - NPCs, Players, Pets and even thralls become Doom-style camera-facing billboards
 - Projectiles and effects are also rendered in 2D
@@ -23,7 +23,7 @@ If you are doing content that requiers click precision, I'd suggest enabling the
 - Even Ground items (stuff on the floor) are rendered in 2D, just at a slightly higher angle for visibility
 - You can also enable world objects being converted to 2D, it's really stupid
 
-![Occlusion, crowds, combat effects, and Sailing](md_imgs/second_set.png)
+![Occlusion, crowds, combat effects, and Sailing](md_imgs/second_set.jpg)
 
 - Custom z-buffer hides sprites behind scenery including transparency composition with transparent geometry like stained glass windows
 - Large crowds render well on average hardware, there are config options to reduce how much occlusion culling and how much billboards can update per frame, so you can configure this for a toaster if performance is ever an issue
@@ -32,11 +32,15 @@ If you are doing content that requiers click precision, I'd suggest enabling the
 - Sailing partially works; boat hulls still use the normal renderer. Crew sprites and effects follow their parent boat's overlap visibility and Entity Hider's boat settings.
 - NPC sprites extending below their tile surface are clipped there, so submerged NPCs stay under the water without shifting their sprites.
 
-![Retro skilling bubbles](md_imgs/skilling_bubbles.png)
+![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
 
 Get a skilling XP drop and a little retro bubble pops up above your character, just like in RSC. The bubble, icons, and trailing puffs shrink gently with camera zoom, using 1024 as their normal-size reference and retaining about 87% of that size at 512 and 79% at 315.
 
-![Exported sprite frames](md_imgs/sprite_export.png)
+![Exported sprite frames](md_imgs/retro.jpg)
+
+Get extra retro wih 2005 NPC and object models using [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
+
+![Exported sprite frames](md_imgs/sprite_export.jpg)
 
 Want to make a sprite sheet? Turn on **Enable shift right-click export PNG** in the config, then Shift-right-click a player, NPC, pet, or world object and choose **Export sprite**. World objects can be exported even with their billboard setting disabled. Shift-right-click your equipment tab to export yourself. The plugin saves the angles and animation frames as transparent PNGs, ready to put into a 2D sprite sheet for a game lol that'd be so sick if someone used it to make the art for a game.
 

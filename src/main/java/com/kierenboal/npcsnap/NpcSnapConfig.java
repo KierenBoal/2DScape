@@ -394,6 +394,13 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
+	@Range(min = 0, max = 512)
+	@ConfigItem(keyName = "retroNpcSwapperBrightness", name = "RetroNPC Swapper brightness", description = "Set the brightness for sprites made from RetroNPC Swapper models. 100% keeps normal brightness, independently of Light boost.", section = retroSection, position = 14)
+	default int retroNpcSwapperBrightness()
+	{
+		return 64;
+	}
+
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
 	{

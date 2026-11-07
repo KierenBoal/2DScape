@@ -17,7 +17,8 @@ final class NpcSnapChangelog
 		new Release("1.0.3", "Improved click accuracy mode in Rendering config (less RSC, better accuracy though); Retro hitsplats now respect damage types and max hits."),
 		new Release("1.0.4", "Land/boat/animation occlusion fixes; Skilling XP bubble improvements; Unified frame rates across players/projectiles/objects/etc; Improved transparency blending"),
 		new Release("1.0.5", "Reduced changelog spam; Roof and hidden static scenery now occlude correctly; Camera clipping occlusion depth now match real rendering"),
-		new Release("1.1.0", "Added support for RetroNPC Swapper!"));
+		new Release("1.1.0", "Backend RetroNPC Swapper support (pending compatibility)"),
+		new Release("1.1.1", "More RetroNPC Swapper support (pending compatibility)"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
