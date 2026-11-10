@@ -181,6 +181,7 @@ class NpcBillboardOverlay extends Overlay
 	private int lastEffectiveLightBoostPercent = Integer.MIN_VALUE;
 	private int lastEffectiveRetroNpcSwapperBrightness = Integer.MIN_VALUE;
 	private final BillboardRenderRequestFactory requestFactory;
+	private final BillboardSceneVisibility sceneVisibility;
 	private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility modelCompatibility;
 
 	@Inject
@@ -188,8 +189,6 @@ class NpcBillboardOverlay extends Overlay
 	{
 		requestFactory.compatibility = compatibility;
         modelCompatibility = compatibility;
-        compatibility.hide = object -> active && config.enable2dBillboardSprites() && config.applyToObjects()
-            && shouldHideTileObject(object);
         worldOcclusionCollector.compatibility = compatibility;
 	}
 	private final BillboardTargetEligibility targetEligibility;
@@ -209,6 +208,7 @@ class NpcBillboardOverlay extends Overlay
 	NpcBillboardOverlay(Client client, ItemManager itemManager, NpcSnapConfig config, NpcSnapDebug debug, BillboardSceneVisibility sceneVisibility, BillboardWorldViewVisibility worldViewVisibility)
 	{
 		this.client = client;
+		this.sceneVisibility = sceneVisibility;
 		this.worldViewVisibility = worldViewVisibility;
 		this.itemManager = itemManager;
 		this.config = config;
@@ -292,7 +292,13 @@ class NpcBillboardOverlay extends Overlay
 					drawableScenery.add(draw.occlusionIgnoredTileObject);
 				}
 			}
-			if (modelCompatibility != null) drawableScenery.removeIf(modelCompatibility::replaces);
+			if (modelCompatibility != null)
+			{
+				drawableScenery.removeIf(modelCompatibility::replaces);
+				// Warm the sprite cache while the original stand-ins are still drawing.
+				preparedDraws.removeIf(draw -> modelCompatibility.isStandIn(draw.request.renderable)
+					&& !modelCompatibility.suppressesStandIns(draw.occlusionIgnoredTileObject));
+			}
             staticScenery.update(drawableScenery, client.getDrawCallbacks());
 			preparedDraws.removeIf(draw -> staticScenery.manages(draw.occlusionIgnoredTileObject)
 				&& !staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
@@ -427,10 +433,12 @@ class NpcBillboardOverlay extends Overlay
 	}
 
 	void invalidateModelCompatibility()
-    {
-        clearBillboardCache();
-        worldOcclusionCollector.clear();
-    }
+	{
+		clearBillboardCache();
+		clearActiveSnapshots();
+		activeBillboardsGameCycle = Integer.MIN_VALUE;
+		worldOcclusionCollector.clear();
+	}
 
 	void clearBillboardCache()
 	{
@@ -553,6 +561,10 @@ class NpcBillboardOverlay extends Overlay
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Prepare frame"))
 		{
 			ensureActiveBillboardsCurrent(worldView);
+			if (modelCompatibility != null && config.applyToObjects())
+			{
+				modelCompatibility.publishSuppression(visibility.activeTileObjects, billboardCache::contains);
+			}
 		}
 	}
 
@@ -936,7 +948,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void observeTileObject(TileObject tileObject)
 	{
-		ObservedTileObject observed = buildObservedTileObject(tileObject);
+		ObservedTileObject observed = ObservedTileObjectBuilder.build(tileObject);
 		if (observed != null)
 		{
 			synchronized (observedTileObjectsLock)
@@ -2228,7 +2240,10 @@ class NpcBillboardOverlay extends Overlay
 			if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 			{
 				staticScenery.addCandidates(visibleTileObjects);
-                if (modelCompatibility != null) modelCompatibility.candidates(worldView.getScene(), visibleTileObjects);
+				if (modelCompatibility != null)
+				{
+					modelCompatibility.addCandidates(visibleTileObjects, sceneVisibility::isObjectVisible);
+				}
 			}
 			for (Map.Entry<TileObject, ObservedTileObject> entry : visibleTileObjects.entrySet())
             {

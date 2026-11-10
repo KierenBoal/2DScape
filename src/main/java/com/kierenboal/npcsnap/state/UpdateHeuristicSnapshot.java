@@ -4,6 +4,7 @@ import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 
 import com.kierenboal.npcsnap.rendering.BillboardModelBounds;
+import com.kierenboal.npcsnap.rendering.OwnedModel;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.TileItem;
@@ -164,7 +165,7 @@ public final class UpdateHeuristicSnapshot
 			hash = 31 * hash + textures[textures.length / 2];
 			hash = 31 * hash + textures[textures.length - 1];
 		}
-		return hash;
+		return (hash << 1) | (model instanceof OwnedModel ? 1 : 0);
 	}
 
 	private static int sample(int hash, int[] values)

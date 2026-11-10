@@ -76,6 +76,17 @@ public class BillboardCacheModelsTest
 	}
 
 	@Test
+	public void changingModelSourceChangesCaptureAppearanceWithIdenticalGeometry()
+	{
+		Model vanilla = model();
+		UpdateHeuristicSnapshot ordinary = UpdateHeuristicSnapshot.forCapture(
+			request(false, false, vanilla), 0, 0, 0, true, false);
+		UpdateHeuristicSnapshot retro = UpdateHeuristicSnapshot.forCapture(
+			request(false, false, new OwnedModel(vanilla)), 0, 0, 0, true, false);
+		assertNotEquals(ordinary.appearanceHash, retro.appearanceHash);
+	}
+
+	@Test
 	public void brightnessSettingsInvalidateOnlyTheirModelSource()
 	{
 		NpcSnapConfig baseline = config(180, 64);

@@ -154,7 +154,6 @@ public class NpcSnapPlugin extends Plugin
 		rendererAvailabilityWarning.reset();
 		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
 		active = true;
-        modelCompatibility.visible = sceneVisibility::isObjectVisible;
 		changelog.requestCheck();
 		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
 			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
@@ -260,10 +259,12 @@ public class NpcSnapPlugin extends Plugin
 
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
+			modelCompatibility.beginFrame(null);
 			return;
 		}
 
 		WorldView worldView = client.getTopLevelWorldView();
+		modelCompatibility.beginFrame(worldView == null ? null : worldView.getScene());
 		billboardOverlay.prepareStaticScenery(gpuPlugin != null && pluginManager.isPluginActive(gpuPlugin), worldView);
 		ensureGroundItemsSeeded(worldView);
 		if (worldView == null)
@@ -361,6 +362,7 @@ public class NpcSnapPlugin extends Plugin
 		}
 		else
 		{
+			modelCompatibility.resetScene(null);
 			changelogLoginTicksRemaining = 0;
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = false;
