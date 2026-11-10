@@ -8,7 +8,11 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.client.events.PluginMessage;
 
-/** Optional, classloader-independent model bridge. All provider calls are client-thread only. */
+/**
+ * Optional, classloader-independent model bridge. The providers and the maps here are client-thread
+ * only; the GPU plugin's render threads reach this through drawObject and are answered from
+ * {@link #published} instead.
+ */
 @Singleton
 @Slf4j
 public final class RetroModelCompatibility
@@ -21,6 +25,9 @@ public final class RetroModelCompatibility
     private final Map<RuneLiteObjectController, TileObject> owners = new IdentityHashMap<>();
     public java.util.function.Predicate<TileObject> visible = object -> true;
     public java.util.function.Predicate<TileObject> hide = object -> false;
+    public volatile java.util.function.BooleanSupplier clientThread = () -> true;
+    /** The last client-thread scan, never mutated once assigned, for callers on other threads. */
+    private volatile Map<TileObject, com.kierenboal.npcsnap.targeting.ObservedTileObject> published = Collections.emptyMap();
     private Function<NPC, Model> npcModel;
     private Function<TileObject, List<RuneLiteObjectController>> sceneryStandIns;
     private Function<RuneLiteObjectController, Model> sceneryModel;
@@ -43,11 +50,11 @@ public final class RetroModelCompatibility
             ? (Function<TileObject, List<RuneLiteObjectController>>) data.get("sceneryStandIns") : null;
         sceneryModel = data.get("sceneryModel") instanceof Function
             ? (Function<RuneLiteObjectController, Model>) data.get("sceneryModel") : null;
-        renderables.clear(); owners.clear(); dirty = true;
+        renderables.clear(); owners.clear(); dirty = true; published = Collections.emptyMap();
         return true;
     }
 
-    public void clear() { scene = null; known.clear(); replaced.clear(); dirty = true; renderables.clear(); owners.clear(); npcModel = null; sceneryStandIns = null; sceneryModel = null; }
+    public void clear() { scene = null; known.clear(); replaced.clear(); dirty = true; renderables.clear(); owners.clear(); published = Collections.emptyMap(); npcModel = null; sceneryStandIns = null; sceneryModel = null; }
 
     public void track(TileObject object) { if (object != null) { known.add(object); dirty = true; } }
     public void untrack(TileObject object)
@@ -55,6 +62,12 @@ public final class RetroModelCompatibility
         known.remove(object); replaced.remove(object);
         owners.entrySet().removeIf(entry -> entry.getValue() == object);
         renderables.keySet().retainAll(owners.keySet());
+        if (published.containsKey(object))
+        {
+            Map<TileObject, com.kierenboal.npcsnap.targeting.ObservedTileObject> next = new IdentityHashMap<>(published);
+            next.remove(object);
+            published = next;
+        }
     }
     public void candidates(Scene next, Map<TileObject, com.kierenboal.npcsnap.targeting.ObservedTileObject> into)
     {
@@ -75,17 +88,21 @@ public final class RetroModelCompatibility
             for (TileObject object : known) if (!standIns(object).isEmpty()) replaced.add(object);
             dirty = false;
         }
+        Map<TileObject, com.kierenboal.npcsnap.targeting.ObservedTileObject> scan = new IdentityHashMap<>();
         for (TileObject object : replaced)
         {
             com.kierenboal.npcsnap.targeting.ObservedTileObject observed = observed(object);
+            if (observed != null) scan.put(object, observed);
             if (observed != null && visible.test(object)) into.put(object, observed);
             else into.remove(object);
         }
+        published = scan;
     }
 
     /** Retains original object identity while replacing its visual parts. */
     public com.kierenboal.npcsnap.targeting.ObservedTileObject observed(TileObject object)
     {
+        if (!clientThread.getAsBoolean()) return published.get(object);
         List<RuneLiteObjectController> controllers = standIns(object);
         if (controllers == null || controllers.isEmpty()) return null;
         List<com.kierenboal.npcsnap.targeting.ObjectRenderablePart> parts = new ArrayList<>();
@@ -113,7 +130,7 @@ public final class RetroModelCompatibility
     {
         if (object == null || object.getRenderable() instanceof Actor
             || object.getRenderable() instanceof ActorSpotAnim || object.getRenderable() instanceof Projectile
-            || object.getRenderable() instanceof TileItem) return false;
+            || object.getRenderable() instanceof TileItem || !clientThread.getAsBoolean()) return false;
         for (Map.Entry<RuneLiteObjectController, TileObject> entry : owners.entrySet())
         {
             RuneLiteObjectController controller = entry.getKey();
@@ -134,17 +151,21 @@ public final class RetroModelCompatibility
         private final Model initial;
         StandInRenderable(RuneLiteObjectController controller, Model initial)
         { this.controller = controller; this.initial = initial; }
-        public Model getModel() { return model(controller); }
+        public Model getModel() { return clientThread.getAsBoolean() ? model(controller) : initial; }
     }
     private interface LiveModel { Model getModel(); }
 
-    public boolean replaces(TileObject object) { return object != null && !standIns(object).isEmpty(); }
+    public boolean replaces(TileObject object)
+    {
+        if (!clientThread.getAsBoolean()) return published.containsKey(object);
+        return object != null && !standIns(object).isEmpty();
+    }
 
     public boolean isStandIn(Renderable renderable) { return renderable instanceof StandInRenderable; }
 
     public Model model(Actor actor)
     {
-        if (actor instanceof NPC && npcModel != null)
+        if (actor instanceof NPC && npcModel != null && clientThread.getAsBoolean())
         {
             try
             {
@@ -158,12 +179,14 @@ public final class RetroModelCompatibility
 
     public List<RuneLiteObjectController> standIns(TileObject object)
     {
+        if (!clientThread.getAsBoolean()) return Collections.emptyList();
         try { return sceneryStandIns == null ? Collections.emptyList() : sceneryStandIns.apply(object); }
         catch (RuntimeException ex) { log.debug("Retro scenery unavailable", ex); return Collections.emptyList(); }
     }
 
     public Model model(RuneLiteObjectController controller)
     {
+        if (!clientThread.getAsBoolean()) return null;
         try
         {
             Model model = sceneryModel == null ? null : sceneryModel.apply(controller);

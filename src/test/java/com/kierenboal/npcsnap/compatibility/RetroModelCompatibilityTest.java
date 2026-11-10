@@ -106,4 +106,51 @@ public class RetroModelCompatibilityTest
         assertFalse(compat.hidden(scene, placement, carrier));
     }
 
+    @Test public void renderThreadsReadThePublishedScanAndNeverCallProviders()
+    {
+        Model carrier = proxy(Model.class);
+        RuneLiteObjectController controller = new RuneLiteObjectController() { public Model getModel() { return carrier; } };
+        controller.setX(128); controller.setY(256); controller.setWorldView(0);
+        TileObject original = proxy(TileObject.class);
+        NPC npc = proxy(NPC.class, method("getModel", carrier));
+        boolean[] onClientThread = {true};
+        int[] calls = {0};
+        RetroModelCompatibility compat = new RetroModelCompatibility();
+        compat.clientThread = () -> onClientThread[0];
+        compat.hide = object -> true;
+        compat.accept(state(Map.of(
+            "npcModel", (Function<NPC, Model>) actor -> { calls[0]++; return carrier; },
+            "sceneryStandIns", (Function<TileObject, List<RuneLiteObjectController>>) object -> { calls[0]++; return List.of(controller); },
+            "sceneryModel", (Function<RuneLiteObjectController, Model>) item -> { calls[0]++; return carrier; })));
+        Scene scene = proxy(Scene.class, method("getWorldViewId", 0));
+        Renderable renderable = proxy(Renderable.class, method("getModel", carrier));
+        GameObject placement = proxy(GameObject.class, method("getX", 128), method("getY", 256), method("getRenderable", renderable));
+
+        // Nothing is published until the client thread has scanned
+        onClientThread[0] = false;
+        assertNull(compat.observed(original)); assertFalse(compat.replaces(original));
+        assertTrue(compat.standIns(original).isEmpty()); assertNull(compat.model(controller));
+        assertSame(carrier, compat.model(npc)); assertFalse(compat.hidden(scene, placement, carrier));
+        assertEquals(0, calls[0]);
+
+        onClientThread[0] = true;
+        Map<TileObject, com.kierenboal.npcsnap.targeting.ObservedTileObject> visible = new IdentityHashMap<>();
+        compat.candidates(scene, visible); compat.track(original); compat.candidates(scene, visible);
+        var scanned = visible.get(original);
+        assertNotNull(scanned); assertTrue(compat.hidden(scene, placement, carrier));
+
+        onClientThread[0] = false;
+        int before = calls[0];
+        assertSame(scanned, compat.observed(original)); assertTrue(compat.replaces(original));
+        assertNotNull(scanned.parts.get(0).renderable.getModel());
+        assertFalse(compat.hidden(scene, placement, carrier));
+        assertEquals(before, calls[0]);
+
+        onClientThread[0] = true;
+        compat.untrack(original);
+        onClientThread[0] = false;
+        assertNull(compat.observed(original)); assertFalse(compat.replaces(original));
+        assertEquals(before, calls[0]);
+    }
+
 }

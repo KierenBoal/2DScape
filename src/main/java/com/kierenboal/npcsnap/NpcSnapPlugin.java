@@ -155,6 +155,7 @@ public class NpcSnapPlugin extends Plugin
 		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
 		active = true;
         modelCompatibility.visible = sceneVisibility::isObjectVisible;
+        modelCompatibility.clientThread = client::isClientThread;
 		changelog.requestCheck();
 		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
 			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
