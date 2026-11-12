@@ -106,6 +106,26 @@ public class NpcSnapDebugTest
 	}
 
 	@Test
+	public void metricsContextAddsSceneryStagesOnlyWhenTheyWerePublished()
+	{
+		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), new NpcSnapConfig() {});
+		java.util.Map<String, Long> counters = new java.util.HashMap<>();
+		counters.put("Scenery GPU", 1L);
+		counters.put("Scenery tracked", 1_500L);
+		counters.put("Scenery seen models", 1_500L);
+		counters.put("Scenery seen baked", 40L);
+		counters.put("Scenery eligible", 300L);
+		counters.put("Scenery active", 90L);
+		counters.put("Scenery drawable", 90L);
+		counters.put("Scenery hidden", 12L);
+		java.util.List<String> context = debug.performanceContext(counters);
+		assertEquals(6, context.size());
+		assertEquals("Scenery (GPU: 1, Tracked: 1.5k, Model/Baked/Other: 1.5k/40/0, Eligible: 300, Active: 90)", context.get(4));
+		assertEquals("Scenery swap (Requests: 0, Plans: 0, Cached: 0, Drawable: 90, Zones: 0, Hide/Show/Untracked: 12/0/0, Replaced: 0)",
+			context.get(5));
+	}
+
+	@Test
 	public void metricsCapacityUsesBothViewportMarginsAndResizesBeyondTwentyRows()
 	{
 		assertEquals(34, NpcSnapDebug.performanceRowCapacity(600, 15, 3));

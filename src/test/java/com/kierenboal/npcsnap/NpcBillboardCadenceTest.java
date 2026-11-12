@@ -277,6 +277,7 @@ public class NpcBillboardCadenceTest
 				@Override public boolean applyToNpcs() { return type == BillboardTargetType.NPC; }
 				@Override public boolean applyToPlayers() { return type == BillboardTargetType.PLAYER; }
 				@Override public boolean applyToObjects() { return type == BillboardTargetType.TILE_OBJECT; }
+				@Override public boolean worldObjectOther() { return true; }
 				@Override public boolean applyToGroundItems() { return type == BillboardTargetType.GROUND_ITEM; }
 				@Override public boolean applyToProjectiles() { return type == BillboardTargetType.PROJECTILE; }
 				@Override public boolean applyToGraphicsObjects() { return type == BillboardTargetType.GRAPHICS_OBJECT || type == BillboardTargetType.ACTOR_SPOT_ANIM; }

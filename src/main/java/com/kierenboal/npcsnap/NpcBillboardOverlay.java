@@ -107,6 +107,8 @@ import net.runelite.api.GameState;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.Model;
 import net.runelite.api.GameObject;
+import com.kierenboal.npcsnap.targeting.SceneryCategories;
+import com.kierenboal.npcsnap.targeting.SceneryCategory;
 import com.kierenboal.npcsnap.targeting.StaticScenerySprites;
 import net.runelite.api.NPC;
 import net.runelite.api.Perspective;
@@ -157,7 +159,11 @@ class NpcBillboardOverlay extends Overlay
 	private final FrameRenderableTracker<Renderable> sceneRenderables = new FrameRenderableTracker<>();
 	private final FrameRenderableTracker<TileObject> suppressedTileObjects = new FrameRenderableTracker<>();
 	private final StaticScenerySprites staticScenery = new StaticScenerySprites();
+	private final SceneryCategories sceneryCategories;
 	private volatile boolean gpuScenery;
+	// Per-frame tallies for the debug panel's scenery lines.
+	private int sceneryRequests;
+	private int sceneryCached;
 	private final BillboardUpdateQueue updateQueue = new BillboardUpdateQueue();
 	private final BillboardClassificationDebug classificationDebug;
 	private final Map<BillboardTargetKey, BillboardUpdateState> billboardUpdateStates = new HashMap<>();
@@ -214,6 +220,7 @@ class NpcBillboardOverlay extends Overlay
 		this.config = config;
 		this.debug = debug;
 		this.depthCalculator = new BillboardDepthCalculator(client);
+		this.sceneryCategories = new SceneryCategories(client);
 		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, performanceMetrics, log, sceneVisibility);
 		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
 		this.requestFactory = new BillboardRenderRequestFactory(
@@ -280,6 +287,8 @@ class NpcBillboardOverlay extends Overlay
 				visibleTargets = sortTargetsForRender(visibleTargets);
 			}
 			List<PreparedBillboardDraw> preparedDraws = new ArrayList<>(visibleTargets.size());
+			sceneryRequests = 0;
+			sceneryCached = 0;
 			for (int i = 0; i < visibleTargets.size(); i++)
 			{
 				renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
@@ -291,6 +300,14 @@ class NpcBillboardOverlay extends Overlay
 				{
 					drawableScenery.add(draw.occlusionIgnoredTileObject);
 				}
+			}
+			if (performanceMetrics.isEnabled())
+			{
+				performanceMetrics.count("Scenery requests", sceneryRequests);
+				performanceMetrics.count("Scenery plans", visibleTargets.stream().filter(target -> target.tileObject != null
+					&& frameUpdatePlans.containsKey(target.targetKey)).count());
+				performanceMetrics.count("Scenery cached", sceneryCached);
+				performanceMetrics.count("Scenery drawable", drawableScenery.size());
 			}
 			if (modelCompatibility != null)
 			{
@@ -415,8 +432,15 @@ class NpcBillboardOverlay extends Overlay
 		compositeResizes.clear();
 	}
 
+	/** A varbit changed, so farming patches and similar objects may show a new form. */
+	void invalidateSceneryTransforms()
+	{
+		sceneryCategories.invalidateTransforms();
+	}
+
 	void clearTileObjects()
 	{
+		sceneryCategories.clear();
 		synchronized (observedTileObjectsLock)
 		{
 			clearObservedTileObjectBillboards(observedTileObjects.values());
@@ -561,7 +585,7 @@ class NpcBillboardOverlay extends Overlay
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Prepare frame"))
 		{
 			ensureActiveBillboardsCurrent(worldView);
-			if (modelCompatibility != null && config.applyToObjects())
+			if (modelCompatibility != null && ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 			{
 				modelCompatibility.publishSuppression(visibility.activeTileObjects, billboardCache::contains);
 			}
@@ -572,9 +596,24 @@ class NpcBillboardOverlay extends Overlay
 	{
 		gpuScenery = gpu;
 		staticScenery.useScene(gpu && view != null ? view.getScene() : null);
-		if (!config.enable2dBillboardSprites() || !config.applyToObjects())
+		if (!config.enable2dBillboardSprites() || !ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 		{
 			staticScenery.update(Collections.emptySet(), client.getDrawCallbacks());
+			return;
+		}
+		if (performanceMetrics.isEnabled())
+		{
+			StaticScenerySprites.Diagnostics scenery = staticScenery.diagnostics();
+			performanceMetrics.count("Scenery GPU", gpu ? 1 : 0);
+			performanceMetrics.count("Scenery tracked", scenery.tracked);
+			performanceMetrics.count("Scenery seen models", scenery.seenModels);
+			performanceMetrics.count("Scenery seen baked", scenery.seenBakedDynamics);
+			performanceMetrics.count("Scenery seen other", scenery.seenOthers);
+			performanceMetrics.count("Scenery zones", scenery.zonesInvalidated);
+			performanceMetrics.count("Scenery hidden", scenery.drawHidden);
+			performanceMetrics.count("Scenery shown", scenery.drawShown);
+			performanceMetrics.count("Scenery untracked", scenery.drawUntracked);
+			performanceMetrics.count("Scenery replaced", scenery.replaced);
 		}
 	}
 
@@ -1206,8 +1245,10 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
+			sceneryRequests++;
 			int queuePosition = updateQueue.debugPosition(target.targetKey);
 			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), queuePosition);
+			if (billboardCache.contains(part.renderable)) sceneryCached++;
 			if (result == null)
 			{
 				continue;
@@ -1690,8 +1731,14 @@ class NpcBillboardOverlay extends Overlay
 		List<BillboardTarget> candidates = collected.candidates;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Sort/select targets"))
 		{
+			// Score once per candidate; the comparator would otherwise redo it per comparison.
+			Map<BillboardTarget, Integer> priorities = new IdentityHashMap<>();
+			for (BillboardTarget candidate : candidates)
+			{
+				priorities.put(candidate, candidateSelectionPriority(candidate));
+			}
 			candidates.sort(Comparator
-				.comparingInt(this::candidateSelectionPriority).reversed()
+				.<BillboardTarget>comparingInt(priorities::get).reversed()
 				.thenComparingDouble(BillboardTarget::getDepth));
 			int limit = Math.max(1, config.billboardMaxEntities());
 			if (candidates.size() > limit)
@@ -1716,6 +1763,7 @@ class NpcBillboardOverlay extends Overlay
 				addActiveTileObjectBillboardParts(target);
 			}
 		}
+		performanceMetrics.count("Scenery active", visibility.activeTileObjects.size());
 
 		occlusionWorldView = worldView;
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Schedule frame updates"))
@@ -1755,6 +1803,12 @@ class NpcBillboardOverlay extends Overlay
 		if (owner == localPlayer)
 		{
 			score += 900;
+		}
+		// When the render cap bites, keep trees ahead of other scenery.
+		if (target.tileObject != null && target.classifiedType == ClassifiedObjectType.OBJECT
+			&& sceneryCategories.categoryOf(target.tileObject) == SceneryCategory.TREE)
+		{
+			score += 5;
 		}
 
 		return score;
@@ -2237,9 +2291,13 @@ class NpcBillboardOverlay extends Overlay
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config) || ObjectClassifier.isEnabled(ClassifiedObjectType.EFFECT, config))
 		{
+			Set<SceneryCategory> wantedScenery = SceneryCategories.enabled(config);
 			if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 			{
-				staticScenery.addCandidates(visibleTileObjects);
+				// The filter's answers hold until the ticked categories or a transformed object's form change.
+				staticScenery.addCandidates(visibleTileObjects,
+					List.of(wantedScenery, sceneryCategories.transformRevision()),
+					object -> wantedScenery.contains(sceneryCategories.categoryOf(object)));
 				if (modelCompatibility != null)
 				{
 					modelCompatibility.addCandidates(visibleTileObjects, sceneVisibility::isObjectVisible);
@@ -2264,7 +2322,8 @@ class NpcBillboardOverlay extends Overlay
 						candidates.add(BillboardTarget.forTileObject(observed, depthCalculator.depth(observed)));
 					}
 				}
-				else if (classifiedType == ClassifiedObjectType.OBJECT && ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
+				else if (classifiedType == ClassifiedObjectType.OBJECT
+					&& wantedScenery.contains(sceneryCategories.categoryOf(observed.tileObject)))
 				{
 					candidates.add(BillboardTarget.forTileObject(observed, depthCalculator.depth(observed)));
 				}
@@ -2278,6 +2337,8 @@ class NpcBillboardOverlay extends Overlay
 		performanceMetrics.count("Actor targets", actorTargets.size());
 		performanceMetrics.count("Items", candidates.stream().filter(target -> target.type == BillboardTargetType.GROUND_ITEM).count());
 		performanceMetrics.count("Effects", candidates.stream().filter(target -> target.classifiedType == ClassifiedObjectType.EFFECT).count());
+		performanceMetrics.count("Scenery eligible", candidates.stream().filter(target -> target.type == BillboardTargetType.TILE_OBJECT
+			&& target.classifiedType == ClassifiedObjectType.OBJECT).count());
 		}
 		return new CollectedCandidates(candidates, topActorsByTile, actorsByTile);
 	}
@@ -2827,7 +2888,8 @@ class NpcBillboardOverlay extends Overlay
 		if (BillboardUpdateScheduler.usesTileObjectAnimationCadence(target.observedTileObject.parts, true)) return true;
 		for (ObjectRenderablePart part : target.observedTileObject.parts)
 		{
-			Model model = part.renderable != null ? part.renderable.getModel() : null;
+			Model model = part.renderable instanceof Model ? (Model) part.renderable
+				: part.renderable != null ? part.renderable.getModel() : null;
 			if (model != null && model.getFaceTextures() != null) return true;
 		}
 		return false;

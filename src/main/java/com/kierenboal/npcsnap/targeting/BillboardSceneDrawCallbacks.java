@@ -32,11 +32,21 @@ public final class BillboardSceneDrawCallbacks
 
 	private final NpcSnapConfig config;
 	private final OverlayAccess overlay;
+	// Read once per frame: drawObject runs for every object, on the renderer's threads too.
+	private volatile boolean observesTileObjects;
 
 	public BillboardSceneDrawCallbacks(NpcSnapConfig config, OverlayAccess overlay)
 	{
 		this.config = config;
 		this.overlay = overlay;
+		beginFrame();
+	}
+
+	/** Picks up the settings that decide whether drawn objects are worth observing. */
+	public void beginFrame()
+	{
+		observesTileObjects = ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config)
+			|| config.applyToGraphicsObjects();
 	}
 
 	public boolean addEntity(Renderable renderable, boolean drawingUi)
@@ -143,7 +153,7 @@ public final class BillboardSceneDrawCallbacks
 
 	private boolean observeAndShouldHide(TileObject tileObject)
 	{
-		if (!config.applyToObjects() && !config.applyToGraphicsObjects())
+		if (!observesTileObjects)
 		{
 			return false;
 		}

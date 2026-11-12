@@ -82,7 +82,7 @@ public class NpcSnapPlugin extends Plugin
 	private boolean pendingSkillXpSeed;
 	private Scene groundItemScene;
 	private NpcSnapUiTextureManager uiTextureManager;
-	private BillboardSceneDrawCallbacks sceneDrawCallbacks;
+	private volatile BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
 	private volatile boolean active;
@@ -255,6 +255,7 @@ public class NpcSnapPlugin extends Plugin
 		sceneVisibility.beginFrame();
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
+		ensureSceneDrawCallbacks().beginFrame();
 		syncUiTextureQuality();
 
 		if (client.getGameState() != GameState.LOGGED_IN)
@@ -568,6 +569,12 @@ public class NpcSnapPlugin extends Plugin
 	public void onWorldViewUnloaded(net.runelite.api.events.WorldViewUnloaded event)
 	{
 		billboardOverlay.unloadOcclusionWorldView(event.getWorldView());
+	}
+
+	@Subscribe
+	public void onVarbitChanged(net.runelite.api.events.VarbitChanged event)
+	{
+		billboardOverlay.invalidateSceneryTransforms();
 	}
 
 	@Subscribe

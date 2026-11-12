@@ -95,6 +95,7 @@ public class NpcBillboardObjectCadenceTest
 			NpcSnapConfig config = new NpcSnapConfig()
 			{
 				@Override public boolean applyToObjects() { return true; }
+				@Override public boolean worldObjectOther() { return true; }
 				@Override public boolean applyToNpcs() { return false; }
 				@Override public boolean applyToPlayers() { return false; }
 				@Override public boolean applyToGroundItems() { return false; }

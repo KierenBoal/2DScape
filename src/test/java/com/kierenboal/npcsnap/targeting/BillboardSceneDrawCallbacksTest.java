@@ -6,6 +6,7 @@ import com.kierenboal.npcsnap.TestProxies;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.runelite.api.GameObject;
 import net.runelite.api.ItemLayer;
 import net.runelite.api.NPC;
@@ -14,6 +15,7 @@ import net.runelite.api.Scene;
 import net.runelite.api.TileObject;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -150,6 +152,60 @@ public class BillboardSceneDrawCallbacksTest
 
 		assertTrue(callbacks(true, false, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.isEmpty());
+
+		NpcSnapConfig noBoxTicked = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enable2dBillboardSprites", true), TestProxies.method("applyToObjects", true));
+		assertTrue(new BillboardSceneDrawCallbacks(noBoxTicked, overlay).drawObject(object));
+		assertTrue("World objects with no category ticked convert nothing, so nothing is observed",
+			overlay.observed.isEmpty());
+	}
+
+	@Test
+	public void applyToTreesAloneObservesObjects()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		GameObject object = TestProxies.proxy(GameObject.class,
+			TestProxies.method("getRenderable", TestProxies.proxy(Renderable.class)));
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enable2dBillboardSprites", true), TestProxies.method("applyToTrees", true));
+
+		assertTrue(new BillboardSceneDrawCallbacks(config, overlay).drawObject(object));
+		assertTrue(overlay.observed.contains(object));
+	}
+
+	@Test
+	public void objectSettingsAreReadOncePerFrameNotOncePerObject()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		AtomicInteger reads = new AtomicInteger();
+		boolean[] trees = {true};
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enable2dBillboardSprites", true),
+			TestProxies.methodSupplier("applyToTrees", () ->
+			{
+				reads.incrementAndGet();
+				return trees[0];
+			}));
+		BillboardSceneDrawCallbacks callbacks = new BillboardSceneDrawCallbacks(config, overlay);
+		int readsBeforeDrawing = reads.get();
+
+		GameObject first = object();
+		GameObject second = object();
+		callbacks.drawObject(first);
+		callbacks.drawObject(second);
+		assertEquals(Set.of(first, second), overlay.observed);
+		assertEquals("Drawing an object must not re-read the settings", readsBeforeDrawing, reads.get());
+
+		trees[0] = false;
+		callbacks.beginFrame();
+		callbacks.drawObject(object());
+		assertEquals("A changed setting applies from the next frame", Set.of(first, second), overlay.observed);
+	}
+
+	private static GameObject object()
+	{
+		return TestProxies.proxy(GameObject.class,
+			TestProxies.method("getRenderable", TestProxies.proxy(Renderable.class)));
 	}
 
 	private static BillboardSceneDrawCallbacks callbacks(
@@ -158,6 +214,7 @@ public class BillboardSceneDrawCallbacksTest
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
 			TestProxies.method("enable2dBillboardSprites", enabled),
 			TestProxies.method("applyToObjects", objects),
+			TestProxies.method("worldObjectOther", objects),
 			TestProxies.method("applyToGraphicsObjects", graphicsObjects));
 		return new BillboardSceneDrawCallbacks(config, overlay);
 	}
