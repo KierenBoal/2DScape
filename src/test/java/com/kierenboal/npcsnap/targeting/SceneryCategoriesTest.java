@@ -1,9 +1,12 @@
 package com.kierenboal.npcsnap.targeting;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
@@ -128,6 +131,45 @@ public class SceneryCategoriesTest
 	}
 
 	@Test
+	public void objectsAreOnlyHandledWhileSomeCategoryConverts()
+	{
+		List<NpcSnapConfig> settings = new ArrayList<>(List.of(config(false, false, false), config(true, false, false),
+			config(false, true, false), config(true, true, true), config(false, false, true), config(false, true, true)));
+		for (SceneryCategory category : SceneryCategory.values())
+		{
+			NpcSnapConfig only = only(category);
+			assertEquals(EnumSet.of(category), SceneryCategories.enabled(only));
+			settings.add(only);
+		}
+		for (NpcSnapConfig config : settings)
+		{
+			Set<SceneryCategory> enabled = SceneryCategories.enabled(config);
+			assertEquals(enabled.toString(), !enabled.isEmpty(), SceneryCategories.anyEnabled(config));
+			assertEquals(enabled.toString(), !enabled.isEmpty(), ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config));
+		}
+		assertFalse("World objects with no box ticked convert nothing",
+			ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config(false, true, false)));
+	}
+
+	@Test
+	public void transformRevisionMovesOnlyWhenAKnownFormMayHaveChanged()
+	{
+		Map<Integer, ObjectComposition> definitions = patch(new ObjectComposition[] {form(10, "Weeds", new AtomicInteger())});
+		definitions.put(ObjectID.TREE, composition("Tree", "Chop down"));
+		SceneryCategories categories = new SceneryCategories(client(definitions, new AtomicInteger()));
+		int start = categories.transformRevision();
+
+		categories.categoryOf(object(ObjectID.TREE));
+		categories.invalidateTransforms();
+		assertEquals("Plain objects never change form", start, categories.transformRevision());
+
+		categories.categoryOf(object(1));
+		assertEquals(start, categories.transformRevision());
+		categories.invalidateTransforms();
+		assertNotEquals(start, categories.transformRevision());
+	}
+
+	@Test
 	public void plainObjectsAreLookedUpOncePerId()
 	{
 		AtomicInteger lookups = new AtomicInteger();
@@ -148,15 +190,11 @@ public class SceneryCategoriesTest
 	@Test
 	public void transformedObjectsFollowTheirCurrentForm()
 	{
-		ObjectComposition[] current = {composition("Weeds", "Rake")};
-		ObjectComposition patch = proxy(ObjectComposition.class, method("getName", "null"),
-			method("getImpostorIds", new int[] {10, 11}), methodSupplier("getImpostor", () -> current[0]));
-		Map<Integer, ObjectComposition> definitions = new HashMap<>();
-		definitions.put(1, patch);
-		SceneryCategories categories = new SceneryCategories(client(definitions, new AtomicInteger()));
+		ObjectComposition[] current = {form(10, "Weeds", new AtomicInteger(), "Rake")};
+		SceneryCategories categories = new SceneryCategories(client(patch(current), new AtomicInteger()));
 
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
-		current[0] = composition("Oak", "Chop down");
+		current[0] = form(11, "Oak", new AtomicInteger(), "Chop down");
 		assertEquals("A transform is only re-read after it is invalidated",
 			SceneryCategory.OTHER, categories.categoryOf(object(1)));
 		categories.invalidateTransforms();
@@ -166,6 +204,46 @@ public class SceneryCategoriesTest
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
 	}
 
+	@Test
+	public void eachFormIsClassifiedOnlyOnceHoweverOftenItReturns()
+	{
+		AtomicInteger nameReads = new AtomicInteger();
+		ObjectComposition weeds = form(10, "Weeds", nameReads, "Rake");
+		ObjectComposition oak = form(11, "Oak", nameReads, "Chop down");
+		ObjectComposition[] current = {weeds};
+		SceneryCategories categories = new SceneryCategories(client(patch(current), new AtomicInteger()));
+
+		for (int growth = 0; growth < 3; growth++)
+		{
+			current[0] = weeds;
+			categories.invalidateTransforms();
+			assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
+			current[0] = oak;
+			categories.invalidateTransforms();
+			assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
+		}
+		assertEquals("A varbit change must not re-read a form already classified", 2, nameReads.get());
+	}
+
+	/** Object 1 is a patch showing whichever form the holder currently names. */
+	private static Map<Integer, ObjectComposition> patch(ObjectComposition[] current)
+	{
+		Map<Integer, ObjectComposition> definitions = new HashMap<>();
+		definitions.put(1, proxy(ObjectComposition.class, method("getName", "null"),
+			method("getImpostorIds", new int[] {10, 11}), methodSupplier("getImpostor", () -> current[0])));
+		return definitions;
+	}
+
+	private static ObjectComposition form(int id, String name, AtomicInteger nameReads, String... actions)
+	{
+		return proxy(ObjectComposition.class, method("getId", id), method("getActions", actions),
+			methodSupplier("getName", () ->
+			{
+				nameReads.incrementAndGet();
+				return name;
+			}));
+	}
+
 	private static NpcSnapConfig config(boolean trees, boolean objects, boolean other)
 	{
 		return new NpcSnapConfig()
@@ -173,6 +251,20 @@ public class SceneryCategoriesTest
 			@Override public boolean applyToTrees() { return trees; }
 			@Override public boolean applyToObjects() { return objects; }
 			@Override public boolean worldObjectOther() { return other; }
+		};
+	}
+
+	private static NpcSnapConfig only(SceneryCategory category)
+	{
+		return new NpcSnapConfig()
+		{
+			@Override public boolean applyToTrees() { return category == SceneryCategory.TREE; }
+			@Override public boolean applyToObjects() { return category != SceneryCategory.TREE; }
+			@Override public boolean worldObjectRocks() { return category == SceneryCategory.ROCK; }
+			@Override public boolean worldObjectPlants() { return category == SceneryCategory.PLANT; }
+			@Override public boolean worldObjectFires() { return category == SceneryCategory.FIRE; }
+			@Override public boolean worldObjectLogs() { return category == SceneryCategory.LOG; }
+			@Override public boolean worldObjectOther() { return category == SceneryCategory.OTHER; }
 		};
 	}
 

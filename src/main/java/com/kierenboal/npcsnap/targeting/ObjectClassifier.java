@@ -182,7 +182,7 @@ public final class ObjectClassifier
 				return config.applyToGroundItems();
 			case OBJECT:
 				// Which objects convert is narrowed per object by SceneryCategories.
-				return config.applyToObjects() || config.applyToTrees();
+				return SceneryCategories.anyEnabled(config);
 			default:
 				return false;
 		}

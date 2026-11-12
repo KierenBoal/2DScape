@@ -35,7 +35,9 @@ public class NpcBillboardStaticSceneryTest
 	private static final int SCENE_X = 4;
 	private static final int SCENE_Y = 8;
 	private static final ObjectComposition OAK = proxy(ObjectComposition.class, method("getName", "Oak tree"),
-		method("getActions", new String[] {"Chop down"}));
+		method("getId", 11), method("getActions", new String[] {"Chop down"}));
+	private static final ObjectComposition WEEDS = proxy(ObjectComposition.class, method("getName", "Weeds"),
+		method("getId", 10), method("getActions", new String[] {"Rake"}));
 	private static final ObjectComposition ROCKS = proxy(ObjectComposition.class, method("getName", "Rocks"),
 		method("getActions", new String[] {"Mine"}));
 	private static final ObjectComposition CRATE = proxy(ObjectComposition.class, method("getName", "Crate"),
@@ -101,6 +103,20 @@ public class NpcBillboardStaticSceneryTest
 		assertTrue(new Fixture(CRATE, false, true, true).swaps());
 		assertFalse("Trees have their own setting", new Fixture(OAK, false, true, true).swaps());
 		assertFalse("Nothing converts with both settings off", new Fixture(ROCKS, false, false, true).swaps());
+	}
+
+	@Test
+	public void aPatchThatGrowsIntoATreeConvertsOnceItsVarbitChanges()
+	{
+		ObjectComposition[] form = {WEEDS};
+		ObjectComposition patch = proxy(ObjectComposition.class, method("getName", "null"),
+			method("getImpostorIds", new int[] {10, 11}), methodSupplier("getImpostor", () -> form[0]));
+		Fixture fixture = new Fixture(patch, true, false, false);
+		assertFalse("Weeds are not a tree", fixture.swaps());
+
+		form[0] = OAK;
+		fixture.overlay.invalidateSceneryTransforms();
+		assertTrue("The grown tree must convert without the patch respawning", fixture.swapsFrom(20));
 	}
 
 	private static final class Fixture
@@ -183,12 +199,18 @@ public class NpcBillboardStaticSceneryTest
 		/** Runs frames until the sprite replaces the model, or gives up. */
 		private boolean swaps()
 		{
+			return swapsFrom(0);
+		}
+
+		private boolean swapsFrom(int firstCycle)
+		{
 			overlay.prepareStaticScenery(true, view);
-			for (int gameCycle = 0; gameCycle < 4 && rebuilds.isEmpty(); gameCycle++)
+			for (int gameCycle = firstCycle; gameCycle < firstCycle + 4 && rebuilds.isEmpty(); gameCycle++)
 			{
 				frame(gameCycle);
 			}
-			return !rebuilds.isEmpty() && Boolean.FALSE.equals(overlay.drawStaticScenery(scene, object)) && frame(10);
+			return !rebuilds.isEmpty() && Boolean.FALSE.equals(overlay.drawStaticScenery(scene, object))
+				&& frame(firstCycle + 10);
 		}
 
 		/** Runs one frame the way the plugin does and reports whether anything was painted. */

@@ -28,6 +28,12 @@ public final class StaticScenerySprites
 	private final Set<TileObject> uploadedAsSprite = Collections.newSetFromMap(new IdentityHashMap<>());
 	private Set<TileObject> desired = Collections.emptySet();
 	private Scene scene;
+	// Moves whenever a placement is added or removed.
+	private int revision;
+	// The placements the candidate filter last accepted, and what that answer was based on.
+	private List<Map.Entry<TileObject, ObservedTileObject>> wanted = Collections.emptyList();
+	private int wantedRevision = -1;
+	private Object wantedFilterState;
 	// Totals since the current scene was seeded, read by the debug panel.
 	private int seenModels;
 	private int seenBakedDynamics;
@@ -45,6 +51,10 @@ public final class StaticScenerySprites
 		}
 		scene = current;
 		objects.clear();
+		revision++;
+		// Dropped now, not at the next filter run, so an unused scene is not kept alive.
+		wanted = Collections.emptyList();
+		wantedFilterState = null;
 		uploadedAsSprite.clear();
 		desired = Collections.emptySet();
 		seenModels = seenBakedDynamics = seenOthers = 0;
@@ -101,27 +111,62 @@ public final class StaticScenerySprites
 			if (observed != null)
 			{
 				objects.put(object, observed);
+				revision++;
 			}
 		}
 	}
 
 	public synchronized void remove(GameObject object)
 	{
-		objects.remove(object);
+		if (objects.remove(object) != null)
+		{
+			revision++;
+		}
 		uploadedAsSprite.remove(object);
 	}
 
-	public void addCandidates(Map<TileObject, ObservedTileObject> candidates, Predicate<TileObject> wanted)
+	/**
+	 * Adds the tracked placements the filter accepts. Static scenery rarely changes, so the
+	 * filter only runs again once a placement is added or removed or filterState stops being
+	 * equal to the one last passed; the caller must change it whenever the filter's answers may.
+	 */
+	public void addCandidates(Map<TileObject, ObservedTileObject> candidates, Object filterState,
+		Predicate<TileObject> filter)
 	{
-		List<Map.Entry<TileObject, ObservedTileObject>> tracked;
+		List<Map.Entry<TileObject, ObservedTileObject>> accepted;
+		List<Map.Entry<TileObject, ObservedTileObject>> tracked = null;
+		int trackedRevision;
 		synchronized (this)
 		{
-			tracked = new ArrayList<>(objects.entrySet());
+			accepted = wanted;
+			trackedRevision = revision;
+			if (wantedRevision != revision || !filterState.equals(wantedFilterState))
+			{
+				// Copies each entry: the map's own are views into a table that keeps changing.
+				tracked = new ArrayList<>(objects.entrySet());
+			}
 		}
-		// The filter may load object definitions; keep that off the lock the uploader waits on.
-		for (Map.Entry<TileObject, ObservedTileObject> entry : tracked)
+		if (tracked != null)
 		{
-			if (wanted.test(entry.getKey())) candidates.putIfAbsent(entry.getKey(), entry.getValue());
+			// The filter may load object definitions; keep that off the lock the uploader waits on.
+			accepted = new ArrayList<>();
+			for (Map.Entry<TileObject, ObservedTileObject> entry : tracked)
+			{
+				if (filter.test(entry.getKey())) accepted.add(entry);
+			}
+			synchronized (this)
+			{
+				if (revision == trackedRevision)
+				{
+					wanted = accepted;
+					wantedRevision = trackedRevision;
+					wantedFilterState = filterState;
+				}
+			}
+		}
+		for (Map.Entry<TileObject, ObservedTileObject> entry : accepted)
+		{
+			candidates.putIfAbsent(entry.getKey(), entry.getValue());
 		}
 	}
 

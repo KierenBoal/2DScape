@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import net.runelite.api.Constants;
 import net.runelite.api.DynamicObject;
 import net.runelite.api.GameObject;
@@ -32,9 +34,9 @@ public class StaticScenerySpritesTest
 		StaticScenerySprites scenery = new StaticScenerySprites();
 		scenery.useScene(scene);
 		var candidates = new IdentityHashMap<TileObject, ObservedTileObject>();
-		scenery.addCandidates(candidates, object -> object == second);
+		scenery.addCandidates(candidates, "second only", object -> object == second);
 		assertEquals("Only wanted placements become candidates", Set.of(second), candidates.keySet());
-		scenery.addCandidates(candidates, object -> true);
+		scenery.addCandidates(candidates, "everything", object -> true);
 		assertEquals(2, candidates.size());
 
 		List<Point> rebuilds = new ArrayList<>();
@@ -84,6 +86,63 @@ public class StaticScenerySpritesTest
 		assertTrue(scenery.manages(second));
 		scenery.remove(second);
 		assertNull(scenery.drawObject(newScene, second));
+	}
+
+	@Test
+	public void filterOnlyRunsAgainWhenPlacementsOrItsStateChange()
+	{
+		GameObject first = tree(1);
+		GameObject second = tree(2);
+		Scene scene = scene(first, second);
+		StaticScenerySprites scenery = new StaticScenerySprites();
+		scenery.useScene(scene);
+		AtomicInteger filtered = new AtomicInteger();
+		Predicate<TileObject> notFirst = object ->
+		{
+			filtered.incrementAndGet();
+			return object != first;
+		};
+
+		assertEquals(Set.of(second), candidates(scenery, "a", notFirst));
+		assertEquals(2, filtered.get());
+		assertEquals("An unchanged scene reuses the last answer", Set.of(second), candidates(scenery, "a", notFirst));
+		assertEquals(2, filtered.get());
+
+		assertEquals(Set.of(second), candidates(scenery, "b", notFirst));
+		assertEquals("A new filter state must be asked again", 4, filtered.get());
+
+		GameObject third = tree(3);
+		scenery.add(scene, third);
+		assertEquals(Set.of(second, third), candidates(scenery, "b", notFirst));
+		assertEquals("A spawn must be filtered in", 7, filtered.get());
+
+		scenery.remove(second);
+		assertEquals(Set.of(third), candidates(scenery, "b", notFirst));
+		assertEquals("A despawn must be dropped", 9, filtered.get());
+		assertEquals(Set.of(third), candidates(scenery, "b", notFirst));
+		assertEquals(9, filtered.get());
+	}
+
+	@Test
+	public void sceneChangeForgetsTheLastFilteredPlacements()
+	{
+		GameObject first = tree(1);
+		GameObject second = tree(2);
+		StaticScenerySprites scenery = new StaticScenerySprites();
+		scenery.useScene(scene(first));
+		assertEquals(Set.of(first), candidates(scenery, "a", object -> true));
+
+		scenery.useScene(scene(second));
+		assertEquals(Set.of(second), candidates(scenery, "a", object -> true));
+		scenery.useScene(null);
+		assertEquals(Set.of(), candidates(scenery, "a", object -> true));
+	}
+
+	private static Set<TileObject> candidates(StaticScenerySprites scenery, Object filterState, Predicate<TileObject> filter)
+	{
+		var candidates = new IdentityHashMap<TileObject, ObservedTileObject>();
+		scenery.addCandidates(candidates, filterState, filter);
+		return candidates.keySet();
 	}
 
 	@Test

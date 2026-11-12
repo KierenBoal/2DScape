@@ -9,6 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import net.runelite.api.Client;
 import net.runelite.api.ObjectComposition;
 import net.runelite.api.TileObject;
@@ -30,16 +32,30 @@ public final class SceneryCategories
 		"cabbage", "sweetcorn", "flax");
 	private static final Set<String> FIRE_WORDS = Set.of("fire", "fires", "campfire", "bonfire");
 	private static final Set<String> LOG_WORDS = Set.of("log", "logs");
+	private static final Pattern NOT_LETTERS = Pattern.compile("[^a-z]+");
+	// Stands in for a transforming object that currently shows nothing.
+	private static final int NO_FORM = -1;
 
 	private final Client client;
 	// Concurrent because plugin shutdown clears these from outside the client thread.
 	private final Map<Integer, SceneryCategory> plain = new ConcurrentHashMap<>();
 	// Farming patches and other varbit-driven objects change form without respawning.
-	private final Map<Integer, SceneryCategory> transformed = new ConcurrentHashMap<>();
+	// Which form shows is forgotten on every varbit change; what a form is never changes.
+	private final Map<Integer, Integer> currentForms = new ConcurrentHashMap<>();
+	private final Map<Integer, SceneryCategory> forms = new ConcurrentHashMap<>();
+	private final AtomicInteger transformRevision = new AtomicInteger();
 
 	public SceneryCategories(Client client)
 	{
 		this.client = client;
+	}
+
+	/** Whether the current settings turn any object into a sprite; cheaper than building the set. */
+	public static boolean anyEnabled(NpcSnapConfig config)
+	{
+		return config.applyToTrees() || (config.applyToObjects() && (config.worldObjectRocks()
+			|| config.worldObjectPlants() || config.worldObjectFires() || config.worldObjectLogs()
+			|| config.worldObjectOther()));
 	}
 
 	/** The categories the current settings turn into sprites. */
@@ -67,32 +83,62 @@ public final class SceneryCategories
 
 		int id = object.getId();
 		SceneryCategory known = plain.get(id);
-		if (known == null)
-		{
-			known = transformed.get(id);
-		}
 		if (known != null)
 		{
 			return known;
 		}
+		Integer form = currentForms.get(id);
+		if (form != null)
+		{
+			known = forms.get(form);
+			if (known != null)
+			{
+				return known;
+			}
+		}
 
 		ObjectComposition definition = client.getObjectDefinition(id);
-		boolean transforms = definition != null && definition.getImpostorIds() != null;
-		SceneryCategory category = categoryOfDefinition(transforms ? definition.getImpostor() : definition);
-		(transforms ? transformed : plain).put(id, category);
-		return category;
+		if (definition == null || definition.getImpostorIds() == null)
+		{
+			known = categoryOfDefinition(definition);
+			plain.put(id, known);
+			return known;
+		}
+
+		ObjectComposition shown = definition.getImpostor();
+		form = shown == null ? NO_FORM : shown.getId();
+		currentForms.put(id, form);
+		known = forms.get(form);
+		if (known == null)
+		{
+			known = categoryOfDefinition(shown);
+			forms.put(form, known);
+		}
+		return known;
 	}
 
 	/** Call when a varbit changes: transformed objects may now show a different form. */
 	public void invalidateTransforms()
 	{
-		transformed.clear();
+		if (!currentForms.isEmpty())
+		{
+			currentForms.clear();
+			transformRevision.incrementAndGet();
+		}
+	}
+
+	/** Moves whenever an answer categoryOf has already given may no longer hold. */
+	public int transformRevision()
+	{
+		return transformRevision.get();
 	}
 
 	public void clear()
 	{
 		plain.clear();
-		transformed.clear();
+		currentForms.clear();
+		forms.clear();
+		transformRevision.incrementAndGet();
 	}
 
 	public static SceneryCategory categoryOfDefinition(ObjectComposition composition)
@@ -143,6 +189,6 @@ public final class SceneryCategories
 	private static Set<String> words(String name)
 	{
 		return name == null ? Collections.emptySet()
-			: new HashSet<>(Arrays.asList(name.toLowerCase(Locale.ROOT).split("[^a-z]+")));
+			: new HashSet<>(Arrays.asList(NOT_LETTERS.split(name.toLowerCase(Locale.ROOT))));
 	}
 }

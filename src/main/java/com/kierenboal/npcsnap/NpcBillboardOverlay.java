@@ -2294,7 +2294,9 @@ class NpcBillboardOverlay extends Overlay
 			Set<SceneryCategory> wantedScenery = SceneryCategories.enabled(config);
 			if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config))
 			{
+				// The filter's answers hold until the ticked categories or a transformed object's form change.
 				staticScenery.addCandidates(visibleTileObjects,
+					List.of(wantedScenery, sceneryCategories.transformRevision()),
 					object -> wantedScenery.contains(sceneryCategories.categoryOf(object)));
 				if (modelCompatibility != null)
 				{
