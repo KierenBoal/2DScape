@@ -571,6 +571,12 @@ public class NpcSnapPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onVarbitChanged(net.runelite.api.events.VarbitChanged event)
+	{
+		billboardOverlay.invalidateSceneryTransforms();
+	}
+
+	@Subscribe
 	public void onGameObjectSpawned(net.runelite.api.events.GameObjectSpawned event)
 	{
         modelCompatibility.track(event.getGameObject());

@@ -5,6 +5,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import net.runelite.api.Constants;
+import net.runelite.api.DynamicObject;
 import net.runelite.api.GameObject;
 import net.runelite.api.Model;
 import net.runelite.api.Point;
@@ -31,7 +32,9 @@ public class StaticScenerySpritesTest
 		StaticScenerySprites scenery = new StaticScenerySprites();
 		scenery.useScene(scene);
 		var candidates = new IdentityHashMap<TileObject, ObservedTileObject>();
-		scenery.addCandidates(candidates);
+		scenery.addCandidates(candidates, object -> object == second);
+		assertEquals("Only wanted placements become candidates", Set.of(second), candidates.keySet());
+		scenery.addCandidates(candidates, object -> true);
 		assertEquals(2, candidates.size());
 
 		List<Point> rebuilds = new ArrayList<>();
@@ -81,6 +84,44 @@ public class StaticScenerySpritesTest
 		assertTrue(scenery.manages(second));
 		scenery.remove(second);
 		assertNull(scenery.drawObject(newScene, second));
+	}
+
+	@Test
+	public void diagnosticsCountEachSwapStageSinceTheSceneWasSeeded()
+	{
+		GameObject model = tree(1);
+		GameObject baked = proxy(GameObject.class, method("getSceneMinLocation", new Point(2, 0)),
+			method("getLocalLocation", new LocalPoint(2 * 128 + 64, 64)),
+			method("getRenderable", proxy(DynamicObject.class, method("getModelZbuf", proxy(Model.class)))));
+		GameObject animated = proxy(GameObject.class, method("getSceneMinLocation", new Point(3, 0)),
+			method("getLocalLocation", new LocalPoint(3 * 128 + 64, 64)),
+			method("getRenderable", proxy(DynamicObject.class)));
+		Scene scene = scene(model, baked, animated);
+		StaticScenerySprites scenery = new StaticScenerySprites();
+		scenery.useScene(scene);
+		DrawCallbacks renderer = new DrawCallbacks()
+		{
+			@Override public void draw(int overlayColor) {}
+			@Override public void swapScene(Scene swapped) {}
+		};
+
+		scenery.update(Set.of(model), renderer);
+		scenery.drawObject(scene, model);
+		scenery.drawObject(scene, baked);
+		StaticScenerySprites.Diagnostics counts = scenery.diagnostics();
+		assertEquals(1, counts.tracked);
+		assertEquals(1, counts.seenModels);
+		assertEquals(1, counts.seenBakedDynamics);
+		assertEquals(1, counts.seenOthers);
+		assertEquals(1, counts.zonesInvalidated);
+		assertEquals(1, counts.drawHidden);
+		assertEquals(0, counts.drawShown);
+		assertEquals(1, counts.drawUntracked);
+		assertEquals(1, counts.replaced);
+
+		scenery.useScene(scene(tree(4)));
+		assertEquals(0, scenery.diagnostics().zonesInvalidated);
+		assertEquals(0, scenery.diagnostics().drawHidden);
 	}
 
 	private static GameObject tree(int x)

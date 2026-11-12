@@ -104,13 +104,49 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for scenery and animated objects in the world.", section = targetsSection, position = 5)
+	@ConfigItem(keyName = "applyToTrees", name = "Apply to trees", description = "Use sprites for trees and their stumps.", section = targetsSection, position = 5)
+	default boolean applyToTrees()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for the kinds of world object ticked below.", section = targetsSection, position = 6)
 	default boolean applyToObjects()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 7)
+	@ConfigItem(keyName = "worldObjectRocks", name = "World objects: rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = targetsSection, position = 7)
+	default boolean worldObjectRocks()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "worldObjectPlants", name = "World objects: plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = targetsSection, position = 8)
+	default boolean worldObjectPlants()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "worldObjectFires", name = "World objects: fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = targetsSection, position = 9)
+	default boolean worldObjectFires()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "worldObjectLogs", name = "World objects: logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = targetsSection, position = 10)
+	default boolean worldObjectLogs()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "worldObjectOther", name = "World objects: everything else", description = "All other scenery. Some, such as fences and stairs, look odd as sprites. Needs Apply to world objects.", section = targetsSection, position = 11)
+	default boolean worldObjectOther()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 12)
 	default boolean enableShiftRightClickExportPng()
 	{
 		return false;

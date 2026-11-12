@@ -143,7 +143,7 @@ public final class BillboardSceneDrawCallbacks
 
 	private boolean observeAndShouldHide(TileObject tileObject)
 	{
-		if (!config.applyToObjects() && !config.applyToGraphicsObjects())
+		if (!ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config) && !config.applyToGraphicsObjects())
 		{
 			return false;
 		}

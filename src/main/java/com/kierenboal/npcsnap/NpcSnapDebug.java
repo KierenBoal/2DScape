@@ -223,6 +223,11 @@ public class NpcSnapDebug
 		}
 	}
 
+	private static String sceneryCount(Map<String, Long> counters, String stage)
+	{
+		return compactCount(counters.getOrDefault("Scenery " + stage, 0L));
+	}
+
 	List<String> performanceContext(Map<String, Long> counters)
 	{
 		List<String> lines = new ArrayList<>(4);
@@ -248,6 +253,19 @@ public class NpcSnapDebug
 			compactCount(counters.getOrDefault("Faces available", 0L)), compactCount(counters.getOrDefault("Faces inspected", 0L)),
 			compactCount(counters.getOrDefault("Faces accepted", 0L)), compactCount(counters.getOrDefault("Terrain tris accepted", 0L)),
 			compactCount(counters.getOrDefault("Terrain tris checked", 0L))));
+		if (counters.containsKey("Scenery GPU"))
+		{
+			// One count per stage of the static scenery swap; the first zero is where it stops.
+			lines.add(String.format(Locale.ROOT, "Scenery (GPU: %d, Tracked: %s, Model/Baked/Other: %s/%s/%s, Eligible: %s, Active: %s)",
+				counters.get("Scenery GPU"), sceneryCount(counters, "tracked"),
+				sceneryCount(counters, "seen models"), sceneryCount(counters, "seen baked"), sceneryCount(counters, "seen other"),
+				sceneryCount(counters, "eligible"), sceneryCount(counters, "active")));
+			lines.add(String.format(Locale.ROOT, "Scenery swap (Requests: %s, Plans: %s, Cached: %s, Drawable: %s, Zones: %s, Hide/Show/Untracked: %s/%s/%s, Replaced: %s)",
+				sceneryCount(counters, "requests"), sceneryCount(counters, "plans"), sceneryCount(counters, "cached"),
+				sceneryCount(counters, "drawable"), sceneryCount(counters, "zones"),
+				sceneryCount(counters, "hidden"), sceneryCount(counters, "shown"), sceneryCount(counters, "untracked"),
+				sceneryCount(counters, "replaced")));
+		}
 		return lines;
 	}
 

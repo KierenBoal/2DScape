@@ -181,7 +181,8 @@ public final class ObjectClassifier
 			case GROUND_ITEM:
 				return config.applyToGroundItems();
 			case OBJECT:
-				return config.applyToObjects();
+				// Which objects convert is narrowed per object by SceneryCategories.
+				return config.applyToObjects() || config.applyToTrees();
 			default:
 				return false;
 		}

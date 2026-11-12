@@ -313,6 +313,12 @@ public final class BillboardRenderRequestFactory
 			return null;
 		}
 
+		// Static scenery is already a Model, and asking one for its model yields nothing.
+		if (renderable instanceof Model)
+		{
+			return (Model) renderable;
+		}
+
 		try
 		{
 			return renderable.getModel();

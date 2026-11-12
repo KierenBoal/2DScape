@@ -152,6 +152,19 @@ public class BillboardSceneDrawCallbacksTest
 		assertTrue(overlay.observed.isEmpty());
 	}
 
+	@Test
+	public void applyToTreesAloneObservesObjects()
+	{
+		FakeOverlay overlay = new FakeOverlay();
+		GameObject object = TestProxies.proxy(GameObject.class,
+			TestProxies.method("getRenderable", TestProxies.proxy(Renderable.class)));
+		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("enable2dBillboardSprites", true), TestProxies.method("applyToTrees", true));
+
+		assertTrue(new BillboardSceneDrawCallbacks(config, overlay).drawObject(object));
+		assertTrue(overlay.observed.contains(object));
+	}
+
 	private static BillboardSceneDrawCallbacks callbacks(
 		boolean enabled, boolean objects, boolean graphicsObjects, FakeOverlay overlay)
 	{
