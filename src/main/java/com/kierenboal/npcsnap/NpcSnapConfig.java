@@ -197,10 +197,23 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteShadows", name = "Add sprite shadows", description = "Draw a small shadow underneath each sprite.", section = spriteSection, position = 0)
-	default boolean enableBillboardSpriteShadows()
+	@ConfigItem(keyName = "shadowType", name = "Shadow type", description = "Choose the shadow underneath each sprite.", section = spriteSection, position = 0)
+	default SpriteShadowType shadowType()
 	{
-		return true;
+		return SpriteShadowType.FLAT;
+	}
+
+	@ConfigItem(keyName = "shadowLighting", name = "Shadow lighting", description = "Choose how modern shadows are cast. Legacy ignores lighting.", section = spriteSection, position = 1)
+	default ShadowLighting shadowLighting()
+	{
+		return ShadowLighting.DIRECTIONAL_DOWN;
+	}
+
+	@Alpha
+	@ConfigItem(keyName = "shadowColor", name = "Shadow color", description = "Tint shadows; alpha multiplies their natural opacity.", section = spriteSection, position = 2)
+	default Color shadowColor()
+	{
+		return Color.BLACK;
 	}
 
 	@ConfigItem(keyName = "enablePlayerInteractionOutline", name = "Player outlines", description = "Show hover and interaction outlines on player sprites.", section = spriteInteractionOutlineSection, position = 1)
@@ -289,44 +302,44 @@ public interface NpcSnapConfig extends Config
 		return new Color(0x90FF0000, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 1)
+	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 3)
 	default boolean enableBillboardSpriteOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 2)
+	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 4)
 	default boolean enableBillboardSpriteInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 3)
+	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 5)
 	@Alpha
 	default Color billboardSpriteOutlineColor()
 	{
 		return new Color(0x40000000, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 4)
+	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 6)
 	default boolean enableBillboardHighlightOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 5)
+	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 7)
 	default boolean enableBillboardHighlightInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 6)
+	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 8)
 	default boolean enableBillboardShadowOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 7)
+	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 9)
 	default boolean enableBillboardShadowInline()
 	{
 		return false;
@@ -438,6 +451,12 @@ public interface NpcSnapConfig extends Config
 
 	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "debugDrawShadowBounds", name = "Draw shadow bounds", description = "Draw cyan outlines around the actual projected shadow polygons, including their skew.", section = debugSection, position = 7)
+	default boolean debugDrawShadowBounds()
 	{
 		return false;
 	}

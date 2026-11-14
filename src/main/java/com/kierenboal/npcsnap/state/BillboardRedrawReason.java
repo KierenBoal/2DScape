@@ -83,7 +83,7 @@ public enum BillboardRedrawReason
 		if (previous.colorBands != current.colorBands || previous.lightBoost != current.lightBoost
 			|| previous.outlinePadding != current.outlinePadding || previous.highlightOutline != current.highlightOutline
 			|| previous.shadowOutline != current.shadowOutline || previous.solidOutline != current.solidOutline
-			|| previous.spriteShadow != current.spriteShadow || previous.highlightInline != current.highlightInline
+			|| previous.shadowType != current.shadowType || previous.highlightInline != current.highlightInline
 			|| previous.shadowInline != current.shadowInline || previous.solidInline != current.solidInline
 			|| previous.outlineColor != current.outlineColor)
 		{

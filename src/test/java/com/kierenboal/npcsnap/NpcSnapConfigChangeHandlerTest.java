@@ -34,7 +34,7 @@ public class NpcSnapConfigChangeHandlerTest
 	@Test
 	public void billboardChangesOnlyClearBillboardCache()
 	{
-		for (String key : new String[] {"enableAnimationFrameSnapping", "animationFrameCount",
+		for (String key : new String[] {"shadowType", "enableAnimationFrameSnapping", "animationFrameCount",
 			"useInventorySpritesForGroundItems", "ignoreCameraAwareRotation", "enableActorWorldPlaneProjection"})
 		{
 			Counters counters = new Counters();

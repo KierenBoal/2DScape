@@ -92,16 +92,17 @@ public final class BillboardOcclusionDebugSampler
 				}
 
 				BillboardDepthSurface.DebugPoint point = depthSurface.debugPointAt(sourceX, sourceY, sourceWidth, sourceHeight, canvasY);
-				float worldDepth = occlusionMask.depthAt(canvasX, canvasY, draw.occlusionIgnoredTileObject);
+				float worldDepth = occlusionMask.depthAt(canvasX, canvasY, draw.occlusionIgnoredTileObject, draw.supportingGround);
 				float bias = occlusionMask.occlusionDepthBias();
 				double margin = point.depth - (worldDepth + bias);
 				boolean enabled = depthSurface.supportsWorldOcclusion();
 				int transmittance = enabled
-					? occlusionMask.transmittanceAt(canvasX, canvasY, point.depth, draw.occlusionIgnoredTileObject) : 255;
+					? occlusionMask.transmittanceAt(canvasX, canvasY, point.depth, draw.occlusionIgnoredTileObject, draw.supportingGround) : 255;
 				samples.add(format(
 					draw, canvasX, canvasY, sourceX, sourceY, sourceAlpha, point,
-					worldDepth, occlusionMask.sourceAt(canvasX, canvasY, draw.occlusionIgnoredTileObject), bias, margin,
-					transmittance, enabled));
+					worldDepth, occlusionMask.sourceAt(canvasX, canvasY, draw.occlusionIgnoredTileObject, draw.supportingGround), bias, margin,
+					transmittance, enabled)+" "+occlusionMask.terrainDebugAt(canvasX,canvasY,
+						draw.occlusionIgnoredTileObject,draw.supportingGround));
 			}
 		}
 	}

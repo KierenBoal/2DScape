@@ -165,6 +165,7 @@ public class NpcSnapPlugin extends Plugin
 	protected void startUp()
 	{
 		migrateOcclusionQuality();
+		migrateSpriteShadows();
 		rendererAvailabilityWarning.reset();
 		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
 		active = false;
@@ -276,6 +277,11 @@ public class NpcSnapPlugin extends Plugin
 		loginXpDropGuard.onLoggedOut();
 		changelogLoginTicksRemaining = 0;
 		rendererAvailabilityWarning.reset();
+	}
+
+	private void migrateSpriteShadows()
+	{
+		SpriteShadowMigration.migrate(configManager);
 	}
 
 	private void migrateOcclusionQuality()
@@ -496,6 +502,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onProfileChanged(ProfileChanged profileChanged)
 	{
+		migrateSpriteShadows();
 		changelog.requestCheck();
 		interactHighlightCompatibility.onProfileChanged(
 			active && config.overrideInteractHighlightOutlines(),

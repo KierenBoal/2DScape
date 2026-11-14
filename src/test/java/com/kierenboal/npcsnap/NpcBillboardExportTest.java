@@ -44,7 +44,13 @@ public class NpcBillboardExportTest
 		tiles[0][2][3] = proxy(Tile.class, method("getGameObjects", new GameObject[] { object }));
 		Client client = proxy(Client.class, method("getWorldView", view),
 			method("getObjectDefinition", proxy(ObjectComposition.class, method("getName", "Test tree"))));
-		NpcSnapConfig config = new NpcSnapConfig() { };
+		SpriteShadowType[] style={SpriteShadowType.FLAT};
+  ShadowLighting[] light={ShadowLighting.DIRECTIONAL_DOWN};
+  NpcSnapConfig config = new NpcSnapConfig() {
+   @Override public SpriteShadowType shadowType() { return style[0]; }
+   @Override public ShadowLighting shadowLighting() { return light[0]; }
+   @Override public int numberOfYawRotationAngles() { return 4; }
+  };
 		assertFalse(config.applyToObjects());
 		NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
 			new NpcSnapDebug(client, config), null);
@@ -55,6 +61,13 @@ public class NpcBillboardExportTest
 		assertEquals("Test_tree", batch.name);
 		assertFalse(batch.frames.isEmpty());
 		assertTrue(batch.frames.get(0).image.getWidth() > 0);
+  for(SpriteShadowType type:SpriteShadowType.values()) for(ShadowLighting lighting:ShadowLighting.values())
+  {
+   style[0]=type; light[0]=lighting;
+   BillboardExportBatch variant=overlay.captureExport(target);
+   assertNotNull(type+" / "+lighting,variant);
+   assertEquals(batch.frames.size(),variant.frames.size());
+  }
 		faceCount.set(0);
 		assertNull("An unavailable raster must not reuse the prior export", overlay.captureExport(target));
 		tiles[0][2][3] = null;

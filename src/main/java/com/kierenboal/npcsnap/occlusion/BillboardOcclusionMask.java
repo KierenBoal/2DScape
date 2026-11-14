@@ -281,17 +281,20 @@ public final class BillboardOcclusionMask
 
 	public CellResult classifySample(int sampleX, int y, double depth, TileObject ignoredTileObject)
 	{
+		return classifySample(sampleX, y, depth, ignoredTileObject, null);
+	}
+
+	public CellResult classifySample(int sampleX, int y, double depth, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		if (step == 0 || !Double.isFinite(depth) || sampleX < 0 || sampleX >= width
 			|| y < bounds.y || y >= bounds.y + bounds.height)
 		{
 			return CellResult.VISIBLE;
 		}
 		int cell = ((y - bounds.y) / step) * width + sampleX;
-		// The aggregate cell bounds include every scene object. If this billboard is
-		// replacing one of those objects, force the precise path whenever its own
-		// geometry is present so the self-occluder can be skipped without affecting
-		// other world objects in the same cell.
-		if (ignoredTileObject != null && cellContainsOwner(cell, ignoredTileObject))
+		// Aggregate cells include supporting terrain and replaced objects. Refine
+		// cells containing either exclusion so other geometry can still occlude.
+		if ((ignoredTileObject != null || supportingGround != null) && cellContainsExclusion(cell, ignoredTileObject, supportingGround))
 		{
 			return CellResult.REFINE;
 		}
@@ -317,11 +320,11 @@ public final class BillboardOcclusionMask
 		return offset < 0 ? -offset : coverageRows[offset + row];
 	}
 
-	private boolean cellContainsOwner(int cell, TileObject ignoredTileObject)
+	private boolean cellContainsExclusion(int cell, TileObject ignoredTileObject, SupportingFootprint supportingGround)
 	{
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
-			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			if (occluders.get(candidates[ref]).excludedBy(ignoredTileObject, supportingGround))
 			{
 				return true;
 			}
@@ -345,6 +348,11 @@ public final class BillboardOcclusionMask
 
 	public int transmittanceAt(int x, int y, double depth, TileObject ignoredTileObject)
 	{
+		return transmittanceAt(x, y, depth, ignoredTileObject, null);
+	}
+
+	public int transmittanceAt(int x, int y, double depth, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		int cell = index(x, y);
 		if (cell < 0 || !Double.isFinite(depth))
 		{
@@ -361,7 +369,7 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			candidateTests++;
-			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			if (occluders.get(candidates[ref]).excludedBy(ignoredTileObject, supportingGround))
 			{
 				continue;
 			}
@@ -401,6 +409,11 @@ public final class BillboardOcclusionMask
 
 	public int tintPixel(int x, int y, double depth, int pixel, TileObject ignoredTileObject)
 	{
+		return tintPixel(x, y, depth, pixel, ignoredTileObject, null);
+	}
+
+	public int tintPixel(int x, int y, double depth, int pixel, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		int cell = index(x, y);
 		if (cell < 0 || !Double.isFinite(depth))
 		{
@@ -413,7 +426,7 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			Occluder occluder = occluders.get(candidates[ref]);
-			if (occluder.belongsTo(ignoredTileObject))
+			if (occluder.excludedBy(ignoredTileObject, supportingGround))
 			{
 				continue;
 			}
@@ -489,7 +502,12 @@ public final class BillboardOcclusionMask
 
 	public boolean isOccluded(int x, int y, double depth, TileObject ignoredTileObject)
 	{
-		return transmittanceAt(x, y, depth, ignoredTileObject) == 0;
+		return isOccluded(x, y, depth, ignoredTileObject, null);
+	}
+
+	public boolean isOccluded(int x, int y, double depth, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
+		return transmittanceAt(x, y, depth, ignoredTileObject, supportingGround) == 0;
 	}
 
 	/**
@@ -503,11 +521,16 @@ public final class BillboardOcclusionMask
 
 	public int refinedSampleBits(int sampleX, int y, double depth, TileObject ignoredTileObject)
 	{
+		return refinedSampleBits(sampleX, y, depth, ignoredTileObject, null);
+	}
+
+	public int refinedSampleBits(int sampleX, int y, double depth, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		if (compatibilityTransmittance.length < Math.max(1, step))
 		{
 			compatibilityTransmittance = new int[Math.max(1, step)];
 		}
-		refinedSampleTransmittance(sampleX, y, depth, compatibilityTransmittance, ignoredTileObject);
+		refinedSampleTransmittance(sampleX, y, depth, compatibilityTransmittance, ignoredTileObject, supportingGround);
 		int bits = 0;
 		for (int offset = 0; offset < step; offset++)
 		{
@@ -527,6 +550,11 @@ public final class BillboardOcclusionMask
 
 	public void refinedSampleTransmittance(int sampleX, int y, double depth, int[] output, TileObject ignoredTileObject)
 	{
+		refinedSampleTransmittance(sampleX, y, depth, output, ignoredTileObject, null);
+	}
+
+	public void refinedSampleTransmittance(int sampleX, int y, double depth, int[] output, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		if (output == null || output.length < step)
 		{
 			throw new IllegalArgumentException("Output must fit one occlusion sample row");
@@ -544,7 +572,7 @@ public final class BillboardOcclusionMask
 			for (int reference = heads[cell]; reference != -1; reference = next[reference])
 			{
 				candidateTests++;
-				if (occluders.get(candidates[reference]).belongsTo(ignoredTileObject))
+				if (occluders.get(candidates[reference]).excludedBy(ignoredTileObject, supportingGround))
 				{
 					continue;
 				}
@@ -574,7 +602,7 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			candidateTests++;
-			if (occluders.get(candidates[ref]).belongsTo(ignoredTileObject))
+			if (occluders.get(candidates[ref]).excludedBy(ignoredTileObject, supportingGround))
 			{
 				continue;
 			}
@@ -631,6 +659,11 @@ public final class BillboardOcclusionMask
 
 	public float depthAt(int x, int y, TileObject ignoredTileObject)
 	{
+		return depthAt(x, y, ignoredTileObject, null);
+	}
+
+	public float depthAt(int x, int y, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		int cell = index(x, y);
 		if (cell < 0)
 		{
@@ -640,7 +673,7 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
 			Occluder occluder = occluders.get(candidates[ref]);
-			if (occluder.belongsTo(ignoredTileObject))
+			if (occluder.excludedBy(ignoredTileObject, supportingGround))
 			{
 				continue;
 			}
@@ -660,6 +693,11 @@ public final class BillboardOcclusionMask
 
 	public String sourceAt(int x, int y, TileObject ignoredTileObject)
 	{
+		return sourceAt(x, y, ignoredTileObject, null);
+	}
+
+	public String sourceAt(int x, int y, TileObject ignoredTileObject, SupportingFootprint supportingGround)
+	{
 		int cell = index(x, y);
 		if (cell < 0)
 		{
@@ -672,7 +710,7 @@ public final class BillboardOcclusionMask
 		{
 			int id = candidates[ref];
 			Occluder o = occluders.get(id);
-			if (o.belongsTo(ignoredTileObject))
+			if (o.excludedBy(ignoredTileObject, supportingGround))
 			{
 				continue;
 			}
@@ -685,6 +723,25 @@ public final class BillboardOcclusionMask
 			}
 		}
 		return source;
+	}
+
+	public String terrainDebugAt(int x, int y, TileObject ignored, SupportingFootprint footprint)
+	{
+		int cell=index(x,y);
+		if(cell<0) return "terrainWinner=- supportingGroundExcluded=false";
+		TerrainSurface nearest=null;
+		float nearestDepth=Float.POSITIVE_INFINITY;
+		boolean excluded=false;
+		for(int ref=heads[cell];ref!=-1;ref=next[ref])
+		{
+			Occluder o=occluders.get(candidates[ref]);
+			float depth=o.depthAt(x,y);
+			if(!Float.isFinite(depth)) continue;
+			if(footprint!=null && footprint.contains(o.terrain)) excluded=true;
+			if(!o.excludedBy(ignored,footprint) && depth<nearestDepth)
+			{ nearestDepth=depth; nearest=o.terrain; }
+		}
+		return "terrainWinner="+(nearest==null ? "-" : nearest)+" supportingGroundExcluded="+excluded;
 	}
 
 	public boolean hasCoverageAt(int y)
@@ -732,6 +789,11 @@ public final class BillboardOcclusionMask
 	}
 	public static final class Occluder
 	{
+		TerrainSurface terrain;
+		private boolean excludedBy(TileObject object, SupportingFootprint footprint)
+		{
+			return belongsTo(object) || (footprint != null && footprint.contains(terrain));
+		}
 		float depthOffset;
 		boolean excludeThirdWeightZero;
 		private final Shape shape;

@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import com.kierenboal.npcsnap.state.BillboardRedrawReason;
 import com.kierenboal.npcsnap.state.BillboardCacheKey;
@@ -131,6 +132,25 @@ public class NpcSnapDebug
 
 	void drawBillboardDebug(Graphics2D graphics, RenderDebug renderDebug)
 	{
+	}
+
+	void drawShadowBounds(Graphics2D graphics, BillboardRenderResult shadow)
+	{
+		if (!config.debugDrawShadowBounds() || shadow == null) return;
+		Color color = graphics.getColor();
+		Stroke stroke = graphics.getStroke();
+		try
+		{
+			graphics.setColor(Color.CYAN);
+			graphics.setStroke(new BasicStroke(1));
+			for (BillboardRenderResult layer = shadow; layer != null; layer = layer.shadow)
+				if (layer.geometry != null) graphics.drawPolygon(layer.geometry.polygon());
+		}
+		finally
+		{
+			graphics.setColor(color);
+			graphics.setStroke(stroke);
+		}
 	}
 
 	void drawBillboardDebugForeground(Graphics2D graphics, RenderDebug renderDebug)

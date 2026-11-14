@@ -5,6 +5,7 @@ import java.awt.image.BufferedImage;
 
 public final class BillboardRenderResult
 {
+	public final BillboardRenderResult shadow;
 	public final Rectangle bounds;
 	public final BufferedImage image;
 	public final Rectangle sourceBounds;
@@ -17,6 +18,13 @@ public final class BillboardRenderResult
 
 	public BillboardRenderResult(BillboardDrawGeometry geometry, BufferedImage image, Rectangle sourceBounds)
 	{
+		this(geometry,image,sourceBounds,null);
+	}
+
+	public BillboardRenderResult(BillboardDrawGeometry geometry, BufferedImage image, Rectangle sourceBounds,
+		BillboardRenderResult shadow)
+	{
+		this.shadow=shadow;
 		this.geometry = geometry;
 		this.bounds = geometry != null ? geometry.bounds : null;
 		this.image = image;

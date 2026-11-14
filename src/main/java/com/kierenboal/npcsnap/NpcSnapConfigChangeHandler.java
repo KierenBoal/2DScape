@@ -30,7 +30,8 @@ final class NpcSnapConfigChangeHandler
 			markUiTexturesDirty.run();
 		}
 
-		if ("enableAnimationFrameSnapping".equals(key)
+		if ("shadowType".equals(key)
+			|| "enableAnimationFrameSnapping".equals(key)
 			|| "animationFrameCount".equals(key)
 			|| "useInventorySpritesForGroundItems".equals(key)
 			|| "ignoreCameraAwareRotation".equals(key)

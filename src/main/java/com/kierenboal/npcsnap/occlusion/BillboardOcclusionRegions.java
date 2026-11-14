@@ -25,7 +25,7 @@ public final class BillboardOcclusionRegions
 				continue;
 			}
 
-			Rectangle clipped = viewportBounds.intersection(expanded(draw.bounds, margin));
+			Rectangle clipped = viewportBounds.intersection(expanded(draw.visualBounds(), margin));
 			if (!clipped.isEmpty())
 			{
 				regions.add(clipped);

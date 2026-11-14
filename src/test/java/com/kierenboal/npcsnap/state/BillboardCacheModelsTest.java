@@ -19,6 +19,21 @@ import static org.junit.Assert.assertTrue;
 
 public class BillboardCacheModelsTest
 {
+ @Test public void allShadowTypesHaveDistinctCacheIdentity()
+ {
+  java.util.Set<BillboardCacheKey> keys = new java.util.HashSet<>();
+  for (com.kierenboal.npcsnap.SpriteShadowType type : com.kierenboal.npcsnap.SpriteShadowType.values())
+  {
+   NpcSnapConfig config = new NpcSnapConfig() {
+    @Override public com.kierenboal.npcsnap.SpriteShadowType shadowType() { return type; }
+   };
+   BillboardCacheKey key = BillboardCacheKey.create(request(false,false),config,1,config.billboardColorBands(),50,7,9);
+   assertTrue(keys.add(key));
+   CachedBillboard cached = new CachedBillboard(key,new Rectangle(0,0,1,1),new BufferedImage(1,1,BufferedImage.TYPE_INT_ARGB),0);
+   assertTrue(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request(false,false),config,1,50,9)));
+  }
+ }
+
 	@Test
 	public void fullAndPreviewFactoriesStayInSync()
 	{
@@ -173,7 +188,7 @@ public class BillboardCacheModelsTest
 			TestProxies.method("enableBillboardHighlightOutline", true),
 			TestProxies.method("enableBillboardShadowOutline", false),
 			TestProxies.method("enableBillboardSpriteOutline", true),
-			TestProxies.method("enableBillboardSpriteShadows", true),
+			TestProxies.method("shadowType", com.kierenboal.npcsnap.SpriteShadowType.LEGACY),
 			TestProxies.method("enableBillboardHighlightInline", false),
 			TestProxies.method("enableBillboardShadowInline", true),
 			TestProxies.method("enableBillboardSpriteInline", false),

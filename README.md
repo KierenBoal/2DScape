@@ -31,6 +31,16 @@ If you are doing content that requiers click precision, I'd suggest enabling "Im
 - All Spells work, so yes, the Ice Barrage blocks show up as 2D.
 - Sailing partially works, the fascilities don't perform occlusion culling yet.
 
+# Custom shadows
+
+Although RSC didn't have shadows, there are default options for shadows that give a bit more visual depth to the world; it is subtle.
+![Subtle shadows](md_imgs/shadow_subtle.jpg)
+
+But, maybe you're going for that RSC HD vibe? Got you covered, there are shadow options like "Point light" which create nice looking projected shadows
+![Subtle shadows](md_imgs/shadow_hd.jpg)
+
+Whatever way you want to play - no shadow, flat shadows, HD soft shadows, there will be an option for you that you like!
+
 ## RSC features 
 ![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
 

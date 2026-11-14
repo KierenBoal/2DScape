@@ -21,6 +21,35 @@ import static org.junit.Assert.*;
 public class BillboardRoofOcclusionTest
 {
 	@Test
+	public void terrainMetadataDistinguishesSupportingSlopesFromUpperSurfaces()
+	{
+		Fixture roof = new Fixture(false);
+		roof.collect(Set.of(), 3);
+		assertTrue(roof.collector.occluders().stream().anyMatch(o -> o.terrain != null));
+		for (BillboardOcclusionMask.Occluder o : roof.collector.occluders())
+		{
+			if (o.terrain == null) continue;
+			assertTrue(o.terrain.upperSurface);
+			assertEquals(roof.view.getId(), o.terrain.worldView);
+			assertEquals(1, o.terrain.plane);
+			assertEquals(4, o.terrain.tileX);
+			assertEquals(8, o.terrain.tileY);
+			assertFalse(new SupportingFootprint(roof.view.getId(), 1, 4, 8, 4, 8).contains(o.terrain));
+		}
+		Fixture slope = new Fixture(false);
+		slope.plane.set(1);
+		slope.scene.getTileHeights()[1][44][48] = -220;
+		slope.collect(Set.of(), 3);
+		assertTrue(slope.collector.occluders().stream().anyMatch(o -> o.terrain != null));
+		for (BillboardOcclusionMask.Occluder o : slope.collector.occluders())
+		{
+			if (o.terrain == null) continue;
+			assertFalse(o.terrain.upperSurface);
+			assertTrue(new SupportingFootprint(slope.view.getId(), 1, 4, 8, 4, 8).contains(o.terrain));
+		}
+	}
+
+	@Test
 	public void paintedAndModelledRoofsFollowHoverWithoutLosingWallOcclusion()
 	{
 		for (boolean modelled : new boolean[] {false, true})

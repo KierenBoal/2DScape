@@ -189,17 +189,19 @@ public class NpcBillboardCadenceTest
 	@Test
 	public void pitchDependentShadowsNeverRecaptureHeldActorFrames()
 	{
-		for (boolean shadows : new boolean[] {false, true})
+		for (SpriteShadowType shadows : SpriteShadowType.values())
 		{
 			Fixture f = new Fixture(BillboardTargetType.NPC, 1, true);
 			f.improved = true;
-			f.shadows = shadows;
+			f.shadowType = shadows;
 			f.pitch.set(2048);
 			int captures = f.frame(0);
 			assertTrue(captures > 0);
 			for (int cycle = 1; cycle <= 8; cycle++)
 			{
 				f.pitch.set(2048 + cycle * 128);
+    f.lighting = ShadowLighting.values()[cycle % ShadowLighting.values().length];
+    f.shadowColor = cycle % 2 == 0 ? java.awt.Color.MAGENTA : java.awt.Color.BLACK;
 				assertEquals("Pitch must change presentation without recapturing", captures, f.frame(cycle));
 			}
 		}
@@ -218,7 +220,9 @@ public class NpcBillboardCadenceTest
 		final AtomicInteger yaw = new AtomicInteger();
 		final AtomicInteger pitch = new AtomicInteger();
 		boolean improved;
-		boolean shadows;
+		SpriteShadowType shadowType = SpriteShadowType.OFF;
+		ShadowLighting lighting = ShadowLighting.DIRECTIONAL_DOWN;
+		java.awt.Color shadowColor = java.awt.Color.BLACK;
 		final Client client;
 		final NpcSnapDebug debug;
 		final NpcBillboardOverlay overlay;
@@ -303,7 +307,9 @@ public class NpcBillboardCadenceTest
 				@Override public boolean useInventorySpritesForGroundItems() { return false; }
 				@Override public boolean useRetroOverheads() { return false; }
 				@Override public boolean enableActorWorldPlaneProjection() { return improved; }
-				@Override public boolean enableBillboardSpriteShadows() { return shadows; }
+				@Override public SpriteShadowType shadowType() { return shadowType; }
+    @Override public ShadowLighting shadowLighting() { return lighting; }
+    @Override public java.awt.Color shadowColor() { return shadowColor; }
 				@Override public boolean enablePlayerInteractionOutline() { return false; }
 				@Override public boolean enableNpcInteractionOutline() { return false; }
 				@Override public boolean enableGroundItemInteractionOutline() { return false; }
