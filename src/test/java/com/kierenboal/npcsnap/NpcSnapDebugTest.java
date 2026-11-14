@@ -29,6 +29,47 @@ import org.slf4j.LoggerFactory;
 
 public class NpcSnapDebugTest
 {
+	@Test public void shadowBoundsAreOptInCyanPolygonsAndIndependentOfBodyBounds()
+	{
+		java.util.concurrent.atomic.AtomicBoolean enabled=new java.util.concurrent.atomic.AtomicBoolean();
+		NpcSnapConfig config=new NpcSnapConfig()
+		{
+			@Override public boolean debugDrawShadowBounds() { return enabled.get(); }
+		};
+		assertEquals(false,new NpcSnapConfig() {}.debugDrawShadowBounds());
+		assertEquals(false,config.debugDrawBillboardOutline());
+		NpcSnapDebug debug=new NpcSnapDebug(proxy(Client.class),config);
+		BillboardDrawGeometry geometry=BillboardDrawGeometry.projected(
+			com.kierenboal.npcsnap.rendering.BillboardProjectedQuad.create(
+				new com.kierenboal.npcsnap.rendering.BillboardCanvasPoint(10,20,100,0,0),
+				new com.kierenboal.npcsnap.rendering.BillboardCanvasPoint(40,10,100,0,0),
+				new com.kierenboal.npcsnap.rendering.BillboardCanvasPoint(60,40,100,0,0),
+				new com.kierenboal.npcsnap.rendering.BillboardCanvasPoint(30,50,100,0,0),
+				new Rectangle(0,0,8,8),new Rectangle(0,0,8,8)));
+		BufferedImage texture=new BufferedImage(8,8,BufferedImage.TYPE_INT_ARGB);
+		com.kierenboal.npcsnap.rendering.BillboardRenderResult second=new com.kierenboal.npcsnap.rendering.BillboardRenderResult(
+			new Rectangle(70,60,10,10),texture,new Rectangle(8,8));
+		com.kierenboal.npcsnap.rendering.BillboardRenderResult shadow=new com.kierenboal.npcsnap.rendering.BillboardRenderResult(
+			geometry,texture,new Rectangle(8,8),second);
+		BufferedImage image=new BufferedImage(100,100,BufferedImage.TYPE_INT_ARGB);
+		Graphics2D graphics=image.createGraphics();
+		try
+		{
+			graphics.setColor(Color.ORANGE);
+			java.awt.Stroke stroke=new java.awt.BasicStroke(3); graphics.setStroke(stroke);
+			debug.drawShadowBounds(graphics,shadow);
+			assertEquals(0,image.getRGB(10,20));
+			enabled.set(true); debug.drawShadowBounds(graphics,shadow);
+			assertEquals(Color.CYAN.getRGB(),image.getRGB(10,20));
+			assertEquals(Color.CYAN.getRGB(),image.getRGB(40,10));
+			assertEquals(Color.CYAN.getRGB(),image.getRGB(70,60));
+			assertEquals(0,image.getRGB(10,10)); // Empty corner of the enclosing box.
+			assertEquals(Color.ORANGE,graphics.getColor()); assertEquals(stroke,graphics.getStroke());
+			debug.drawShadowBounds(graphics,null);
+		}
+		finally { graphics.dispose(); }
+	}
+
 	@Test
 	public void redrawLoggingIsOptInAndIndependentOfVisualDebug()
 	{

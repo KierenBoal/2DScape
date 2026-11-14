@@ -33,6 +33,44 @@ import static org.junit.Assert.assertTrue;
 public class BillboardOcclusionMaskTest
 {
 	@Test
+	public void shadowBelowBodySurfaceCutoffStillRespectsSceneryOcclusion()
+	{
+		Rectangle bounds = new Rectangle(0, 0, 32, 4);
+		BillboardDrawGeometry geometry = BillboardDrawGeometry.projected(BillboardProjectedQuad.create(
+			new BillboardCanvasPoint(0, 0, 300, 0, 0), new BillboardCanvasPoint(32, 0, 300, 0, 0),
+			new BillboardCanvasPoint(32, 4, 300, 0, 0), new BillboardCanvasPoint(0, 4, 300, 0, 0), bounds, bounds));
+		BufferedImage body = new BufferedImage(32, 4, BufferedImage.TYPE_INT_ARGB);
+		BufferedImage shadow = new BufferedImage(32, 4, BufferedImage.TYPE_INT_ARGB);
+		for (int y = 0; y < 4; y++) for (int x = 0; x < 32; x++) shadow.setRGB(x, y, 0x80000000);
+		BillboardRenderRequest request = new BillboardRenderRequest(
+			proxy(Renderable.class, method("getModelHeight", 100)), proxy(Model.class), new LocalPoint(0, 0),
+			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+		BillboardRenderResult layer = new BillboardRenderResult(geometry, shadow, bounds);
+		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
+			new BillboardRenderResult(geometry, body, bounds, layer), 1, null, 1);
+		BillboardDepthCalculator camera = new BillboardDepthCalculator(proxy(Client.class));
+		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
+			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
+		{
+			BillboardOcclusionMask mask = new BillboardOcclusionMask();
+			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
+				new Rectangle(0, 0, 16, 4), 100f, "wall")), quality,
+				BillboardOcclusionComposition.HARD_CUTOUT, 0, 0, 32, 4, null, null);
+			BillboardFrameBuffer frame = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+				prepared -> BillboardDepthSurface.from(camera, prepared, 0));
+			for (boolean debug : new boolean[] {false, true})
+			{
+				frame.begin(32, 4);
+				frame.blit(draw, 0, 0, 32, 4, debug);
+				assertEquals(debug ? new java.awt.Color(255, 32, 32, 150).getRGB() : 0,
+					frame.image().getRGB(0, 3));
+				assertEquals(0x80000000, frame.image().getRGB(31, 3));
+			}
+		}
+	}
+
+	@Test
 	public void projectedPlaneUsesDifferentDepthsWithinTheSameCoarseOcclusionCell()
 	{
 		Rectangle imageBounds = new Rectangle(0, 0, 8, 8);

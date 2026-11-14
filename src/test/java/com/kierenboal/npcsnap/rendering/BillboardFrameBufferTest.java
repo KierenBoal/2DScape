@@ -14,6 +14,44 @@ import static org.junit.Assert.assertNotNull;
 public class BillboardFrameBufferTest
 {
 	@Test
+	public void shadowsIgnoreSurfaceCutoffWhileBodyStillClips()
+	{
+		Rectangle bodyBounds = new Rectangle(0, 0, 1, 4);
+		BufferedImage body = image(1, 4, new int[] {0xFF00FF00, 0xFF00FF00, 0xFF00FF00, 0xFF00FF00});
+		BillboardRenderResult cast = new BillboardRenderResult(new Rectangle(1, 2, 1, 2),
+			image(1, 2, new int[] {0x80000000, 0x80000000}), new Rectangle(1, 2));
+		BillboardRenderResult contact = new BillboardRenderResult(
+			BillboardDrawGeometry.rectangular(new Rectangle(2, 2, 1, 2)),
+			image(1, 2, new int[] {0x90000000, 0x90000000}), new Rectangle(1, 2), cast);
+		BillboardRenderResult result = new BillboardRenderResult(
+			BillboardDrawGeometry.rectangular(bodyBounds), body, bodyBounds, contact);
+		for (int cutoff : new int[] {0, 2})
+		{
+			PreparedBillboardDraw draw = new PreparedBillboardDraw(null, result, 7, null, cutoff);
+			assertEquals(cutoff, draw.surfaceOcclusionRow);
+			for (PreparedBillboardDraw shadow = draw.shadowDraw(); shadow != null; shadow = shadow.shadowDraw())
+			{
+				assertEquals(Integer.MAX_VALUE, shadow.surfaceOcclusionRow);
+				assertEquals(draw.paintOrder, shadow.paintOrder);
+				assertEquals(draw.occlusionIgnoredTileObject, shadow.occlusionIgnoredTileObject);
+			}
+			for (boolean debug : new boolean[] {false, true})
+			{
+				BillboardFrameBuffer frame = buffer();
+				frame.begin(3, 4);
+				frame.blit(draw, 0, 0, 3, 4, debug);
+				for (int y = 0; y < 4; y++)
+				{
+					assertEquals(y < cutoff ? 0xFF00FF00 : debug
+						? new java.awt.Color(255, 32, 32, 150).getRGB() : 0, frame.image().getRGB(0, y));
+					assertEquals(y < 2 ? 0 : 0x80000000, frame.image().getRGB(1, y));
+					assertEquals(y < 2 ? 0 : 0x90000000, frame.image().getRGB(2, y));
+				}
+			}
+		}
+	}
+
+	@Test
 	public void surfaceOcclusionSkipsLowerRowsWithoutMovingOrCroppingTheCachedImage()
 	{
 		BillboardFrameBuffer buffer = buffer();

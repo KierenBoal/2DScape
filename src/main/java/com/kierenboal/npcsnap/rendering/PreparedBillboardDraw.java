@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
+import com.kierenboal.npcsnap.occlusion.SupportingFootprint;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import net.runelite.api.TileObject;
@@ -14,9 +15,34 @@ public final class PreparedBillboardDraw
 	public final Rectangle sourceBounds;
 	public final BillboardDrawGeometry geometry;
 	public final TileObject occlusionIgnoredTileObject;
+	public final SupportingFootprint supportingGround;
 	public final int surfaceOcclusionRow;
 	public final int modelHeight;
 	public final boolean supportsWorldOcclusion;
+
+	public PreparedBillboardDraw shadowDraw()
+	{
+		return result == null || result.shadow == null ? null :
+			new PreparedBillboardDraw(this,result.shadow);
+	}
+	private PreparedBillboardDraw(PreparedBillboardDraw parent, BillboardRenderResult result)
+	{
+		this.request=parent.request; this.result=result; this.paintOrder=parent.paintOrder;
+		this.image=result.image; this.bounds=result.bounds; this.sourceBounds=result.sourceBounds;
+		this.geometry=result.geometry; this.occlusionIgnoredTileObject=parent.occlusionIgnoredTileObject;
+		// Ground/water submersion clips the body, not its projected shadow.
+		this.surfaceOcclusionRow=Integer.MAX_VALUE; this.modelHeight=Math.max(1,parent.modelHeight);
+		this.supportsWorldOcclusion=true;
+		this.supportingGround=parent.supportingGround;
+	}
+
+	public Rectangle visualBounds()
+	{
+		Rectangle visual=new Rectangle(bounds);
+		for(BillboardRenderResult layer=result==null ? null : result.shadow; layer!=null; layer=layer.shadow)
+			if(layer.bounds!=null) visual=visual.union(layer.bounds);
+		return visual;
+	}
 
 	public PreparedBillboardDraw(BillboardRenderRequest request, BillboardRenderResult result, int paintOrder)
 	{
@@ -48,6 +74,7 @@ public final class PreparedBillboardDraw
 		this.geometry = result != null ? result.geometry : null;
 		this.occlusionIgnoredTileObject = occlusionIgnoredTileObject;
 		this.surfaceOcclusionRow = surfaceOcclusionRow;
+		this.supportingGround=SupportingFootprint.capture(request,occlusionIgnoredTileObject);
 		// Animated models can reuse their model and vertex buffers on the next
 		// getModel() call. Capture these scalars before preparing other entities
 		// or gathering scenery; compositing must not reclassify overwritten data.

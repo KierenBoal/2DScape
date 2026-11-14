@@ -785,7 +785,7 @@ public final class BillboardWorldOcclusionCollector
 					for (WorldTriangle triangle : geometry.triangles)
 					{
 						if (!upperSurface && !nested() && !isUnevenTerrainTriangle(triangle.z0, triangle.z1, triangle.z2)) continue;
-						addTerrainTriangleOccluder(triangle, tile.getPlane(), upperSurface);
+						addTerrainTriangleOccluder(triangle, tile, upperSurface);
 					}
 				}
 			}
@@ -1870,6 +1870,12 @@ public final class BillboardWorldOcclusionCollector
 	void addMeshTriangle(double[] a, double[] b, double[] c, String source,
 		int transmittance, int tint, TileObject owner, float bias, boolean terrain)
 	{
+		addMeshTriangle(a,b,c,source,transmittance,tint,owner,bias,terrain,null);
+	}
+
+	private void addMeshTriangle(double[] a, double[] b, double[] c, String source,
+		int transmittance, int tint, TileObject owner, float bias, boolean terrain, TerrainSurface surface)
+	{
 		double near = depthCalculator.sceneNearDepth();
 		double[][] input = triangleInput;
 		input[0] = a; input[1] = b; input[2] = c;
@@ -1902,6 +1908,7 @@ public final class BillboardWorldOcclusionCollector
 				p1.getX(), p1.getY(), (float) clipVertices[i][2],
 				p2.getX(), p2.getY(), (float) clipVertices[i + 1][2], source, transmittance, tint, owner);
 			o.depthOffset = bias;
+			o.terrain = surface;
 			o.excludeThirdWeightZero = i > 1;
 			worldOccluders.add(o);
 			if (terrain) debugTerrainFacesAccepted++; else debugSceneObjectFacesAccepted++;
@@ -2019,14 +2026,16 @@ public final class BillboardWorldOcclusionCollector
 		return isUnevenTerrainTriangle(z0, z1, z2) ? 0 : 1;
 	}
 
-	private void addTerrainTriangleOccluder(WorldTriangle triangle, int plane, boolean upperSurface)
+	private void addTerrainTriangleOccluder(WorldTriangle triangle, Tile tile, boolean upperSurface)
 	{
 		terrainTrianglesConsidered++;
 		worldCamera(triangle.x0, triangle.y0, triangle.z0, terrainCamera[0]);
 		worldCamera(triangle.x1, triangle.y1, triangle.z1, terrainCamera[1]);
 		worldCamera(triangle.x2, triangle.y2, triangle.z2, terrainCamera[2]);
-		addMeshTriangle(terrainCamera[0], terrainCamera[1], terrainCamera[2], terrainOccluderSource(plane),
-			0, 0xFFFFFF, null, nested() || upperSurface ? 0f : TERRAIN_OCCLUSION_DEPTH_BIAS, true);
+		addMeshTriangle(terrainCamera[0], terrainCamera[1], terrainCamera[2], terrainOccluderSource(tile.getPlane()),
+			0, 0xFFFFFF, null, nested() || upperSurface ? 0f : TERRAIN_OCCLUSION_DEPTH_BIAS, true,
+			new TerrainSurface(collectionView==null ? WorldView.TOPLEVEL : collectionView.getId(),tile.getPlane(),
+				tile.getSceneLocation().getX(),tile.getSceneLocation().getY(),upperSurface));
 	}
 
 	public static boolean isUnevenTerrainTriangle(int height0, int height1, int height2)

@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
+import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import com.kierenboal.npcsnap.state.BillboardRedrawReason;
 import com.kierenboal.npcsnap.state.BillboardCacheKey;
@@ -131,6 +132,25 @@ public class NpcSnapDebug
 
 	void drawBillboardDebug(Graphics2D graphics, RenderDebug renderDebug)
 	{
+	}
+
+	void drawShadowBounds(Graphics2D graphics, BillboardRenderResult shadow)
+	{
+		if (!config.debugDrawShadowBounds() || shadow == null) return;
+		Color color = graphics.getColor();
+		Stroke stroke = graphics.getStroke();
+		try
+		{
+			graphics.setColor(Color.CYAN);
+			graphics.setStroke(new BasicStroke(1));
+			for (BillboardRenderResult layer = shadow; layer != null; layer = layer.shadow)
+				if (layer.geometry != null) graphics.drawPolygon(layer.geometry.polygon());
+		}
+		finally
+		{
+			graphics.setColor(color);
+			graphics.setStroke(stroke);
+		}
 	}
 
 	void drawBillboardDebugForeground(Graphics2D graphics, RenderDebug renderDebug)
@@ -287,8 +307,14 @@ public class NpcSnapDebug
 
 	private void drawPerformanceTable(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, List<String> context)
 	{
-		if (graphics == null || viewport == null || rows == null || rows.isEmpty())
+		if (graphics == null || viewport == null || rows == null)
 		{
+			return;
+		}
+
+		if (rows.isEmpty())
+		{
+			drawPerformanceCalculating(graphics, viewport);
 			return;
 		}
 
@@ -373,6 +399,32 @@ public class NpcSnapDebug
 		graphics.setFont(oldFont);
 		restoreRenderingHint(graphics, RenderingHints.KEY_TEXT_ANTIALIASING, oldTextAntialiasing, RenderingHints.VALUE_TEXT_ANTIALIAS_DEFAULT);
 		restoreRenderingHint(graphics, RenderingHints.KEY_FRACTIONALMETRICS, oldFractionalMetrics, RenderingHints.VALUE_FRACTIONALMETRICS_DEFAULT);
+	}
+
+	private void drawPerformanceCalculating(Graphics2D graphics, Rectangle viewport)
+	{
+		Graphics2D statusGraphics = (Graphics2D) graphics.create();
+		try
+		{
+			statusGraphics.setFont(metricsFont());
+			statusGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			statusGraphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+			FontMetrics metrics = statusGraphics.getFontMetrics();
+			String text = "Calculating...";
+			int padding = 5;
+			int x = viewport.x + 8;
+			int y = viewport.y + 8;
+			int width = metrics.stringWidth(text) + padding * 2;
+			int height = metrics.getHeight() + padding * 2;
+			statusGraphics.setColor(TEXT_BACKGROUND);
+			statusGraphics.fillRect(x, y, width, height);
+			statusGraphics.setColor(TEXT_FOREGROUND);
+			statusGraphics.drawString(text, x + padding, y + padding + metrics.getAscent());
+		}
+		finally
+		{
+			statusGraphics.dispose();
+		}
 	}
 
 	private void restoreRenderingHint(Graphics2D graphics, RenderingHints.Key key, Object value, Object fallback)

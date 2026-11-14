@@ -67,6 +67,18 @@ public final class BillboardFrameBuffer
 			return;
 		}
 
+		blitLayer(draw,viewportX,viewportY,viewportWidth,viewportHeight,drawOccludedPixels);
+		PreparedBillboardDraw shadow=draw.shadowDraw();
+		while(shadow!=null)
+		{
+			blitLayer(shadow,viewportX,viewportY,viewportWidth,viewportHeight,drawOccludedPixels);
+			shadow=shadow.shadowDraw();
+		}
+	}
+
+	private void blitLayer(PreparedBillboardDraw draw, int viewportX, int viewportY,
+		int viewportWidth, int viewportHeight, boolean drawOccludedPixels)
+	{
 		int clipLeft = Math.max(draw.bounds.x, viewportX);
 		int clipTop = Math.max(draw.bounds.y, viewportY);
 		int clipRight = Math.min(draw.bounds.x + draw.bounds.width, viewportX + viewportWidth);
@@ -184,10 +196,10 @@ public final class BillboardFrameBuffer
 						if (sampleX != cachedSampleX)
 						{
 							cachedSampleX = sampleX;
-							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth, ignoredTileObject);
+							cachedSampleResult = occlusionMask.classifySample(sampleX, y, pixelDepth, ignoredTileObject, draw.supportingGround);
 							if (cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE)
 							{
-								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance, ignoredTileObject);
+								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance, ignoredTileObject, draw.supportingGround);
 								cachedSampleStartX = x - occlusionMask.sampleOffset(x);
 							}
 						}
@@ -197,7 +209,7 @@ public final class BillboardFrameBuffer
 					}
 					else
 					{
-						transmittance = occlusionMask.transmittanceAt(x, y, pixelDepth, ignoredTileObject);
+						transmittance = occlusionMask.transmittanceAt(x, y, pixelDepth, ignoredTileObject, draw.supportingGround);
 					}
 					if (transmittance == 0)
 					{
@@ -214,7 +226,7 @@ public final class BillboardFrameBuffer
 							pixels[destinationIndex] = BillboardTriangleRasterizer.blendPixel(
 								pixels[destinationIndex], debugOcclusionPixel(transmittance));
 						}
-						sourcePixel = occlusionMask.tintPixel(x, y, pixelDepth, sourcePixel, ignoredTileObject);
+						sourcePixel = occlusionMask.tintPixel(x, y, pixelDepth, sourcePixel, ignoredTileObject, draw.supportingGround);
 					}
 				}
 

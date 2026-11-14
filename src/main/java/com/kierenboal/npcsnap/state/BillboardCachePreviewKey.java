@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.state;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
+import com.kierenboal.npcsnap.SpriteShadowType;
 import com.kierenboal.npcsnap.rendering.BillboardBrightness;
 import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
@@ -20,6 +21,7 @@ public final class BillboardCachePreviewKey
 	public final boolean shadowOutline;
 	public final boolean solidOutline;
 	public final boolean spriteShadow;
+	public final SpriteShadowType shadowType;
 	public final boolean highlightInline;
 	public final boolean shadowInline;
 	public final boolean solidInline;
@@ -65,7 +67,7 @@ public final class BillboardCachePreviewKey
 			config.enableBillboardHighlightOutline(),
 			config.enableBillboardShadowOutline(),
 			config.enableBillboardSpriteOutline(),
-			config.enableBillboardSpriteShadows(),
+			config.shadowType(),
 			config.enableBillboardHighlightInline(),
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
@@ -105,6 +107,59 @@ public final class BillboardCachePreviewKey
 		int modelStateHash,
 		int animatedTextureOffsetStateHash)
 	{
+		this(
+			animationId,
+			animationFrame,
+			poseAnimationId,
+			poseAnimationFrame,
+			relativeYaw,
+			relativePitch,
+			colorBands,
+			lightBoost,
+			outlinePadding,
+			highlightOutline,
+			shadowOutline,
+			solidOutline,
+			spriteShadow ? SpriteShadowType.LEGACY : SpriteShadowType.OFF,
+			highlightInline,
+			shadowInline,
+			solidInline,
+			outlineColor,
+			hoverOutline,
+			interactOutline,
+			hoverOutlineColor,
+			interactOutlineColor,
+			renderQuality,
+			modelStateHash,
+			animatedTextureOffsetStateHash);
+	}
+
+	public BillboardCachePreviewKey(
+		int animationId,
+		int animationFrame,
+		int poseAnimationId,
+		int poseAnimationFrame,
+		int relativeYaw,
+		int relativePitch,
+		int colorBands,
+		int lightBoost,
+		int outlinePadding,
+		boolean highlightOutline,
+		boolean shadowOutline,
+		boolean solidOutline,
+		SpriteShadowType shadowType,
+		boolean highlightInline,
+		boolean shadowInline,
+		boolean solidInline,
+		int outlineColor,
+		boolean hoverOutline,
+		boolean interactOutline,
+		int hoverOutlineColor,
+		int interactOutlineColor,
+		int renderQuality,
+		int modelStateHash,
+		int animatedTextureOffsetStateHash)
+	{
 		this.animationId = animationId;
 		this.animationFrame = animationFrame;
 		this.poseAnimationId = poseAnimationId;
@@ -117,7 +172,8 @@ public final class BillboardCachePreviewKey
 		this.highlightOutline = highlightOutline;
 		this.shadowOutline = shadowOutline;
 		this.solidOutline = solidOutline;
-		this.spriteShadow = spriteShadow;
+		this.spriteShadow = shadowType != SpriteShadowType.OFF;
+		this.shadowType = shadowType;
 		this.highlightInline = highlightInline;
 		this.shadowInline = shadowInline;
 		this.solidInline = solidInline;

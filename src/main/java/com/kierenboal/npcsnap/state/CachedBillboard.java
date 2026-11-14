@@ -3,6 +3,8 @@ package com.kierenboal.npcsnap.state;
 import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 import com.kierenboal.npcsnap.rendering.BillboardModelBounds;
+import com.kierenboal.npcsnap.rendering.SpriteCapture;
+import com.kierenboal.npcsnap.rendering.SpriteShadowMask;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -19,6 +21,7 @@ public final class CachedBillboard implements TimedCacheEntry
 	public final BufferedImage image;
 	public final ActorBillboardBounds actorBounds;
 	public final BillboardModelBounds modelBounds;
+	public final SpriteShadowMask shadow;
 	private long lastUsedMillis;
 	private long lastRedrawMillis;
 	private boolean dirty;
@@ -57,6 +60,13 @@ public final class CachedBillboard implements TimedCacheEntry
 	public CachedBillboard(BillboardCacheKey key, Rectangle bounds, Rectangle contentBounds, BufferedImage image,
 		long lastUsedMillis, ActorBillboardBounds actorBounds, BillboardModelBounds modelBounds)
 	{
+		this(key,bounds,contentBounds,image,lastUsedMillis,actorBounds,modelBounds,null);
+	}
+
+	private CachedBillboard(BillboardCacheKey key, Rectangle bounds, Rectangle contentBounds, BufferedImage image,
+		long lastUsedMillis, ActorBillboardBounds actorBounds, BillboardModelBounds modelBounds, SpriteShadowMask shadow)
+	{
+		this.shadow=shadow;
 		this.modelBounds = modelBounds;
 		this.key = key;
 		this.bounds = new Rectangle(bounds);
@@ -70,6 +80,13 @@ public final class CachedBillboard implements TimedCacheEntry
 		this.debugFrameInvalidated = false;
 		this.debugFrameInvalidatedColor = null;
 		this.stateDebugInfo = null;
+	}
+
+	public CachedBillboard(BillboardCacheKey key, Rectangle bounds, Rectangle contentBounds,
+		SpriteCapture capture, long millis,
+		ActorBillboardBounds actorBounds, BillboardModelBounds modelBounds)
+	{
+		this(key,bounds,contentBounds,capture.image,millis,actorBounds,modelBounds,capture.shadow);
 	}
 
 	public void touch(long nowMillis)
@@ -103,6 +120,7 @@ public final class CachedBillboard implements TimedCacheEntry
 			&& key.highlightOutline == previewKey.highlightOutline
 			&& key.shadowOutline == previewKey.shadowOutline
 			&& key.solidOutline == previewKey.solidOutline
+			&& key.shadowType == previewKey.shadowType
 			&& key.spriteShadow == previewKey.spriteShadow
 			&& key.highlightInline == previewKey.highlightInline
 			&& key.shadowInline == previewKey.shadowInline
@@ -187,6 +205,7 @@ public final class CachedBillboard implements TimedCacheEntry
 	public void flush()
 	{
 		image.flush();
+		if (shadow != null) shadow.flush();
 	}
 }
 

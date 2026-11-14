@@ -35,6 +35,66 @@ import static org.junit.Assert.assertTrue;
 public class BillboardRenderRequestFactoryTest
 {
 	@Test
+	public void bothPartsOfAnInteractedWallReceiveObjectOutlineColours()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		WorldView view = worldView(0);
+		Client client = TestProxies.proxy(Client.class);
+		net.runelite.api.WallObject wall = TestProxies.proxy(net.runelite.api.WallObject.class,
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)), TestProxies.method("getWorldView", view),
+			TestProxies.method("getRenderable1", TestProxies.proxy(net.runelite.api.Renderable.class, TestProxies.method("getModel", model))),
+			TestProxies.method("getRenderable2", TestProxies.proxy(net.runelite.api.Renderable.class, TestProxies.method("getModel", model))));
+		BillboardTarget target = BillboardTarget.forTileObject(ObservedTileObjectBuilder.build(wall), 100);
+		BillboardInteractionState state = new BillboardInteractionState();
+		state.noteObjectClick(wall, 10);
+		NpcSnapConfig config = new NpcSnapConfig()
+		{
+			@Override public boolean applyToObjects() { return true; }
+			@Override public boolean worldObjectOther() { return true; }
+		};
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config, new NpcSnapDebug(client, config),
+			new BillboardOrientationCalculator(client, config), state);
+		assertEquals(2, target.observedTileObject.parts.size());
+		for (ObjectRenderablePart part : target.observedTileObject.parts)
+		{
+			BillboardRenderRequest request = factory.build(target, part);
+			assertTrue(request.shouldInteractOutline);
+			assertFalse(request.shouldHoverOutline);
+			assertEquals(config.objectInteractionOutlineColor(), request.interactionOutlineColor);
+		}
+		state.clear();
+		assertFalse(factory.build(target, target.observedTileObject.parts.get(0)).shouldInteractOutline);
+	}
+
+	@Test
+	public void objectOutlinesFollowWhicheverSceneryIsConverted()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		Client client = TestProxies.proxy(Client.class);
+		GameObject tree = TestProxies.proxy(GameObject.class, TestProxies.method("getId", 1),
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)), TestProxies.method("getWorldView", worldView(0)),
+			TestProxies.method("getRenderable", TestProxies.proxy(net.runelite.api.Renderable.class, TestProxies.method("getModel", model))));
+		BillboardTarget target = BillboardTarget.forTileObject(ObservedTileObjectBuilder.build(tree), 100);
+		ObjectRenderablePart part = target.observedTileObject.parts.get(0);
+		BillboardInteractionState state = new BillboardInteractionState();
+		state.noteObjectClick(tree, 10);
+
+		NpcSnapConfig treesOnly = new NpcSnapConfig() { @Override public boolean applyToTrees() { return true; } };
+		assertTrue("Trees are converted without Apply to world objects, so they are outlined without it too",
+			factory(client, treesOnly, state).build(target, part).shouldInteractOutline);
+
+		NpcSnapConfig noCategory = new NpcSnapConfig() { @Override public boolean applyToObjects() { return true; } };
+		assertFalse("World objects with no category ticked convert nothing",
+			factory(client, noCategory, state).build(target, part).shouldInteractOutline);
+	}
+
+	private static BillboardRenderRequestFactory factory(Client client, NpcSnapConfig config, BillboardInteractionState state)
+	{
+		return new BillboardRenderRequestFactory(client, config, new NpcSnapDebug(client, config),
+			new BillboardOrientationCalculator(client, config), state);
+	}
+
+	@Test
 	public void worldObjectRequestReportsTheLiveFrameActuallyCapturedByGetModel()
 	{
 		java.util.concurrent.atomic.AtomicInteger frame = new java.util.concurrent.atomic.AtomicInteger(4);

@@ -261,7 +261,7 @@ public final class BillboardDepthCalculator
 		return cameraDistance(localPoint.getX(), localPoint.getY(), worldHeight(groundHeight, verticalOffset));
 	}
 
-	private double cameraDistance(double localX, double localY, double worldZ)
+	public double cameraDistance(double localX, double localY, double worldZ)
 	{
 		Camera camera = camera();
 		double dx = localX - camera.distanceX;
@@ -375,6 +375,8 @@ public final class BillboardDepthCalculator
 				cameraForward * (pitchCos * pitchCos + pitchSin * pitchSin) / depth)
 			: null;
 	}
+
+	public double projectionScale() { return camera().scale; }
 
 	public int cameraYawIndex()
 	{

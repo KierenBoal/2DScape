@@ -156,6 +156,174 @@ public class ActorWorldPlaneTest
 			0, image, image));
 	}
 
+	@Test
+	public void overheadPitchSweepRetainsHeightAnchorAndPerspectiveDepth()
+	{
+		Rectangle image = new Rectangle(-50, -160, 100, 160);
+		LocalPoint location = new LocalPoint(0, 1000);
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			double previousHeight = Double.NaN;
+			for (int pitch = 3000; pitch <= 4200; pitch++)
+			{
+				double angle = pitch * 2.0 * Math.PI / 16384;
+				int cameraY = (int) Math.round(1000 - 1000 * Math.cos(angle));
+				int cameraZ = (int) Math.round(-1000 * Math.sin(angle));
+				Client client = proxy(Client.class, method("isGpu", gpu),
+					method("getCameraY", cameraY), method("getCameraFpY", (float) cameraY),
+					method("getCameraZ", cameraZ), method("getCameraFpZ", (float) cameraZ),
+					method("getCameraPitch", pitch), method("getCameraFpPitch", (float) (pitch * 2.0 * Math.PI / 16384)),
+					method("getScale", 500), method("getViewportWidth", 800), method("getViewportHeight", 600));
+				BillboardDepthCalculator camera = new BillboardDepthCalculator(client);
+				BillboardDrawGeometry geometry = ActorWorldPlane.project(camera, location, 0, 0, image, image);
+				assertNotNull("pitch=" + pitch, geometry);
+				BillboardCanvasPoint base = camera.projectCanvasPoint(0, 1000, 0);
+				Point foot = geometry.canvasPoint(0.5, 1);
+				assertEquals(base.x, foot.getX(), 0.51);
+				assertEquals(base.y, foot.getY(), 0.51);
+				BillboardCanvasPoint top = camera.projectCanvasPoint(0, 1000, -160);
+				double height = foot.getY() - geometry.contentTopCenter().getY();
+				assertTrue(height >= 0.25 * 160 * 500 / base.depth - 1.0);
+				assertEquals(top.depth, geometry.projectedQuad.depthAt(0.5, 0), 1e-8);
+				assertEquals(base.depth, geometry.projectedQuad.depthAt(0.5, 1), 1e-8);
+				Point midpoint = geometry.canvasPoint(0.5, 0.5);
+				assertTrue(geometry.projectedQuad.sample(midpoint.getX(), midpoint.getY(), new BillboardProjectedQuad.Sample()));
+				if (Double.isFinite(previousHeight)) assertTrue(Math.abs(height - previousHeight) <= 2);
+				previousHeight = height;
+			}
+		}
+	}
+
+	@Test
+	public void offCentreActorsNeverTurnEdgeOnOrReverseWindingDuringTheHeightClamp()
+	{
+		Rectangle image = new Rectangle(-50, -160, 100, 160);
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			for (int offsetX : new int[] {-200, 200})
+			{
+				LocalPoint location = new LocalPoint(offsetX, 700);
+				for (int pitch = 2800; pitch <= 4096; pitch += 8)
+				{
+					double angle = pitch * 2.0 * Math.PI / 16384;
+					int cameraY = (int) Math.round(1000 - 1000 * Math.cos(angle));
+					int cameraZ = (int) Math.round(-1000 * Math.sin(angle));
+					Client client = proxy(Client.class, method("isGpu", gpu),
+						method("getCameraY", cameraY), method("getCameraFpY", (float) cameraY),
+						method("getCameraZ", cameraZ), method("getCameraFpZ", (float) cameraZ),
+						method("getCameraPitch", pitch), method("getCameraFpPitch", (float) angle),
+						method("getScale", 500), method("getViewportWidth", 800), method("getViewportHeight", 600));
+					BillboardDepthCalculator camera = new BillboardDepthCalculator(client);
+					double bearing = ActorWorldPlane.viewingBearing(client, location);
+					BillboardDrawGeometry geometry = ActorWorldPlane.project(camera, location, 0, bearing, image, image);
+					String context = "gpu=" + gpu + " x=" + offsetX + " pitch=" + pitch;
+					assertNotNull(context, geometry);
+					Point left = geometry.canvasPoint(0, 0.5), right = geometry.canvasPoint(1, 0.5);
+					Point top = geometry.canvasPoint(0.5, 0), bottom = geometry.canvasPoint(0.5, 1);
+					double widthX = right.getX() - left.getX(), widthY = right.getY() - left.getY();
+					double heightX = bottom.getX() - top.getX(), heightY = bottom.getY() - top.getY();
+					double signedHeight = (widthX * heightY - widthY * heightX) / Math.hypot(widthX, widthY);
+					BillboardCanvasPoint base = camera.projectCanvasPoint(offsetX, 700, 0);
+					assertTrue(context + " signedHeight=" + signedHeight,
+						signedHeight >= 0.25 * 160 * 500 / base.depth - 1.5);
+					assertEquals(base.x, bottom.getX(), 0.51);
+					assertEquals(base.y, bottom.getY(), 0.51);
+					for (double u : new double[] {0, 0.5, 1})
+					{
+						double horizontal = image.x + image.width * u;
+						BillboardCanvasPoint rawFoot = camera.projectCanvasPoint(offsetX + Math.cos(bearing) * horizontal,
+							700 + Math.sin(bearing) * horizontal, 0);
+						Point foot = geometry.canvasPoint(u, 1);
+						assertEquals(context + " projected baseline scale changed",
+							Math.hypot(rawFoot.x - base.x, rawFoot.y - base.y),
+							Math.hypot(foot.getX() - base.x, foot.getY() - base.y), 1.0);
+						assertEquals(context + " baseline rolled", base.y, foot.getY(), 0.51);
+						for (double v : new double[] {0, 0.5, 1})
+						{
+							BillboardCanvasPoint raw = camera.projectCanvasPoint(offsetX + Math.cos(bearing) * horizontal,
+								700 + Math.sin(bearing) * horizontal, image.y + image.height * v);
+							assertEquals(context, raw.depth, geometry.projectedQuad.depthAt(u, v), 1e-8);
+						}
+					}
+					Point middle = geometry.canvasPoint(0.5, 0.5);
+					BillboardProjectedQuad.Sample sample = new BillboardProjectedQuad.Sample();
+					assertTrue(context, geometry.projectedQuad.sample(middle.getX(), middle.getY(), sample));
+					assertEquals(context, 0.5, sample.u, 0.035);
+					assertEquals(context, 0.5, sample.v, 0.035);
+					double ratio = ActorWorldPlane.heightRatio(camera, location, 0, bearing);
+					assertTrue(context, ratio >= 0.25 && ratio <= 1.0);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void realViewingBearingKeepsSpritesUprightThroughPitch4160()
+	{
+		Rectangle image = new Rectangle(-50, -160, 100, 160);
+		for (boolean gpu : new boolean[] {false, true})
+		{
+			for (int yaw : new int[] {0, 4096, 8192, 12288})
+			{
+				double yawAngle = yaw * 2.0 * Math.PI / 16384;
+				for (int side : new int[] {-200, 0, 200})
+				{
+					// Test the followed player and actors displaced toward the camera.
+					int forwardOffset = side == 0 ? 0 : -300;
+					LocalPoint location = new LocalPoint(
+						(int) Math.round(side * Math.cos(yawAngle) - forwardOffset * Math.sin(yawAngle)),
+						1000 + (int) Math.round(side * Math.sin(yawAngle) + forwardOffset * Math.cos(yawAngle)));
+					Point previousTop = null;
+					for (int pitch = 2800; pitch <= 4200; pitch += 4)
+					{
+						double pitchAngle = pitch * 2.0 * Math.PI / 16384;
+						int cameraX = (int) Math.round(1000 * Math.cos(pitchAngle) * Math.sin(yawAngle));
+						int cameraY = 1000 - (int) Math.round(1000 * Math.cos(pitchAngle) * Math.cos(yawAngle));
+						int cameraZ = (int) Math.round(-1000 * Math.sin(pitchAngle));
+						Client client = proxy(Client.class, method("isGpu", gpu),
+							method("getCameraX", cameraX), method("getCameraFpX", (float) cameraX),
+							method("getCameraY", cameraY), method("getCameraFpY", (float) cameraY),
+							method("getCameraZ", cameraZ), method("getCameraFpZ", (float) cameraZ),
+							method("getCameraYaw", yaw), method("getCameraFpYaw", (float) yawAngle),
+							method("getCameraPitch", pitch), method("getCameraFpPitch", (float) pitchAngle),
+							method("getScale", 500), method("getViewportWidth", 800), method("getViewportHeight", 600));
+						BillboardDepthCalculator camera = new BillboardDepthCalculator(client);
+						double bearing = ActorWorldPlane.viewingBearing(client, location);
+						BillboardDrawGeometry geometry = ActorWorldPlane.project(camera, location, 0, bearing, image, image);
+						String context = "gpu=" + gpu + " yaw=" + yaw + " side=" + side + " pitch=" + pitch;
+						assertNotNull(context, geometry);
+						Point left = geometry.canvasPoint(0, 1), right = geometry.canvasPoint(1, 1);
+						Point top = geometry.canvasPoint(0.5, 0), feet = geometry.canvasPoint(0.5, 1);
+						assertTrue(context + " left/right reversed", right.getX() > left.getX());
+						assertEquals(context + " baseline rolled", left.getY(), right.getY(), 1.0);
+						assertTrue(context + " head below feet", top.getY() < feet.getY());
+						if (previousTop != null)
+						{
+							assertTrue(context + " head jumped horizontally", Math.abs(top.getX() - previousTop.getX()) <= 3);
+							assertTrue(context + " head jumped vertically", Math.abs(top.getY() - previousTop.getY()) <= 3);
+						}
+						previousTop = top;
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	public void shadowCoverageStaysAtDefaultAcrossPitchChanges()
+	{
+		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
+			ActorWorldPlane.shadowHeightRatio(1), 1e-10);
+		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
+			ActorWorldPlane.shadowHeightRatio(0.625), 1e-10);
+		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
+			ActorWorldPlane.shadowHeightRatio(0.25), 1e-10);
+		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
+			ActorWorldPlane.shadowHeightRatio(0), 1e-10);
+		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
+			ActorWorldPlane.shadowHeightRatio(2), 1e-10);
+	}
+
 	private static BillboardDepthCalculator camera(boolean gpu, int yaw, int pitch)
 	{
 		return new BillboardDepthCalculator(cameraClient(gpu, yaw, pitch, 0, 0));

@@ -26,7 +26,7 @@ final class RetroChatRenderer
 
 	static ParsedChat parse(String source)
 	{
-		String text = source == null ? "" : source;
+		String text = source == null ? "" : source.replace("<at>", "@");
 		Color color = Color.YELLOW;
 		ColorMode colorMode = ColorMode.SOLID;
 		Motion motion = Motion.NONE;

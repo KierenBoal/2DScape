@@ -22,15 +22,12 @@ import static org.junit.Assert.assertTrue;
 public class BillboardSceneDrawCallbacksTest
 {
 	@Test
-	public void disabledAndUiCallbacksPassThroughWithoutTracking()
+	public void uiCallbacksPassThroughWithoutTracking()
 	{
 		FakeOverlay overlay = new FakeOverlay();
 		Renderable renderable = TestProxies.proxy(Renderable.class);
-		BillboardSceneDrawCallbacks disabled = callbacks(false, false, false, overlay);
-
-		assertTrue(disabled.addEntity(renderable, false));
-		assertTrue(disabled.draw(renderable, false));
-		assertTrue(callbacks(true, false, false, overlay).draw(renderable, true));
+		assertTrue(callbacks(false, false, overlay).addEntity(renderable, true));
+		assertTrue(callbacks(false, false, overlay).draw(renderable, true));
 		assertTrue(overlay.noted.isEmpty());
 	}
 
@@ -40,10 +37,10 @@ public class BillboardSceneDrawCallbacksTest
 		FakeOverlay overlay = new FakeOverlay();
 		NPC npc = TestProxies.proxy(NPC.class);
 
-		assertTrue(callbacks(true, false, false, overlay).addEntity(npc, true));
+		assertTrue(callbacks(false, false, overlay).addEntity(npc, true));
 		overlay.hiddenActor2d.add(npc);
-		assertFalse(callbacks(true, false, false, overlay).addEntity(npc, true));
-		assertFalse(callbacks(true, false, false, overlay).draw(npc, true));
+		assertFalse(callbacks(false, false, overlay).addEntity(npc, true));
+		assertFalse(callbacks(false, false, overlay).draw(npc, true));
 		assertTrue(overlay.noted.isEmpty());
 	}
 
@@ -54,7 +51,7 @@ public class BillboardSceneDrawCallbacksTest
 		NPC npc = TestProxies.proxy(NPC.class);
 		overlay.hiddenRenderables.add(npc);
 
-		assertTrue(callbacks(true, false, false, overlay).addEntity(npc, false));
+		assertTrue(callbacks(false, false, overlay).addEntity(npc, false));
 		assertTrue(overlay.noted.contains(npc));
 	}
 
@@ -64,7 +61,7 @@ public class BillboardSceneDrawCallbacksTest
 		FakeOverlay overlay = new FakeOverlay();
 		Scene scene = TestProxies.proxy(Scene.class);
 		overlay.hiddenRenderables.add(scene);
-		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
+		BillboardSceneDrawCallbacks callbacks = callbacks(false, false, overlay);
 
 		assertTrue(callbacks.addEntity(scene, false));
 		assertFalse(callbacks.draw(scene, false));
@@ -77,7 +74,7 @@ public class BillboardSceneDrawCallbacksTest
 		FakeOverlay overlay = new FakeOverlay();
 		Renderable renderable = TestProxies.proxy(Renderable.class);
 		overlay.hiddenRenderables.add(renderable);
-		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
+		BillboardSceneDrawCallbacks callbacks = callbacks(false, false, overlay);
 
 		assertTrue(callbacks.addEntity(renderable, false));
 		assertFalse(callbacks.draw(renderable, false));
@@ -91,7 +88,7 @@ public class BillboardSceneDrawCallbacksTest
 		Renderable part = TestProxies.proxy(Renderable.class);
 		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
 		overlay.hiddenRenderables.add(part);
-		BillboardSceneDrawCallbacks callbacks = callbacks(true, false, false, overlay);
+		BillboardSceneDrawCallbacks callbacks = callbacks(false, false, overlay);
 
 		assertFalse(callbacks.drawObject(object));
 		assertTrue(callbacks.addEntity(part, false));
@@ -106,7 +103,7 @@ public class BillboardSceneDrawCallbacksTest
 		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
 		overlay.hiddenTileObjects.add(object);
 
-		assertFalse(callbacks(true, true, false, overlay).drawObject(object));
+		assertFalse(callbacks(true, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.contains(object));
 		assertTrue(overlay.noted.contains(part));
 	}
@@ -119,7 +116,7 @@ public class BillboardSceneDrawCallbacksTest
 		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
 		overlay.hiddenRenderables.add(part);
 
-		assertFalse(callbacks(true, true, false, overlay).drawObject(object));
+		assertFalse(callbacks(true, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.contains(object));
 		assertTrue(overlay.noted.contains(part));
 	}
@@ -137,7 +134,7 @@ public class BillboardSceneDrawCallbacksTest
 			TestProxies.method("getTop", top));
 		overlay.hiddenRenderables.add(middle);
 
-		assertFalse(callbacks(true, false, false, overlay).drawObject(layer));
+		assertFalse(callbacks(false, false, overlay).drawObject(layer));
 		assertTrue(overlay.noted.contains(bottom));
 		assertTrue(overlay.noted.contains(middle));
 		assertTrue(overlay.noted.contains(top));
@@ -150,11 +147,11 @@ public class BillboardSceneDrawCallbacksTest
 		Renderable part = TestProxies.proxy(Renderable.class);
 		GameObject object = TestProxies.proxy(GameObject.class, TestProxies.method("getRenderable", part));
 
-		assertTrue(callbacks(true, false, false, overlay).drawObject(object));
+		assertTrue(callbacks(false, false, overlay).drawObject(object));
 		assertTrue(overlay.observed.isEmpty());
 
 		NpcSnapConfig noBoxTicked = TestProxies.proxy(NpcSnapConfig.class,
-			TestProxies.method("enable2dBillboardSprites", true), TestProxies.method("applyToObjects", true));
+			TestProxies.method("applyToObjects", true));
 		assertTrue(new BillboardSceneDrawCallbacks(noBoxTicked, overlay).drawObject(object));
 		assertTrue("World objects with no category ticked convert nothing, so nothing is observed",
 			overlay.observed.isEmpty());
@@ -167,7 +164,7 @@ public class BillboardSceneDrawCallbacksTest
 		GameObject object = TestProxies.proxy(GameObject.class,
 			TestProxies.method("getRenderable", TestProxies.proxy(Renderable.class)));
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
-			TestProxies.method("enable2dBillboardSprites", true), TestProxies.method("applyToTrees", true));
+			TestProxies.method("applyToTrees", true));
 
 		assertTrue(new BillboardSceneDrawCallbacks(config, overlay).drawObject(object));
 		assertTrue(overlay.observed.contains(object));
@@ -180,7 +177,6 @@ public class BillboardSceneDrawCallbacksTest
 		AtomicInteger reads = new AtomicInteger();
 		boolean[] trees = {true};
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
-			TestProxies.method("enable2dBillboardSprites", true),
 			TestProxies.methodSupplier("applyToTrees", () ->
 			{
 				reads.incrementAndGet();
@@ -209,10 +205,9 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	private static BillboardSceneDrawCallbacks callbacks(
-		boolean enabled, boolean objects, boolean graphicsObjects, FakeOverlay overlay)
+		boolean objects, boolean graphicsObjects, FakeOverlay overlay)
 	{
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
-			TestProxies.method("enable2dBillboardSprites", enabled),
 			TestProxies.method("applyToObjects", objects),
 			TestProxies.method("worldObjectOther", objects),
 			TestProxies.method("applyToGraphicsObjects", graphicsObjects));

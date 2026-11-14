@@ -91,7 +91,7 @@ public final class BillboardOutlineRenderer
 		// exterior outline at the sprite's original silhouette.
 		if (spriteShadow)
 		{
-			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio);
+			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio, scratch);
 		}
 
 		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, false, solidInline, solidOutlineColor);
@@ -101,6 +101,16 @@ public final class BillboardOutlineRenderer
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, shadowOutline, false, solidOutlineColor);
 		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, false, false, solidOutlineColor);
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
+	}
+
+	/** Shadow-only path avoids rebuilding boundary masks on camera movement. */
+	public static void applyShadow(BufferedImage image, Scratch scratch, double ratio)
+	{
+		int[] pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+		scratch.ensureCapacity(pixels.length);
+		System.arraycopy(pixels, 0, scratch.resultPixels, 0, pixels.length);
+		applySpriteShadow(pixels, scratch.resultPixels, image.getWidth(), image.getHeight(), ratio, scratch);
+		System.arraycopy(scratch.resultPixels, 0, pixels, 0, pixels.length);
 	}
 
 	public static int[] captureExteriorBoundaryIndices(BufferedImage image, Scratch scratch)
@@ -182,6 +192,7 @@ public final class BillboardOutlineRenderer
 
 	public static final class Scratch
 	{
+		private int[] columnBottoms = new int[0];
 		private int[] resultPixels = new int[0];
 		private boolean[] visited = new boolean[0];
 		private boolean[] exteriorTransparentBoundary = new boolean[0];
@@ -295,7 +306,7 @@ public final class BillboardOutlineRenderer
 		int[] resultPixels,
 		int width,
 		int height,
-		double shadowHeightRatio)
+		double shadowHeightRatio, Scratch scratch)
 	{
 		double boundedHeightRatio = Double.isFinite(shadowHeightRatio)
 			? Math.max(0.0d, Math.min(1.0d, shadowHeightRatio))
@@ -304,8 +315,9 @@ public final class BillboardOutlineRenderer
 		int shadowBandStartY = Math.max(0, height - shadowBandHeight);
 		int minX = width;
 		int maxX = -1;
-		int[] columnBottoms = new int[width];
-		Arrays.fill(columnBottoms, -1);
+		if (scratch.columnBottoms.length < width) scratch.columnBottoms = new int[width];
+		int[] columnBottoms = scratch.columnBottoms;
+		Arrays.fill(columnBottoms, 0, width, -1);
 
 		for (int y = shadowBandStartY; y < height; y++)
 		{

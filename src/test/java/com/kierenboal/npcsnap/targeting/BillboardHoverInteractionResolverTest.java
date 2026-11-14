@@ -116,4 +116,62 @@ public class BillboardHoverInteractionResolverTest
 		Assert.assertSame(explicitActor, BillboardHoverInteractionResolver.interactedActor(client, explicitActor));
 		Assert.assertSame(playerTarget, BillboardHoverInteractionResolver.interactedActor(client, null));
 	}
+	@Test
+	public void objectLookupUsesWorldViewTileAndIdentityWithoutScanning()
+	{
+		net.runelite.api.GameObject object = proxy(net.runelite.api.GameObject.class, method("getId", 42));
+		net.runelite.api.Tile[][][] tiles = new net.runelite.api.Tile[1][4][4];
+		tiles[0][2][3] = proxy(net.runelite.api.Tile.class,
+			method("getGameObjects", new net.runelite.api.GameObject[] {object}));
+		net.runelite.api.Scene scene = proxy(net.runelite.api.Scene.class, method("getExtendedTiles", tiles));
+		WorldView view = proxy(WorldView.class, method("getScene", scene));
+		Client client = proxy(Client.class, method("getWorldView", view));
+		MenuEntry entry = proxy(MenuEntry.class, method("getType", MenuAction.GAME_OBJECT_FIRST_OPTION),
+			method("getWorldViewId", 7), method("getParam0", 2), method("getParam1", 3), method("getIdentifier", 42));
+		Assert.assertSame(object, BillboardHoverInteractionResolver.tileObject(client, entry));
+		MenuEntry wrongId = proxy(MenuEntry.class, method("getType", MenuAction.GAME_OBJECT_FIRST_OPTION),
+			method("getParam0", 2), method("getParam1", 3), method("getIdentifier", 43));
+		Assert.assertNull(BillboardHoverInteractionResolver.tileObject(client, wrongId));
+		Client missingView = proxy(Client.class);
+		Assert.assertNull(BillboardHoverInteractionResolver.tileObject(missingView, entry));
+		MenuEntry invalidTile = proxy(MenuEntry.class, method("getType", MenuAction.GAME_OBJECT_FIRST_OPTION),
+			method("getParam0", -20), method("getIdentifier", 42));
+		Assert.assertNull(BillboardHoverInteractionResolver.tileObject(client, invalidTile));
+	}
+
+	@Test
+	public void objectLookupResolvesWallsDecorationsAndGroundObjects()
+	{
+		for (String kind : new String[] {"Wall", "Decorative", "Ground"})
+		{
+			net.runelite.api.TileObject object = kind.equals("Wall")
+				? proxy(net.runelite.api.WallObject.class, method("getId", 42))
+				: kind.equals("Decorative") ? proxy(net.runelite.api.DecorativeObject.class, method("getId", 42))
+				: proxy(net.runelite.api.GroundObject.class, method("getId", 42));
+			net.runelite.api.Tile[][][] tiles = new net.runelite.api.Tile[1][42][42];
+			tiles[0][40][40] = proxy(net.runelite.api.Tile.class, method("get" + kind + "Object", object));
+			net.runelite.api.Scene scene = proxy(net.runelite.api.Scene.class, method("getExtendedTiles", tiles));
+			WorldView view = proxy(WorldView.class, method("getScene", scene), method("isTopLevel", true));
+			Client client = proxy(Client.class, method("getWorldView", view));
+			MenuEntry entry = proxy(MenuEntry.class, method("getType", MenuAction.WIDGET_TARGET_ON_GAME_OBJECT), method("getIdentifier", 42));
+			Assert.assertSame(object, BillboardHoverInteractionResolver.tileObject(client, entry));
+		}
+	}
+
+	@Test
+	public void groundItemsAtTheSameTileInDifferentWorldViewsStayDistinct()
+	{
+		WorldView view = proxy(WorldView.class, method("getId", 7));
+		LocalPoint point = new LocalPoint(10 << 7, 20 << 7, view);
+		TileItem item = proxy(TileItem.class, method("getId", 42));
+		MenuEntry wrongView = proxy(MenuEntry.class, method("getIdentifier", 42), method("getParam0", 10),
+			method("getParam1", 20), method("getWorldViewId", 8));
+		MenuEntry matchingView = proxy(MenuEntry.class, method("getIdentifier", 42), method("getParam0", 10),
+			method("getParam1", 20), method("getWorldViewId", 7));
+		java.util.List<java.util.Map.Entry<TileItem, GroundItemBillboard>> tracked = Collections.singletonList(
+			new AbstractMap.SimpleEntry<>(item, new GroundItemBillboard(0, point)));
+		Assert.assertNull(BillboardHoverInteractionResolver.groundItem(wrongView, tracked));
+		Assert.assertSame(item, BillboardHoverInteractionResolver.groundItem(matchingView, tracked));
+	}
+
 }
