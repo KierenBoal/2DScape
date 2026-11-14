@@ -19,7 +19,7 @@ final class NpcSnapChangelog
 		new Release("1.0.5", "Reduced changelog spam; Roof and hidden static scenery now occlude correctly; Camera clipping occlusion depth now match real rendering"),
 		new Release("1.1.0", "Backend RetroNPC Swapper support (pending compatibility)"),
 		new Release("1.1.1", "Retro NPC Swapper support"),
-		new Release("1.1.2", "Config cleanup; Outlines improved & plugin override; RSC chat colours fixes; Optional wildy/PvP toggle; Added Flat and Radial shadow types; migrated existing shadow settings"),
+		new Release("1.1.2", "Config cleanup; Outlines improved & plugin override; RSC chat colours fixes; Optional wildy/PvP toggle"),
 		new Release("1.2.0", "Added new shadow settings (legacy option avaliable);Fixed ground clipping visuals;Improved click accuracy mode improvements"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
