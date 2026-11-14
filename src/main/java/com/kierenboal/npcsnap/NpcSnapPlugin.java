@@ -8,6 +8,7 @@ import com.kierenboal.npcsnap.export.BillboardExportBatch;
 import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.export.BillboardPngExporter;
 import com.kierenboal.npcsnap.export.BillboardObjectExportTarget;
+import com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility;
 import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
@@ -32,8 +33,10 @@ import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.TileObject;
+import net.runelite.api.WorldType;
 import net.runelite.api.WorldView;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
@@ -49,7 +52,9 @@ import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.events.WorldChanged;
 import net.runelite.client.callback.Hooks;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.callback.RenderCallbackManager;
@@ -75,6 +80,7 @@ public class NpcSnapPlugin extends Plugin
 {
 	private static final String CONFIG_GROUP = "npc-snap";
 	private static final String RETRO_OVERHEADS_KEY = "useRetroOverheads";
+	private static final String OVERRIDE_INTERACT_HIGHLIGHT_KEY = "overrideInteractHighlightOutlines";
 	private static final int CHANGELOG_LOGIN_DELAY_TICKS = 20;
 	private final LoginXpDropGuard loginXpDropGuard = new LoginXpDropGuard();
 	private final RendererAvailabilityWarning rendererAvailabilityWarning = new RendererAvailabilityWarning();
@@ -94,11 +100,19 @@ public class NpcSnapPlugin extends Plugin
 
 	@Inject private net.runelite.client.eventbus.EventBus eventBus;
 	@Inject private com.kierenboal.npcsnap.compatibility.RetroModelCompatibility modelCompatibility;
+	@Inject private InteractHighlightCompatibility interactHighlightCompatibility;
 
 	@Subscribe
 	public void onPluginChanged(net.runelite.client.events.PluginChanged event)
 	{
-		if (active && event.getPlugin() == this && event.isLoaded()) eventBus.post(modelCompatibility.request());
+		if (active && event.getPlugin() == this && event.isLoaded())
+		{
+			eventBus.post(modelCompatibility.request());
+		}
+		if (interactHighlightCompatibility.isInteractHighlightPlugin(event.getPlugin()))
+		{
+			syncInteractHighlightOverride();
+		}
 	}
 
 	@Subscribe
@@ -153,20 +167,115 @@ public class NpcSnapPlugin extends Plugin
 		migrateOcclusionQuality();
 		rendererAvailabilityWarning.reset();
 		gpuPlugin = pluginManager.getPlugins().stream().filter(GpuPlugin.class::isInstance).findFirst().orElse(null);
-		active = true;
+		active = false;
 		changelog.requestCheck();
 		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
 			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
+		migrateLegacyRetroOverheadConfig();
+		billboardPngExporter.start();
+		interactHighlightCompatibility.restoreStaleStash();
+		reconcileSafetyState();
+		log.debug("2DScape started");
+	}
+
+	private boolean shouldSuspendForSafety()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			return false;
+		}
+
+		if (config.disableInWilderness()
+			&& client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1)
+		{
+			return true;
+		}
+
+		return config.disableInPvpWorlds()
+			&& client.getWorldType() != null
+			&& WorldType.isPvpWorld(client.getWorldType());
+	}
+
+	private void reconcileSafetyState()
+	{
+		if (!client.isClientThread())
+		{
+			clientThread.invoke(this::reconcileSafetyState);
+			return;
+		}
+
+		boolean shouldBeActive = !shouldSuspendForSafety();
+		if (active == shouldBeActive)
+		{
+			return;
+		}
+
+		if (shouldBeActive)
+		{
+			resumeAfterSafetySuspend();
+		}
+		else
+		{
+			suspendForSafety();
+		}
+	}
+
+	private void resumeAfterSafetySuspend()
+	{
+		active = true;
+		syncInteractHighlightOverride();
+		rendererAvailabilityWarning.reset();
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
-		migrateLegacyRetroOverheadConfig();
 		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
+		if (pendingSkillXpSeed)
+		{
+			loginXpDropGuard.onLoggedIn();
+		}
+		changelog.requestCheck();
+		changelogLoginTicksRemaining = client.getGameState() == GameState.LOGGED_IN
+			? CHANGELOG_LOGIN_DELAY_TICKS : 0;
 		overlayManager.add(billboardOverlay);
 		overlayManager.add(skillingThoughtBubbleOverlay);
 		renderCallbackManager.register(this);
-		billboardPngExporter.start();
-		log.debug("2DScape started");
+		if (client.getGameState() == GameState.LOGGED_IN)
+		{
+			eventBus.post(modelCompatibility.request());
+		}
+	}
+
+	private void suspendForSafety()
+	{
+		deactivateFeatures();
+	}
+
+	private void deactivateFeatures()
+	{
+		active = false;
+		cleanupStep("Interaction Highlight compatibility", interactHighlightCompatibility::restore);
+		exportMenuTargetsThisTick.clear();
+		cleanupStep("model compatibility", () -> clientThread.invoke(modelCompatibility::clear));
+		cleanupStep("static scenery", () -> clientThread.invoke(billboardOverlay::restoreStaticScenery));
+		cleanupStep("billboard overlay activity", () -> billboardOverlay.setActive(false));
+		cleanupStep("thought bubble overlay activity", () -> skillingThoughtBubbleOverlay.setActive(false));
+		cleanupStep("scene visibility", sceneVisibility::stop);
+		cleanupStep("render callback", () -> renderCallbackManager.unregister(this));
+		cleanupStep("thought bubble overlay", () -> overlayManager.remove(skillingThoughtBubbleOverlay));
+		cleanupStep("billboard overlay", () -> overlayManager.remove(billboardOverlay));
+		cleanupStep("ground item state", this::clearGroundItemState);
+		cleanupStep("tile object state", billboardOverlay::clearTileObjects);
+		cleanupStep("billboard cache", billboardOverlay::clearBillboardCache);
+		cleanupStep("texture cache", billboardOverlay::clearTextureCache);
+		cleanupStep("interaction state", billboardOverlay::clearInteractionState);
+		cleanupStep("skilling state", skillingActivityTracker::clear);
+		cleanupStep("debug frame state", debug::clearFrameStates);
+		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
+		sceneDrawCallbacks = null;
+		pendingSkillXpSeed = false;
+		loginXpDropGuard.onLoggedOut();
+		changelogLoginTicksRemaining = 0;
+		rendererAvailabilityWarning.reset();
 	}
 
 	private void migrateOcclusionQuality()
@@ -207,26 +316,8 @@ public class NpcSnapPlugin extends Plugin
 	{
 		// PluginManager removes us from the event bus before calling this method. Keep
 		// the direct render hooks harmless even if one cleanup step below fails.
-		active = false;
-		clientThread.invoke(modelCompatibility::clear);
-		cleanupStep("static scenery", () -> clientThread.invoke(billboardOverlay::restoreStaticScenery));
-		cleanupStep("billboard overlay activity", () -> billboardOverlay.setActive(false));
-		cleanupStep("thought bubble overlay activity", () -> skillingThoughtBubbleOverlay.setActive(false));
-		cleanupStep("scene visibility", sceneVisibility::stop);
-		cleanupStep("render callback", () -> renderCallbackManager.unregister(this));
-		cleanupStep("thought bubble overlay", () -> overlayManager.remove(skillingThoughtBubbleOverlay));
-		cleanupStep("billboard overlay", () -> overlayManager.remove(billboardOverlay));
-		cleanupStep("ground item state", this::clearGroundItemState);
-		cleanupStep("tile object state", billboardOverlay::clearTileObjects);
-		cleanupStep("billboard cache", billboardOverlay::clearBillboardCache);
-		cleanupStep("texture cache", billboardOverlay::clearTextureCache);
-		cleanupStep("interaction state", billboardOverlay::clearInteractionState);
-		cleanupStep("skilling state", skillingActivityTracker::clear);
-		pendingSkillXpSeed = false;
-		rendererAvailabilityWarning.reset();
-		cleanupStep("debug frame state", debug::clearFrameStates);
+		deactivateFeatures();
 		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
-		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
 		log.debug("2DScape stopped");
 	}
 
@@ -238,8 +329,7 @@ public class NpcSnapPlugin extends Plugin
 		}
 		catch (RuntimeException ex)
 		{
-			// A broken client-side object should not prevent later hooks from being
-			// removed. RuneLite has already marked the plugin inactive at this point.
+			// A broken client-side object should not prevent later hooks from being removed.
 			log.debug("2DScape cleanup step failed: " + name, ex);
 		}
 	}
@@ -247,6 +337,10 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onBeforeRender(BeforeRender beforeRender)
 	{
+		if (client.isClientThread())
+		{
+			reconcileSafetyState();
+		}
 		if (!active)
 		{
 			return;
@@ -284,24 +378,28 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onItemSpawned(ItemSpawned itemSpawned)
 	{
+		if (!active) return;
 		billboardOverlay.trackGroundItem(itemSpawned.getItem(), itemSpawned.getTile());
 	}
 
 	@Subscribe
 	public void onItemDespawned(ItemDespawned itemDespawned)
 	{
+		if (!active) return;
 		billboardOverlay.untrackGroundItem(itemDespawned.getItem());
 	}
 
 	@Subscribe
 	public void onItemQuantityChanged(ItemQuantityChanged itemQuantityChanged)
 	{
+		if (!active) return;
 		billboardOverlay.trackGroundItem(itemQuantityChanged.getItem(), itemQuantityChanged.getTile());
 	}
 
 	@Subscribe
 	public void onStatChanged(StatChanged statChanged)
 	{
+		if (!active) return;
 		if (loginXpDropGuard.shouldIgnore(statChanged, client.getGameState(), skillingActivityTracker))
 		{
 			skillingActivityTracker.seedXp(statChanged.getSkill(), statChanged.getXp());
@@ -315,7 +413,13 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
-		boolean loggedIn = active && client.getGameState() == GameState.LOGGED_IN;
+		reconcileSafetyState();
+		if (!active)
+		{
+			return;
+		}
+
+		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
 		if (loggedIn && changelogLoginTicksRemaining > 0)
 		{
 			changelogLoginTicksRemaining--;
@@ -330,7 +434,7 @@ public class NpcSnapPlugin extends Plugin
 		}
 		loginXpDropGuard.advanceTick();
 		if (rendererAvailabilityWarning.shouldWarn(
-			client.getGameState() == GameState.LOGGED_IN && config.enable2dBillboardSprites(),
+			client.getGameState() == GameState.LOGGED_IN,
 			client.getDrawCallbacks() != null))
 		{
 			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
@@ -371,17 +475,41 @@ public class NpcSnapPlugin extends Plugin
 			ensureUiTextureManager().restore();
 			ensureUiTextureManager().markDirty();
 		}
+		reconcileSafetyState();
+	}
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged varbitChanged)
+	{
+		if (varbitChanged.getVarbitId() == VarbitID.INSIDE_WILDERNESS)
+		{
+			reconcileSafetyState();
+		}
+	}
+
+	@Subscribe
+	public void onWorldChanged(WorldChanged worldChanged)
+	{
+		reconcileSafetyState();
 	}
 
 	@Subscribe
 	public void onProfileChanged(ProfileChanged profileChanged)
 	{
 		changelog.requestCheck();
+		interactHighlightCompatibility.onProfileChanged(
+			active && config.overrideInteractHighlightOutlines(),
+			config.applyToNpcs() && config.enableNpcInteractionOutline(),
+			config.applyToPlayers() && config.enablePlayerInteractionOutline(),
+			config.applyToGroundItems() && config.enableGroundItemInteractionOutline(),
+			config.applyToObjects() && config.enableObjectInteractionOutline());
+		reconcileSafetyState();
 	}
 
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
 	{
+		if (!active) return;
 		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(),
 			config.uiSpriteQuality(), config.applyToCustomUiTextures());
 	}
@@ -395,7 +523,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onMenuEntryAdded(MenuEntryAdded event)
 	{
-		if (!config.enableShiftRightClickExportPng())
+		if (!active || !config.enableShiftRightClickExportPng())
 		{
 			return;
 		}
@@ -449,6 +577,7 @@ public class NpcSnapPlugin extends Plugin
 
 	private void exportLocalPlayer()
 	{
+		if (!active) return;
 		BillboardExportBatch batch = billboardOverlay.captureExport(client.getLocalPlayer());
 		if (batch == null)
 		{
@@ -483,6 +612,7 @@ public class NpcSnapPlugin extends Plugin
 
 	private void exportBillboard(MenuEntry source, BillboardObjectExportTarget objectTarget)
 	{
+		if (!active) return;
 		BillboardExportBatch batch = objectTarget != null
 			? billboardOverlay.captureExport(objectTarget) : billboardOverlay.captureExport(source);
 		if (batch == null)
@@ -523,6 +653,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked menuOptionClicked)
 	{
+		if (!active) return;
 		MenuEntry entry = menuOptionClicked.getMenuEntry();
 		if (BillboardHoverInteractionResolver.isActorInteractionAction(menuOptionClicked.getMenuAction()))
 		{
@@ -535,12 +666,18 @@ public class NpcSnapPlugin extends Plugin
 			return;
 		}
 
+		if (BillboardHoverInteractionResolver.isObjectAction(menuOptionClicked.getMenuAction()))
+		{
+			billboardOverlay.noteObjectInteraction(entry);
+			return;
+		}
 		billboardOverlay.clearInteractionState();
 	}
 
 	@Subscribe
 	public void onMenuOpened(MenuOpened menuOpened)
 	{
+		if (!active) return;
 		client.setMenuEntries(java.util.Arrays.stream(menuOpened.getMenuEntries())
 			.filter(entry -> !"Copy to clipboard".equals(entry.getOption())
 				|| !"2DScape".equals(BillboardExportPaths.stripTags(entry.getTarget())))
@@ -550,7 +687,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onInteractingChanged(InteractingChanged interactingChanged)
 	{
-		if (interactingChanged.getSource() != client.getLocalPlayer())
+		if (!active || interactingChanged.getSource() != client.getLocalPlayer())
 		{
 			return;
 		}
@@ -561,18 +698,21 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned npcDespawned)
 	{
+		if (!active) return;
 		billboardOverlay.clearInteractionIfMatches(npcDespawned.getNpc());
 	}
 
 	@Subscribe
 	public void onWorldViewUnloaded(net.runelite.api.events.WorldViewUnloaded event)
 	{
+		if (!active) return;
 		billboardOverlay.unloadOcclusionWorldView(event.getWorldView());
 	}
 
 	@Subscribe
 	public void onGameObjectSpawned(net.runelite.api.events.GameObjectSpawned event)
 	{
+		if (!active) return;
         modelCompatibility.track(event.getGameObject());
 		billboardOverlay.addStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
@@ -581,6 +721,8 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGameObjectDespawned(net.runelite.api.events.GameObjectDespawned event)
 	{
+		if (!active) return;
+		billboardOverlay.clearObjectInteraction(event.getGameObject());
         modelCompatibility.untrack(event.getGameObject());
 		billboardOverlay.removeStaticScenery(event.getGameObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGameObject());
@@ -589,30 +731,37 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onGroundObjectSpawned(net.runelite.api.events.GroundObjectSpawned event)
 	{
+		if (!active) return;
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGroundObject());
 	}
 
 	@Subscribe
 	public void onGroundObjectDespawned(net.runelite.api.events.GroundObjectDespawned event)
 	{
+		if (!active) return;
+		billboardOverlay.clearObjectInteraction(event.getGroundObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getGroundObject());
 	}
 
 	@Subscribe
 	public void onWallObjectSpawned(net.runelite.api.events.WallObjectSpawned event)
 	{
+		if (!active) return;
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getWallObject());
 	}
 
 	@Subscribe
 	public void onWallObjectDespawned(net.runelite.api.events.WallObjectDespawned event)
 	{
+		if (!active) return;
+		billboardOverlay.clearObjectInteraction(event.getWallObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getWallObject());
 	}
 
 	@Subscribe
 	public void onDecorativeObjectSpawned(net.runelite.api.events.DecorativeObjectSpawned event)
 	{
+		if (!active) return;
         modelCompatibility.track(event.getDecorativeObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
 	}
@@ -620,6 +769,8 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onDecorativeObjectDespawned(net.runelite.api.events.DecorativeObjectDespawned event)
 	{
+		if (!active) return;
+		billboardOverlay.clearObjectInteraction(event.getDecorativeObject());
         modelCompatibility.untrack(event.getDecorativeObject());
 		billboardOverlay.observeOcclusionTile(event.getTile(), event.getDecorativeObject());
 	}
@@ -628,12 +779,48 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onPlayerDespawned(PlayerDespawned playerDespawned)
 	{
+		if (!active) return;
 		billboardOverlay.clearInteractionIfMatches(playerDespawned.getPlayer());
 	}
 
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
+		if (interactHighlightCompatibility.isUserOverride(configChanged))
+		{
+			Runnable optOut = () -> handleInteractHighlightUserOverride(configChanged);
+			if (client.isClientThread())
+			{
+				optOut.run();
+			}
+			else
+			{
+				clientThread.invoke(optOut);
+			}
+			return;
+		}
+		if (CONFIG_GROUP.equals(configChanged.getGroup())
+			&& (OVERRIDE_INTERACT_HIGHLIGHT_KEY.equals(configChanged.getKey())
+				|| "applyToNpcs".equals(configChanged.getKey())
+				|| "applyToPlayers".equals(configChanged.getKey())
+				|| "enableNpcInteractionOutline".equals(configChanged.getKey())
+				|| "enablePlayerInteractionOutline".equals(configChanged.getKey())
+				|| "applyToGroundItems".equals(configChanged.getKey())
+				|| "applyToObjects".equals(configChanged.getKey())
+				|| "enableGroundItemInteractionOutline".equals(configChanged.getKey())
+				|| "enableObjectInteractionOutline".equals(configChanged.getKey())))
+		{
+			syncInteractHighlightOverride();
+		}
+		if (CONFIG_GROUP.equals(configChanged.getGroup())
+			&& ("disableInWilderness".equals(configChanged.getKey())
+				|| "disableInPvpWorlds".equals(configChanged.getKey())))
+		{
+			reconcileSafetyState();
+			return;
+		}
+		if (!active) return;
+
 		if (CONFIG_GROUP.equals(configChanged.getGroup()) && "enableSkillingBubbles".equals(configChanged.getKey()) && !config.enableSkillingBubbles())
 		{
 			skillingActivityTracker.clear();
@@ -644,6 +831,27 @@ public class NpcSnapPlugin extends Plugin
 			migrateOcclusionQuality();
 		}
 		ensureConfigChangeHandler().handle(configChanged.getGroup(), configChanged.getKey());
+	}
+
+	private void handleInteractHighlightUserOverride(ConfigChanged event)
+	{
+		if (!interactHighlightCompatibility.isUserOverride(event))
+		{
+			return;
+		}
+
+		interactHighlightCompatibility.optOut(event.getKey());
+		configManager.setConfiguration(CONFIG_GROUP, OVERRIDE_INTERACT_HIGHLIGHT_KEY, false);
+	}
+
+	private void syncInteractHighlightOverride()
+	{
+		interactHighlightCompatibility.synchronize(
+			active && config.overrideInteractHighlightOutlines(),
+			config.applyToNpcs() && config.enableNpcInteractionOutline(),
+			config.applyToPlayers() && config.enablePlayerInteractionOutline(),
+			config.applyToGroundItems() && config.enableGroundItemInteractionOutline(),
+			config.applyToObjects() && config.enableObjectInteractionOutline());
 	}
 
 	private NpcSnapConfigChangeHandler ensureConfigChangeHandler()
@@ -671,6 +879,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onHitsplatApplied(HitsplatApplied hitsplatApplied)
 	{
+		if (!active) return;
 		billboardOverlay.recordHitsplat(hitsplatApplied.getActor(), hitsplatApplied.getHitsplat());
 	}
 

@@ -35,6 +35,34 @@ import static org.junit.Assert.assertTrue;
 public class BillboardRenderRequestFactoryTest
 {
 	@Test
+	public void bothPartsOfAnInteractedWallReceiveObjectOutlineColours()
+	{
+		Model model = TestProxies.proxy(Model.class);
+		WorldView view = worldView(0);
+		Client client = TestProxies.proxy(Client.class);
+		net.runelite.api.WallObject wall = TestProxies.proxy(net.runelite.api.WallObject.class,
+			TestProxies.method("getLocalLocation", new LocalPoint(128, 128)), TestProxies.method("getWorldView", view),
+			TestProxies.method("getRenderable1", TestProxies.proxy(net.runelite.api.Renderable.class, TestProxies.method("getModel", model))),
+			TestProxies.method("getRenderable2", TestProxies.proxy(net.runelite.api.Renderable.class, TestProxies.method("getModel", model))));
+		BillboardTarget target = BillboardTarget.forTileObject(ObservedTileObjectBuilder.build(wall), 100);
+		BillboardInteractionState state = new BillboardInteractionState();
+		state.noteObjectClick(wall, 10);
+		NpcSnapConfig config = new NpcSnapConfig() { @Override public boolean applyToObjects() { return true; } };
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config, new NpcSnapDebug(client, config),
+			new BillboardOrientationCalculator(client, config), state);
+		assertEquals(2, target.observedTileObject.parts.size());
+		for (ObjectRenderablePart part : target.observedTileObject.parts)
+		{
+			BillboardRenderRequest request = factory.build(target, part);
+			assertTrue(request.shouldInteractOutline);
+			assertFalse(request.shouldHoverOutline);
+			assertEquals(config.objectInteractionOutlineColor(), request.interactionOutlineColor);
+		}
+		state.clear();
+		assertFalse(factory.build(target, target.observedTileObject.parts.get(0)).shouldInteractOutline);
+	}
+
+	@Test
 	public void worldObjectRequestReportsTheLiveFrameActuallyCapturedByGetModel()
 	{
 		java.util.concurrent.atomic.AtomicInteger frame = new java.util.concurrent.atomic.AtomicInteger(4);

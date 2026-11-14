@@ -175,6 +175,8 @@ class NpcBillboardOverlay extends Overlay
 	private final BillboardFrameBuffer frameBuffer = new BillboardFrameBuffer(occlusionMask, performanceMetrics, this::billboardDepthSurface);
 	private final BillboardOcclusionDebugSampler occlusionDebugSampler = new BillboardOcclusionDebugSampler(occlusionMask, this::billboardDepthSurface);
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
+	private TileObject lastOutlinedObject;
+	private TileObject lastOutlinedHover;
 	private final BillboardInteractionState interactionState = new BillboardInteractionState();
 	private final ActorStackTracker actorStackTracker = new ActorStackTracker();
 	private final ActorDrawOrderTracker actorDrawOrderTracker = new ActorDrawOrderTracker();
@@ -190,6 +192,12 @@ class NpcBillboardOverlay extends Overlay
 		requestFactory.compatibility = compatibility;
         modelCompatibility = compatibility;
         worldOcclusionCollector.compatibility = compatibility;
+	}
+
+	@Inject
+	void setInteractHighlightCompatibility(com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility compatibility)
+	{
+		requestFactory.interactHighlightCompatibility = compatibility;
 	}
 	private final BillboardTargetEligibility targetEligibility;
 	private final ActorOverheadRenderer actorOverheadRenderer;
@@ -247,13 +255,6 @@ class NpcBillboardOverlay extends Overlay
 
 			WorldView worldView = client.getTopLevelWorldView();
 			if (worldView == null)
-			{
-				clearActiveState();
-				clearBillboardCache();
-				return null;
-			}
-
-			if (!config.enable2dBillboardSprites())
 			{
 				clearActiveState();
 				clearBillboardCache();
@@ -417,6 +418,9 @@ class NpcBillboardOverlay extends Overlay
 
 	void clearTileObjects()
 	{
+		interactionState.clear();
+		lastOutlinedObject = null;
+		lastOutlinedHover = null;
 		synchronized (observedTileObjectsLock)
 		{
 			clearObservedTileObjectBillboards(observedTileObjects.values());
@@ -456,7 +460,7 @@ class NpcBillboardOverlay extends Overlay
 
 	boolean shouldForceActorResizeRedraw(Actor actor)
 	{
-		if (!isActorWorldViewVisible(actor) || !config.enable2dBillboardSprites() || !config.enableAnimationFrameSnapping()
+		if (!isActorWorldViewVisible(actor) || !config.enableAnimationFrameSnapping()
 			|| config.redrawOnClickboxResizePercent() <= 0)
 		{
 			return false;
@@ -572,7 +576,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		gpuScenery = gpu;
 		staticScenery.useScene(gpu && view != null ? view.getScene() : null);
-		if (!config.enable2dBillboardSprites() || !config.applyToObjects())
+		if (!config.applyToObjects())
 		{
 			staticScenery.update(Collections.emptySet(), client.getDrawCallbacks());
 		}
@@ -618,6 +622,16 @@ class NpcBillboardOverlay extends Overlay
 		interactionState.noteClick(actor, tickCount);
 	}
 
+	void noteObjectInteraction(MenuEntry entry)
+	{
+		interactionState.noteObjectClick(BillboardHoverInteractionResolver.tileObject(client, entry), client.getTickCount());
+	}
+
+	void clearObjectInteraction(TileObject object)
+	{
+		interactionState.clearIfMatches(object);
+	}
+
 	void noteGroundItemInteraction(MenuEntry entry)
 	{
 		interactionState.noteGroundItemClick(
@@ -627,6 +641,7 @@ class NpcBillboardOverlay extends Overlay
 	void clearStaleInteraction(Player localPlayer, int tickCount)
 	{
 		interactionState.clearIfStale(localPlayer, tickCount);
+		interactionState.clearStaleObject(client);
 	}
 
 	void onLocalPlayerInteractionChanged(Actor target, int tickCount)
@@ -888,7 +903,7 @@ class NpcBillboardOverlay extends Overlay
 		int outlinePadding = outlinePadding(qualityScale);
 		BufferedImage rendered = renderBillboardImage(
 			builtFaces.faces, bounds, outlinePadding, qualityScale,
-			false, false, null, null);
+			false, false, null, null, config.enableBillboardSpriteShadows());
 		return rendered == null ? null
 			: new ExportRenderedPart(rendered, BillboardGeometryUtils.expandedBounds(bounds, outlinePadding));
 	}
@@ -966,6 +981,7 @@ class NpcBillboardOverlay extends Overlay
 	void unloadOcclusionWorldView(WorldView view)
 	{
 		worldOcclusionCollector.unload(view);
+		interactionState.unloadWorldView(view);
 	}
 
 	void seedGroundItems(WorldView worldView)
@@ -1675,7 +1691,7 @@ class NpcBillboardOverlay extends Overlay
 		clearActiveSelections();
 		activeBillboardsGameCycle = gameCycle;
 		frameUpdatePlans.clear();
-		if (!config.enable2dBillboardSprites() || client.getGameState() != GameState.LOGGED_IN || worldView == null)
+		if (client.getGameState() != GameState.LOGGED_IN || worldView == null)
 		{
 			clearRenderQueue();
 			clearActiveSnapshots();
@@ -1808,7 +1824,19 @@ class NpcBillboardOverlay extends Overlay
 
 	private void updateHoverInteractionState()
 	{
+		TileObject previousHover = lastOutlinedHover;
+		TileObject previousInteraction = lastOutlinedObject;
 		BillboardInteractionState.Change change = interactionState.update(client, groundItemTracker.entries());
+		TileObject hover = interactionState.hoveredObject(), interaction = interactionState.clickedObject();
+		if (previousHover != hover || previousInteraction != interaction)
+		{
+			markObjectOutlineDirty(previousHover);
+			markObjectOutlineDirty(hover);
+			markObjectOutlineDirty(previousInteraction);
+			markObjectOutlineDirty(interaction);
+		}
+		lastOutlinedObject = interaction;
+		lastOutlinedHover = hover;
 		if (!change.changed)
 		{
 			return;
@@ -1825,6 +1853,13 @@ class NpcBillboardOverlay extends Overlay
 		}
 	}
 
+	private void markObjectOutlineDirty(TileObject object)
+	{
+		ObservedTileObject observed = ObservedTileObjectBuilder.build(object);
+		if (observed != null)
+			for (ObjectRenderablePart part : observed.parts) markHoverInteractionStateDirty(part.renderable);
+	}
+
 	private void markHoverInteractionStateDirty(Renderable renderable)
 	{
 		if (renderable != null)
@@ -1835,7 +1870,11 @@ class NpcBillboardOverlay extends Overlay
 
 	private boolean shouldForceHoverInteractionRedraw(BillboardTarget target)
 	{
-		return target != null && target.renderable != null && forceHoverInteractionRedraws.contains(target.renderable);
+		if (target == null) return false;
+		if (target.observedTileObject != null)
+			for (ObjectRenderablePart part : target.observedTileObject.parts)
+				if (forceHoverInteractionRedraws.contains(part.renderable)) return true;
+		return target.renderable != null && forceHoverInteractionRedraws.contains(target.renderable);
 	}
 
 	private void scheduleFrameUpdates(List<BillboardTarget> orderedTargets, int gameCycle)
@@ -2791,9 +2830,7 @@ class NpcBillboardOverlay extends Overlay
 	{
 		int view = 31 * (request.renderable instanceof Projectile ? orientationCalculator.relativeYaw() : request.relativeYaw)
 			+ request.relativePitch;
-		// Fitted sprites also depend on the actual camera pitch, even when their source pitch is zero.
-		if (request.renderable instanceof Actor && config.enableActorWorldPlaneProjection())
-			view = 31 * view + (client.isGpu() ? Float.floatToIntBits(client.getCameraFpPitch()) : client.getCameraPitch());
+		// World-plane pitch and shadows are presentation transforms of this capture.
 		UpdateHeuristicSnapshot snapshot = UpdateHeuristicSnapshot.forCapture(request, depth,
 			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, System.currentTimeMillis()), view, animated, config.redrawOnClickboxResizePercent() > 0);
 		return new UpdateHeuristicSnapshot(depth, snapshot.positionKey, snapshot.animationHash, snapshot.modelStateHash,
@@ -2868,7 +2905,8 @@ class NpcBillboardOverlay extends Overlay
 		boolean shouldHoverOutline,
 		boolean shouldInteractOutline,
 		Color hoverOutlineColor,
-		Color interactionOutlineColor)
+		Color interactionOutlineColor,
+		boolean spriteShadow)
 	{
 		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Rasterization"))
 		{
@@ -2933,7 +2971,7 @@ class NpcBillboardOverlay extends Overlay
 							config.enableBillboardHighlightOutline(),
 							config.enableBillboardShadowOutline(),
 							config.enableBillboardSpriteOutline(),
-							config.enableBillboardSpriteShadows(),
+							spriteShadow,
 							config.enableBillboardHighlightInline(),
 							config.enableBillboardShadowInline(),
 							config.enableBillboardSpriteInline(),
@@ -3267,7 +3305,9 @@ class NpcBillboardOverlay extends Overlay
 							request.shouldHoverOutline,
 							request.shouldInteractOutline,
 							request.hoverOutlineColor,
-							request.interactionOutlineColor
+							request.interactionOutlineColor,
+							config.enableBillboardSpriteShadows()
+								&& !(renderable instanceof Actor && config.enableActorWorldPlaneProjection())
 						);
 						if (rendered != null)
 						{
@@ -3328,7 +3368,17 @@ class NpcBillboardOverlay extends Overlay
 			debug.recordActorFrames((Actor) renderable, request.animationId, request.animationFrame,
 				cached.key.animationFrame, request.poseAnimationFrame, cached.key.poseAnimationFrame);
 		BillboardDrawGeometry geometry = buildDrawGeometry(request, renderable, cached.bounds, cached.contentBounds);
-		return geometry != null ? new BillboardRenderResult(geometry, cached.image, cached.bounds) : null;
+		if (geometry == null) return null;
+		BufferedImage image = cached.image;
+		if (renderable instanceof Actor && config.enableActorWorldPlaneProjection() && config.enableBillboardSpriteShadows())
+		{
+			double baseWorldZ = BillboardDepthCalculator.worldHeight(
+				Perspective.getTileHeight(client, request.localPoint, request.plane), request.verticalOffset);
+			double heightRatio = ActorWorldPlane.heightRatio(depthCalculator, request.localPoint, baseWorldZ,
+				ActorWorldPlane.viewingBearing(client, request.localPoint));
+			image = cached.withSpriteShadow(ActorWorldPlane.shadowHeightRatio(heightRatio), outlineScratch);
+		}
+		return new BillboardRenderResult(geometry, image, cached.bounds);
 	}
 
 	private BillboardCacheKey buildCacheKey(
@@ -3386,11 +3436,9 @@ class NpcBillboardOverlay extends Overlay
 		{
 			BillboardDrawGeometry projected = actorWorldPlaneGeometry((Actor) renderable, request,
 				billboardBounds, contentBounds);
-			if (projected != null)
-			{
-				Rectangle visible = projected.bounds;
-				return !isOutsideViewport(visible.x, visible.y, visible.width, visible.height) ? projected : null;
-			}
+			if (projected == null) return null;
+			Rectangle visible = projected.bounds;
+			return !isOutsideViewport(visible.x, visible.y, visible.width, visible.height) ? projected : null;
 		}
 		// Scenery and items must keep the cached sprite's scale independent of
 		// mutable model height. Effects retain their specialized anchors below.
@@ -3668,6 +3716,7 @@ class NpcBillboardOverlay extends Overlay
 			|| config.enablePlayerInteractionOutline()
 			|| config.enableNpcInteractionOutline()
 			|| config.enableGroundItemInteractionOutline()
+			|| config.enableObjectInteractionOutline()
 			? OUTLINE_PADDING
 			: 0;
 	}

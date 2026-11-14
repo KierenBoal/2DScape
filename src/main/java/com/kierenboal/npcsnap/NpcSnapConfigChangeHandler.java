@@ -34,7 +34,10 @@ final class NpcSnapConfigChangeHandler
 			|| "animationFrameCount".equals(key)
 			|| "useInventorySpritesForGroundItems".equals(key)
 			|| "ignoreCameraAwareRotation".equals(key)
-			|| "enableActorWorldPlaneProjection".equals(key))
+			|| "enableActorWorldPlaneProjection".equals(key)
+			|| "enableObjectInteractionOutline".equals(key)
+			|| "objectHoverOutlineColor".equals(key)
+			|| "objectInteractionOutlineColor".equals(key))
 		{
 			clearBillboardCache.run();
 		}

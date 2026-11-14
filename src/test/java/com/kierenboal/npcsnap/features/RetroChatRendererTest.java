@@ -95,4 +95,18 @@ public class RetroChatRendererTest
 		assertNotEquals(RetroChatRenderer.color(glow, actor, 0L, 0),
 			RetroChatRenderer.color(glow, actor, 200L, 0));
 	}
+	@Test
+	public void escapedDelimitersSupportPrefixesInlineColoursAndMotion()
+	{
+		RetroChatRenderer.ParsedChat escaped = RetroChatRenderer.parse("wave:<at>red<at>hello <at>ran<at>world!");
+		RetroChatRenderer.ParsedChat literal = RetroChatRenderer.parse("wave:@red@hello @ran@world!");
+		assertEquals(literal.text, escaped.text);
+		assertEquals(RetroChatRenderer.Motion.WAVE, escaped.motion);
+		org.junit.Assert.assertArrayEquals(literal.colors, escaped.colors);
+		org.junit.Assert.assertArrayEquals(literal.colorModes, escaped.colorModes);
+		assertEquals(Color.RED, escaped.colors[0]);
+		assertEquals(RetroChatRenderer.ColorMode.RANDOM, escaped.colorModes[6]);
+		assertEquals("@wat@Hello @", RetroChatRenderer.parse("<at>wat<at>Hello <at>").text);
+	}
+
 }

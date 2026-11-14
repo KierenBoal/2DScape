@@ -13,26 +13,29 @@ import net.runelite.client.config.Range;
 @ConfigGroup("npc-snap")
 public interface NpcSnapConfig extends Config
 {
-	@ConfigSection(name = "Visual Snapping", description = "Make movement and turning look more like an older game.", position = 0)
+	@ConfigSection(name = "Frame rate & rotation", description = "Make movement and turning look more like an older game.", position = 2, closedByDefault = false)
 	String snappingSection = "snappingSection";
 
-	@ConfigSection(name = "Render Targets", description = "Choose which things use the sprite look.", position = 1)
+	@ConfigSection(name = "Render Targets", description = "Choose which things use the sprite look.", position = 3, closedByDefault = true)
 	String targetsSection = "targetsSection";
 
-	@ConfigSection(name = "Rendering config", description = "Choose how the sprite look is drawn.", position = 2)
+	@ConfigSection(name = "Rendering config", description = "Choose how the sprite look is drawn.", position = 4, closedByDefault = true)
 	String renderingSection = "renderingSection";
 
-	@ConfigSection(name = "Sprite config", description = "Change the edges, shadows, and highlights on sprites.", position = 3)
+	@ConfigSection(name = "Shadow and highlights", description = "Change the edges, shadows, and highlights on sprites.", position = 5, closedByDefault = true)
 	String spriteSection = "spriteSection";
 
-	@ConfigSection(name = "Sprite interaction outline", description = "Configure hover and interaction outlines for sprites.", position = 4)
+	@ConfigSection(name = "Interaction outline", description = "Configure hover and interaction outlines for sprites.", position = 6, closedByDefault = true)
 	String spriteInteractionOutlineSection = "spriteInteractionOutlineSection";
 
-	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 5)
+	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 7, closedByDefault = true)
 	String retroSection = "retroSection";
 
-	@ConfigSection(name = "Debug", description = "Extra information for finding problems with the plugin.", position = 6)
+	@ConfigSection(name = "Debug visuals", description = "Visual information for finding problems with the plugin.", position = 8, closedByDefault = true)
 	String debugSection = "debugSection";
+
+	@ConfigSection(name = "Debug logging", description = "Log extra information for finding problems with the plugin.", position = 9, closedByDefault = true)
+	String debugLoggingSection = "debugLoggingSection";
 
 	@ConfigItem(keyName = "enableAnimationFrameSnapping", name = "Limit frame rate", description = "Make animations update in visible steps instead of every game frame.", section = snappingSection, position = 0)
 	default boolean enableAnimationFrameSnapping()
@@ -41,7 +44,7 @@ public interface NpcSnapConfig extends Config
 	}
 
 	@Range(min = 0, max = 100)
-	@ConfigItem(keyName = "redrawOnClickboxResizePercent", name = "Redraw on clickbox resize", description = "Redraw animated billboards immediately when their model width or height changes by more than this percentage. 0 disables the check.", section = snappingSection, position = 1)
+	@ConfigItem(keyName = "redrawOnClickboxResizePercent", name = "Redraw on clickbox resize", description = "Redraw animated billboards immediately when their model width or height changes by more than this percentage. 0 disables the check.", section = renderingSection, position = 0)
 	default int redrawOnClickboxResizePercent()
 	{
 		return 50;
@@ -110,16 +113,22 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", section = targetsSection, position = 7)
-	default boolean enableShiftRightClickExportPng()
+	@ConfigItem(keyName = "disableInWilderness", name = "Disable in Wilderness", description = "Suspend 2DScape while you are in the Wilderness.", section = targetsSection, position = 6)
+	default boolean disableInWilderness()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enable2dBillboardSprites", name = "Enable 2D billboards", description = "Draw selected things as flat sprites instead of their usual 3D models.", section = renderingSection, position = 0)
-	default boolean enable2dBillboardSprites()
+	@ConfigItem(keyName = "disableInPvpWorlds", name = "Disable in PvP worlds", description = "Suspend 2DScape while you are logged into a PvP world.", section = targetsSection, position = 7)
+	default boolean disableInPvpWorlds()
 	{
-		return true;
+		return false;
+	}
+
+	@ConfigItem(keyName = "enableShiftRightClickExportPng", name = "Enable shift right-click export PNG", description = "Hold Shift while opening a menu to export a target's billboard angles as transparent PNG files.", position = 2)
+	default boolean enableShiftRightClickExportPng()
+	{
+		return false;
 	}
 
 	@Range(min = 1, max = 256)
@@ -152,7 +161,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "billboardRadiusTiles", name = "Render distance tiles", description = "How many tiles away sprites can be drawn. Lower values can improve performance.", section = renderingSection, position = 5)
 	default int billboardRadiusTiles()
 	{
-		return 90;
+		return 128;
 	}
 
 	@Range(min = 1, max = 256)
@@ -182,7 +191,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableActorWorldPlaneProjection", name = "Improved click accuracy mode", description = "Experimental: project NPC and player sprites as standing world planes that face the camera on yaw and preserve the captured sprite's proportions.", section = renderingSection, position = 10)
+	@ConfigItem(keyName = "enableActorWorldPlaneProjection", name = "Improved click accuracy mode", description = "Project NPC and player sprites as camera-facing world planes, keeping at least 25% of their upright height near overhead views.", position = 0)
 	default boolean enableActorWorldPlaneProjection()
 	{
 		return false;
@@ -194,62 +203,88 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "enablePlayerInteractionOutline", name = "Enable Player interaction outline", description = "Show hover and interaction outlines on player sprites.", section = spriteInteractionOutlineSection, position = 0)
+	@ConfigItem(keyName = "enablePlayerInteractionOutline", name = "Player outlines", description = "Show hover and interaction outlines on player sprites.", section = spriteInteractionOutlineSection, position = 1)
 	default boolean enablePlayerInteractionOutline()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "playerHoverOutlineColor", name = "Player hover outline color", description = "Choose the outline colour shown when hovering a player sprite.", section = spriteInteractionOutlineSection, position = 1)
+	@ConfigItem(keyName = "playerHoverOutlineColor", name = "Player hover colour", description = "Choose the outline colour shown when hovering a player sprite.", section = spriteInteractionOutlineSection, position = 2)
 	@Alpha
 	default Color playerHoverOutlineColor()
 	{
 		return new Color(0x9000FFFF, true);
 	}
 
-	@ConfigItem(keyName = "playerInteractionOutlineColor", name = "Player interaction outline color", description = "Choose the outline colour shown while interacting with a player sprite.", section = spriteInteractionOutlineSection, position = 2)
+	@ConfigItem(keyName = "playerInteractionOutlineColor", name = "Player interaction colour", description = "Choose the outline colour shown while interacting with a player sprite.", section = spriteInteractionOutlineSection, position = 3)
 	@Alpha
 	default Color playerInteractionOutlineColor()
 	{
 		return new Color(0x90FF0000, true);
 	}
 
-	@ConfigItem(keyName = "enableNpcInteractionOutline", name = "Enable NPC interaction outline", description = "Show hover and interaction outlines on NPC sprites.", section = spriteInteractionOutlineSection, position = 3)
+	@ConfigItem(keyName = "enableNpcInteractionOutline", name = "NPC outlines", description = "Show hover and interaction outlines on NPC sprites.", section = spriteInteractionOutlineSection, position = 4)
 	default boolean enableNpcInteractionOutline()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "npcHoverOutlineColor", name = "NPC hover outline color", description = "Choose the outline colour shown when hovering an NPC sprite.", section = spriteInteractionOutlineSection, position = 4)
+	@ConfigItem(keyName = "npcHoverOutlineColor", name = "NPC hover colour", description = "Choose the outline colour shown when hovering an NPC sprite.", section = spriteInteractionOutlineSection, position = 5)
 	@Alpha
 	default Color npcHoverOutlineColor()
 	{
 		return new Color(0x90FFFF00, true);
 	}
 
-	@ConfigItem(keyName = "npcInteractionOutlineColor", name = "NPC interaction outline color", description = "Choose the outline colour shown while interacting with an NPC sprite.", section = spriteInteractionOutlineSection, position = 5)
+	@ConfigItem(keyName = "npcInteractionOutlineColor", name = "NPC interaction colour", description = "Choose the outline colour shown while interacting with an NPC sprite.", section = spriteInteractionOutlineSection, position = 6)
 	@Alpha
 	default Color npcInteractionOutlineColor()
 	{
 		return new Color(0x90FF0000, true);
 	}
 
-	@ConfigItem(keyName = "enableGroundItemInteractionOutline", name = "Enable Ground item interaction outline", description = "Show hover and interaction outlines on ground-item sprites.", section = spriteInteractionOutlineSection, position = 6)
+	@ConfigItem(keyName = "overrideInteractHighlightOutlines", name = "Override Interaction Highlight", description = "Replace Interaction Highlight outlines only for enabled render targets with sprite outlines enabled. Keeps its hover/interact toggles; colours come from 2DScape.", position = 1)
+	default boolean overrideInteractHighlightOutlines()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "enableGroundItemInteractionOutline", name = "Ground item outlines", description = "Show hover and interaction outlines on ground-item sprites.", section = spriteInteractionOutlineSection, position = 7)
 	default boolean enableGroundItemInteractionOutline()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "groundItemHoverOutlineColor", name = "Ground item hover outline color", description = "Choose the outline colour shown when hovering a ground-item sprite.", section = spriteInteractionOutlineSection, position = 7)
+	@ConfigItem(keyName = "groundItemHoverOutlineColor", name = "Ground item hover colour", description = "Choose the outline colour shown when hovering a ground-item sprite.", section = spriteInteractionOutlineSection, position = 8)
 	@Alpha
 	default Color groundItemHoverOutlineColor()
 	{
 		return new Color(0x9000FFFF, true);
 	}
 
-	@ConfigItem(keyName = "groundItemInteractionOutlineColor", name = "Ground item interaction outline color", description = "Choose the outline colour shown while interacting with a ground-item sprite.", section = spriteInteractionOutlineSection, position = 8)
+	@ConfigItem(keyName = "groundItemInteractionOutlineColor", name = "Ground item interaction colour", description = "Choose the outline colour shown while interacting with a ground-item sprite.", section = spriteInteractionOutlineSection, position = 9)
 	@Alpha
 	default Color groundItemInteractionOutlineColor()
+	{
+		return new Color(0x90FF0000, true);
+	}
+
+	@ConfigItem(keyName = "enableObjectInteractionOutline", name = "Object outlines", description = "Show hover and interaction outlines on world-object sprites.", section = spriteInteractionOutlineSection, position = 10)
+	default boolean enableObjectInteractionOutline()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "objectHoverOutlineColor", name = "Object hover colour", description = "Choose the outline colour shown when hovering a world-object sprite.", section = spriteInteractionOutlineSection, position = 11)
+	@Alpha
+	default Color objectHoverOutlineColor()
+	{
+		return new Color(0x9000FFFF, true);
+	}
+
+	@ConfigItem(keyName = "objectInteractionOutlineColor", name = "Object interaction colour", description = "Choose the outline colour shown while interacting with a world-object sprite.", section = spriteInteractionOutlineSection, position = 12)
+	@Alpha
+	default Color objectInteractionOutlineColor()
 	{
 		return new Color(0x90FF0000, true);
 	}
@@ -407,7 +442,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write captured animation frames and redraw reasons to the developer log for troubleshooting.", section = debugSection, position = 7)
+	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write captured animation frames and redraw reasons to the developer log for troubleshooting.", section = debugLoggingSection, position = 0)
 	default boolean logBillboardAnimationData()
 	{
 		return false;
@@ -449,31 +484,31 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogBillboardOcclusion", name = "Log scenery blocking", description = "Write information about scenery that blocks sprites to the RuneLite log.", section = debugSection, position = 7)
+	@ConfigItem(keyName = "debugLogBillboardOcclusion", name = "Log scenery blocking", description = "Write information about scenery that blocks sprites to the RuneLite log.", section = debugLoggingSection, position = 1)
 	default boolean debugLogBillboardOcclusion()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogClassifications", name = "Log target choices", description = "Write why the plugin did or did not use a sprite for something to the RuneLite log.", section = debugSection, position = 8)
+	@ConfigItem(keyName = "debugLogClassifications", name = "Log target choices", description = "Write why the plugin did or did not use a sprite for something to the RuneLite log.", section = debugLoggingSection, position = 2)
 	default boolean debugLogClassifications()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogBillboardColors", name = "Log sprite colours", description = "Write the colours picked for sprites to the RuneLite log.", section = debugSection, position = 9)
+	@ConfigItem(keyName = "debugLogBillboardColors", name = "Log sprite colours", description = "Write the colours picked for sprites to the RuneLite log.", section = debugLoggingSection, position = 3)
 	default boolean debugLogBillboardColors()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogProjectionSkew", name = "Log projection skew", description = "Write projection and shear calculations for the hovered or interacted actor to the developer log.", section = debugSection, position = 10)
+	@ConfigItem(keyName = "debugLogProjectionSkew", name = "Log projection skew", description = "Write projection and shear calculations for the hovered or interacted actor to the developer log.", section = debugLoggingSection, position = 4)
 	default boolean debugLogProjectionSkew()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogBillboardRedraws", name = "Log sprite redraws", description = "Write each sprite redraw's target, reasons, and before/after state to the developer log, even when redraw outlines are disabled.", section = debugSection, position = 11)
+	@ConfigItem(keyName = "debugLogBillboardRedraws", name = "Log sprite redraws", description = "Write each sprite redraw's target, reasons, and before/after state to the developer log, even when redraw outlines are disabled.", section = debugLoggingSection, position = 5)
 	default boolean debugLogBillboardRedraws()
 	{
 		return false;

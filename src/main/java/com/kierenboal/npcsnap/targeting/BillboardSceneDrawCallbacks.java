@@ -80,10 +80,6 @@ public final class BillboardSceneDrawCallbacks
 
 	public boolean drawObject(TileObject tileObject)
 	{
-		if (!config.enable2dBillboardSprites())
-		{
-			return true;
-		}
 
 		if (tileObject instanceof GameObject)
 		{
@@ -132,7 +128,7 @@ public final class BillboardSceneDrawCallbacks
 
 	private boolean isActiveSceneDraw(boolean drawingUi)
 	{
-		return config.enable2dBillboardSprites() && !drawingUi;
+		return !drawingUi;
 	}
 
 	private boolean shouldDrawObservedObject(TileObject tileObject, Renderable renderable)

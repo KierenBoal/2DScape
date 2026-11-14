@@ -3,9 +3,11 @@ package com.kierenboal.npcsnap.state;
 import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 import com.kierenboal.npcsnap.rendering.BillboardModelBounds;
+import com.kierenboal.npcsnap.rendering.BillboardOutlineRenderer;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -19,6 +21,8 @@ public final class CachedBillboard implements TimedCacheEntry
 	public final BufferedImage image;
 	public final ActorBillboardBounds actorBounds;
 	public final BillboardModelBounds modelBounds;
+	private BufferedImage shadowImage;
+	private int shadowBandHeight = -1;
 	private long lastUsedMillis;
 	private long lastRedrawMillis;
 	private boolean dirty;
@@ -70,6 +74,26 @@ public final class CachedBillboard implements TimedCacheEntry
 		this.debugFrameInvalidated = false;
 		this.debugFrameInvalidatedColor = null;
 		this.stateDebugInfo = null;
+	}
+
+	/** A reusable presentation image; changing pitch never invalidates the capture. */
+	public BufferedImage withSpriteShadow(double ratio,
+		BillboardOutlineRenderer.Scratch scratch)
+	{
+		if (shadowImage == null)
+			shadowImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
+		double boundedRatio = Double.isFinite(ratio) ? Math.max(0, Math.min(1, ratio))
+			: BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO;
+		int bandHeight = Math.max(1, (int) Math.ceil(image.getHeight() * boundedRatio));
+		if (shadowBandHeight != bandHeight)
+		{
+			int[] source = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+			int[] target = ((DataBufferInt) shadowImage.getRaster().getDataBuffer()).getData();
+			System.arraycopy(source, 0, target, 0, source.length);
+			BillboardOutlineRenderer.applyShadow(shadowImage, scratch, boundedRatio);
+			shadowBandHeight = bandHeight;
+		}
+		return shadowImage;
 	}
 
 	public void touch(long nowMillis)

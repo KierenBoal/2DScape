@@ -186,6 +186,25 @@ public class NpcBillboardCadenceTest
 		}
 	}
 
+	@Test
+	public void pitchDependentShadowsNeverRecaptureHeldActorFrames()
+	{
+		for (boolean shadows : new boolean[] {false, true})
+		{
+			Fixture f = new Fixture(BillboardTargetType.NPC, 1, true);
+			f.improved = true;
+			f.shadows = shadows;
+			f.pitch.set(2048);
+			int captures = f.frame(0);
+			assertTrue(captures > 0);
+			for (int cycle = 1; cycle <= 8; cycle++)
+			{
+				f.pitch.set(2048 + cycle * 128);
+				assertEquals("Pitch must change presentation without recapturing", captures, f.frame(cycle));
+			}
+		}
+	}
+
 	private static final class Fixture
 	{
 		final AtomicInteger cycle = new AtomicInteger();
@@ -199,6 +218,7 @@ public class NpcBillboardCadenceTest
 		final AtomicInteger yaw = new AtomicInteger();
 		final AtomicInteger pitch = new AtomicInteger();
 		boolean improved;
+		boolean shadows;
 		final Client client;
 		final NpcSnapDebug debug;
 		final NpcBillboardOverlay overlay;
@@ -283,7 +303,7 @@ public class NpcBillboardCadenceTest
 				@Override public boolean useInventorySpritesForGroundItems() { return false; }
 				@Override public boolean useRetroOverheads() { return false; }
 				@Override public boolean enableActorWorldPlaneProjection() { return improved; }
-				@Override public boolean enableBillboardSpriteShadows() { return false; }
+				@Override public boolean enableBillboardSpriteShadows() { return shadows; }
 				@Override public boolean enablePlayerInteractionOutline() { return false; }
 				@Override public boolean enableNpcInteractionOutline() { return false; }
 				@Override public boolean enableGroundItemInteractionOutline() { return false; }

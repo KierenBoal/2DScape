@@ -376,6 +376,8 @@ public final class BillboardDepthCalculator
 			: null;
 	}
 
+	public double projectionScale() { return camera().scale; }
+
 	public int cameraYawIndex()
 	{
 		return cameraAngleIndex(camera().yaw);

@@ -5,11 +5,16 @@ import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
+import net.runelite.api.TileObject;
+import net.runelite.api.WorldView;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import java.util.Map;
 
 public final class BillboardInteractionState
 {
+	private TileObject clickedObject;
+	private TileObject frameHoveredObject;
+	private int objectClickTick = Integer.MIN_VALUE;
 	private Actor clickedActor;
 	private TileItem clickedGroundItem;
 	private int clickedActorTick = Integer.MIN_VALUE;
@@ -20,6 +25,7 @@ public final class BillboardInteractionState
 
 	public void noteClick(Actor actor, int tickCount)
 	{
+		clickedObject = null;
 		clickedGroundItem = null;
 		clickedActor = actor;
 		clickedActorTick = actor != null ? tickCount : Integer.MIN_VALUE;
@@ -27,6 +33,7 @@ public final class BillboardInteractionState
 
 	public void noteGroundItemClick(TileItem item)
 	{
+		clickedObject = null;
 		clickedActor = null;
 		clickedActorTick = Integer.MIN_VALUE;
 		clickedGroundItem = item;
@@ -48,6 +55,7 @@ public final class BillboardInteractionState
 
 	public void onLocalPlayerInteractionChanged(Actor target, int tickCount)
 	{
+		if (tickCount > objectClickTick) clickedObject = null;
 		if (clickedActor != null && target != clickedActor && tickCount > clickedActorTick)
 		{
 			clear();
@@ -64,6 +72,8 @@ public final class BillboardInteractionState
 
 	public void clear()
 	{
+		clickedObject = null;
+		frameHoveredObject = null;
 		clickedActor = null;
 		clickedGroundItem = null;
 		clickedActorTick = Integer.MIN_VALUE;
@@ -73,10 +83,12 @@ public final class BillboardInteractionState
 
 	public Change update(Client client, Iterable<Map.Entry<TileItem, GroundItemBillboard>> groundItems)
 	{
+		frameHoveredObject = BillboardHoverInteractionResolver.tileObject(client,
+			BillboardHoverInteractionResolver.hoveredMenuEntry(client));
 		Renderable hoveredTarget = BillboardHoverInteractionResolver.hoveredTarget(client, groundItems);
 		Renderable interactionTarget = clickedGroundItem != null
 			? clickedGroundItem
-			: BillboardHoverInteractionResolver.interactedActor(client, clickedActor);
+			: clickedObject != null ? null : BillboardHoverInteractionResolver.interactedActor(client, clickedActor);
 		frameHoveredTarget = hoveredTarget;
 		frameInteractionTarget = interactionTarget;
 		if (hoveredTarget == lastHoveredTarget && interactionTarget == lastInteractionTarget)
@@ -120,6 +132,38 @@ public final class BillboardInteractionState
 		if (item == clickedGroundItem)
 		{
 			clear();
+		}
+	}
+
+	public void noteObjectClick(TileObject object, int tick)
+	{
+		clear();
+		clickedObject = object;
+		objectClickTick = tick;
+	}
+
+	public TileObject hoveredObject() { return frameHoveredObject; }
+	public TileObject clickedObject() { return clickedObject; }
+
+	public void clearIfMatches(TileObject object)
+	{
+		if (object == clickedObject) clickedObject = null;
+		if (object == frameHoveredObject) frameHoveredObject = null;
+	}
+
+	public void unloadWorldView(WorldView view)
+	{
+		if (clickedObject != null && clickedObject.getWorldView() == view) clickedObject = null;
+		if (frameHoveredObject != null && frameHoveredObject.getWorldView() == view) frameHoveredObject = null;
+	}
+
+	public void clearStaleObject(Client client)
+	{
+		if (clickedObject != null && client.getTickCount() > objectClickTick
+			&& client.getLocalDestinationLocation() == null
+			&& (client.getLocalPlayer() == null || client.getLocalPlayer().getInteracting() == null))
+		{
+			clickedObject = null;
 		}
 	}
 

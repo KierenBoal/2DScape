@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.rendering;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.NpcSnapDebug;
+import com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
@@ -19,12 +20,14 @@ import net.runelite.api.Model;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
+import net.runelite.api.TileObject;
 import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
 
 public final class BillboardRenderRequestFactory
 {
 	public com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility;
+	public InteractHighlightCompatibility interactHighlightCompatibility;
 	private final Client client;
 	private final NpcSnapConfig config;
 	private final NpcSnapDebug debug;
@@ -95,7 +98,9 @@ public final class BillboardRenderRequestFactory
 			// still carried on the request for depth/occlusion decisions, but it must
 			// not activate the ground-item minimum pitch here.
 			sceneryYaw(part), orientationCalculator.relativePitch(),
-			animationId, originalFrame, -1, -1, -1, false, false, lowProfile,
+			animationId, originalFrame, -1, -1, -1,
+			objectHover(target.tileObject), objectInteract(target.tileObject),
+			config.objectHoverOutlineColor(), config.objectInteractionOutlineColor(), lowProfile,
 			VerticalAnchor.BOTTOM, frameDebugInfo), part);
 	}
 
@@ -105,9 +110,19 @@ public final class BillboardRenderRequestFactory
 		if (mainWorldLocation == null && !actor.getWorldView().isTopLevel()) return null;
 		boolean player = actor instanceof Player;
 		boolean enabled = player ? config.enablePlayerInteractionOutline() : config.enableNpcInteractionOutline();
-		boolean interactionOutline = enabled && actor == interactionState.frameInteractionTarget();
+		boolean replacingInteractionHighlight = interactHighlightCompatibility != null
+			&& (player ? interactHighlightCompatibility.replacesPlayerOutlines()
+				: interactHighlightCompatibility.replacesNpcOutlines());
+		boolean showHover = !replacingInteractionHighlight || (player
+			? interactHighlightCompatibility.playerShowHover()
+			: interactHighlightCompatibility.npcShowHover());
+		boolean showInteract = !replacingInteractionHighlight || (player
+			? interactHighlightCompatibility.playerShowInteract()
+			: interactHighlightCompatibility.npcShowInteract());
+		boolean interactionOutline = enabled && showInteract && actor == interactionState.frameInteractionTarget();
 		boolean hoverOutline = !interactionOutline
 			&& enabled
+			&& showHover
 			&& actor == interactionState.frameHoveredTarget();
 		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
 		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
@@ -208,11 +223,30 @@ public final class BillboardRenderRequestFactory
 			item, model, groundItem.localPoint, groundItem.plane, groundItem.verticalOffset,
 			orientationCalculator.relativeGroundItemYaw(), orientationCalculator.relativeGroundItemPitch(),
 			item.getId(), item.getQuantity(), -1, -1, item.getId(),
-			config.enableGroundItemInteractionOutline() && item == interactionState.frameHoveredTarget()
+			config.enableGroundItemInteractionOutline()
+				&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesItemOutlines()
+					|| interactHighlightCompatibility.itemShowHover()) && item == interactionState.frameHoveredTarget()
 				&& item != interactionState.frameInteractionTarget(),
-			config.enableGroundItemInteractionOutline() && item == interactionState.frameInteractionTarget(),
+			config.enableGroundItemInteractionOutline()
+				&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesItemOutlines()
+					|| interactHighlightCompatibility.itemShowInteract()) && item == interactionState.frameInteractionTarget(),
 			config.groundItemHoverOutlineColor(), config.groundItemInteractionOutlineColor(),
 			lowProfile, VerticalAnchor.BOTTOM, null);
+	}
+
+	private boolean objectInteract(TileObject object)
+	{
+		return config.applyToObjects() && config.enableObjectInteractionOutline() && object == interactionState.clickedObject()
+			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
+				|| interactHighlightCompatibility.objectShowInteract());
+	}
+
+	private boolean objectHover(TileObject object)
+	{
+		return config.applyToObjects() && config.enableObjectInteractionOutline() && object == interactionState.hoveredObject()
+			&& !objectInteract(object)
+			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
+				|| interactHighlightCompatibility.objectShowHover());
 	}
 
 	private BillboardRenderRequest request(

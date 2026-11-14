@@ -10,18 +10,18 @@
 
 There are a LOT of config options to play with, so have a go and find your favourite style.
 
-## Best experience
-If you are doing content that requiers click precision, I'd suggest enabling the following two features:
-- "Rendering config" -> "Improved click accuracy mode": this makes the billboards fit the space the NPC actually takes which makes it look more "flat" but for FAR greater click accuracy
-- "Retro" -> "Use retro HP bar, overhead chat, hitsplats and prayers": This moves the hitsplats to more accurately represent where they actually are on the sprite; if you enable 'Improved click accuracy mode' you don't really need this; but it does add to the asthetic!
+## Doing bossing/raids?
+If you are doing content that requiers click precision, I'd suggest enabling "Improved click accuracy mode", it maps the sprite better to the clickbox, it looks a bit goofy, but it's MUCH better for reducing missclicks.
+![Improved click accuracy mode](md_imgs/click_accuracy.jpg)
 
+## Custom rendering features
 ![2D billboards on NPCs, players, pets, and more](md_imgs/first_set.jpg)
 
-- NPCs, Players, Pets and even thralls become Doom-style camera-facing billboards
+- NPCs, Players, Pets and even thralls become flat 2D sprites
 - Projectiles and effects are also rendered in 2D
-- Projectile sprites follow the client's current flight position, preserving its arc and launch/impact heights without extra offsets from the animated projectile model.
-- Even Ground items (stuff on the floor) are rendered in 2D, just at a slightly higher angle for visibility
+- Even Ground items (stuff on the floor) is rendered in 2D, just at a slightly higher angle for visibility
 - You can also enable world objects being converted to 2D, it's really stupid
+- You can export sprites, saving them to your computer
 
 ![Occlusion, crowds, combat effects, and Sailing](md_imgs/second_set.jpg)
 
@@ -29,17 +29,31 @@ If you are doing content that requiers click precision, I'd suggest enabling the
 - Large crowds render well on average hardware, there are config options to reduce how much occlusion culling and how much billboards can update per frame, so you can configure this for a toaster if performance is ever an issue
 - Special attacks work too including their graphics
 - All Spells work, so yes, the Ice Barrage blocks show up as 2D.
-- Sailing partially works; boat hulls still use the normal renderer. Crew sprites and effects follow their parent boat's overlap visibility and Entity Hider's boat settings.
-- NPC sprites extending below their tile surface are clipped there, so submerged NPCs stay under the water without shifting their sprites.
+- Sailing partially works, the fascilities don't perform occlusion culling yet.
 
+## RSC features 
 ![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
 
-Optional skilling bubbles display whenever you gain non-combat XP, it will fade away after a few seconds. You can even stack them together for multi-skilling!
+Skilling bubbles display whenever you gain non-combat XP, it will fade away after a few seconds. You can even stack them together for multi-skilling!
+
+Me getting a fat multi XP drop from Perdu after the recent quest XP changes.
+![Retro skilling bubbles](md_imgs/fat_xp.jpg)
+
+![RSC Chat color codes](md_imgs/chat.jpg)
+
+- Use old chat color codes like @red@, @blu@, @rand@, etc.
+- Use old hitsplats
+
+Under the "Retro" section, enable "Use retro HP bar, overhead chat, hitsplats and prayers"
+![2D billboards on NPCs, players, pets, and more](md_imgs/retro_chat_config.jpg)
+
+We have compatability with Retro NPC Swapper
 
 ![Exported sprite frames](md_imgs/retro.jpg)
 
 Get extra retro wih classic NPC and object models using [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
 
+## Sprite export feature
 ![Exported sprite frames](md_imgs/sprite_export.jpg)
 
 Want to make a sprite sheet? Turn on **Enable shift right-click export PNG** in the config, then Shift-right-click a player, NPC, pet, or world object and choose **Export sprite**. World objects can be exported even with their billboard setting disabled. Shift-right-click your equipment tab to export yourself. The plugin saves the angles and animation frames as transparent PNGs, ready to put into a 2D sprite sheet for a game lol that'd be so sick if someone used it to make the art for a game.
