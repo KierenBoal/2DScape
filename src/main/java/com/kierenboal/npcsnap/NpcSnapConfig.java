@@ -19,22 +19,25 @@ public interface NpcSnapConfig extends Config
 	@ConfigSection(name = "Render Targets", description = "Choose which things use the sprite look.", position = 3, closedByDefault = true)
 	String targetsSection = "targetsSection";
 
-	@ConfigSection(name = "Rendering config", description = "Choose how the sprite look is drawn.", position = 4, closedByDefault = true)
+	@ConfigSection(name = "World Objects Targets", description = "Choose which kinds of world object use the sprite look. Needs Apply to world objects.", position = 4, closedByDefault = true)
+	String worldObjectsSection = "worldObjectsSection";
+
+	@ConfigSection(name = "Rendering config", description = "Choose how the sprite look is drawn.", position = 5, closedByDefault = true)
 	String renderingSection = "renderingSection";
 
-	@ConfigSection(name = "Shadow and highlights", description = "Change the edges, shadows, and highlights on sprites.", position = 5, closedByDefault = true)
+	@ConfigSection(name = "Shadow and highlights", description = "Change the edges, shadows, and highlights on sprites.", position = 6, closedByDefault = true)
 	String spriteSection = "spriteSection";
 
-	@ConfigSection(name = "Interaction outline", description = "Configure hover and interaction outlines for sprites.", position = 6, closedByDefault = true)
+	@ConfigSection(name = "Interaction outline", description = "Configure hover and interaction outlines for sprites.", position = 7, closedByDefault = true)
 	String spriteInteractionOutlineSection = "spriteInteractionOutlineSection";
 
-	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 7, closedByDefault = true)
+	@ConfigSection(name = "Retro", description = "Add extra old-school visual effects to the game and interface.", position = 8, closedByDefault = true)
 	String retroSection = "retroSection";
 
-	@ConfigSection(name = "Debug visuals", description = "Visual information for finding problems with the plugin.", position = 8, closedByDefault = true)
+	@ConfigSection(name = "Debug visuals", description = "Visual information for finding problems with the plugin.", position = 9, closedByDefault = true)
 	String debugSection = "debugSection";
 
-	@ConfigSection(name = "Debug logging", description = "Log extra information for finding problems with the plugin.", position = 9, closedByDefault = true)
+	@ConfigSection(name = "Debug logging", description = "Log extra information for finding problems with the plugin.", position = 10, closedByDefault = true)
 	String debugLoggingSection = "debugLoggingSection";
 
 	@ConfigItem(keyName = "enableAnimationFrameSnapping", name = "Limit frame rate", description = "Make animations update in visible steps instead of every game frame.", section = snappingSection, position = 0)
@@ -113,49 +116,49 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for the kinds of world object ticked below.", section = targetsSection, position = 6)
+	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for the kinds of world object ticked in World Objects Targets.", section = targetsSection, position = 6)
 	default boolean applyToObjects()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectRocks", name = "World objects: rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = targetsSection, position = 7)
+	@ConfigItem(keyName = "worldObjectRocks", name = "World objects: rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 0)
 	default boolean worldObjectRocks()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectPlants", name = "World objects: plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = targetsSection, position = 8)
+	@ConfigItem(keyName = "worldObjectPlants", name = "World objects: plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
 	default boolean worldObjectPlants()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectFires", name = "World objects: fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = targetsSection, position = 9)
+	@ConfigItem(keyName = "worldObjectFires", name = "World objects: fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
 	default boolean worldObjectFires()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectLogs", name = "World objects: logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = targetsSection, position = 10)
+	@ConfigItem(keyName = "worldObjectLogs", name = "World objects: logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
 	default boolean worldObjectLogs()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectOther", name = "World objects: everything else", description = "All other scenery. Some, such as fences and stairs, look odd as sprites. Needs Apply to world objects.", section = targetsSection, position = 11)
+	@ConfigItem(keyName = "worldObjectOther", name = "World objects: everything else", description = "All other scenery. Some, such as fences and stairs, look odd as sprites. Needs Apply to world objects.", section = worldObjectsSection, position = 4)
 	default boolean worldObjectOther()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "disableInWilderness", name = "Disable in Wilderness", description = "Suspend 2DScape while you are in the Wilderness.", section = targetsSection, position = 12)
+	@ConfigItem(keyName = "disableInWilderness", name = "Disable in Wilderness", description = "Suspend 2DScape while you are in the Wilderness.", section = targetsSection, position = 7)
 	default boolean disableInWilderness()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "disableInPvpWorlds", name = "Disable in PvP worlds", description = "Suspend 2DScape while you are logged into a PvP world.", section = targetsSection, position = 13)
+	@ConfigItem(keyName = "disableInPvpWorlds", name = "Disable in PvP worlds", description = "Suspend 2DScape while you are logged into a PvP world.", section = targetsSection, position = 8)
 	default boolean disableInPvpWorlds()
 	{
 		return false;

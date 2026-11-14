@@ -21,7 +21,7 @@ final class NpcSnapChangelog
 		new Release("1.1.1", "Retro NPC Swapper support"),
 		new Release("1.1.2", "Config cleanup; Outlines improved & plugin override; RSC chat colours fixes; Optional wildy/PvP toggle"),
 		new Release("1.2.0", "Added new shadow settings (legacy option avaliable);Fixed ground clipping visuals;Improved click accuracy mode improvements"),
-		new Release("1.2.1", "Added Apply to trees; World object categories; GPU static object sprites fixed"));
+		new Release("1.2.1", "Added Apply to trees; World object categories section; GPU object sprites fixed"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
