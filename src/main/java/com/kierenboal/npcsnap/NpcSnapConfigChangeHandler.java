@@ -33,8 +33,6 @@ final class NpcSnapConfigChangeHandler
 		if ("shadowType".equals(key)
 			|| "enableAnimationFrameSnapping".equals(key)
 			|| "animationFrameCount".equals(key)
-			|| "useInventorySpritesForGroundItems".equals(key)
-			|| "ignoreCameraAwareRotation".equals(key)
 			|| "enableActorWorldPlaneProjection".equals(key)
 			|| "enableObjectInteractionOutline".equals(key)
 			|| "objectHoverOutlineColor".equals(key)

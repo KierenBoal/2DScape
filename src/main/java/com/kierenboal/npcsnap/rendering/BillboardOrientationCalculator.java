@@ -54,7 +54,7 @@ public final class BillboardOrientationCalculator
 	public int actorBodyRawYaw(int actorOrientation, LocalPoint mainWorldLocation)
 	{
 		int viewYaw = cameraYaw();
-		if (!config.ignoreCameraAwareRotation() && mainWorldLocation != null)
+		if (mainWorldLocation != null)
 		{
 			double cameraX = client.isGpu() ? client.getCameraFpX() : client.getCameraX();
 			double cameraY = client.isGpu() ? client.getCameraFpY() : client.getCameraY();

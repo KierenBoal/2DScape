@@ -26,9 +26,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
-import net.runelite.api.GraphicsObject;
 import net.runelite.api.Player;
-import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.SpritePixels;
@@ -287,9 +285,10 @@ public class NpcSnapPlugin extends Plugin
 	private void migrateOcclusionQuality()
 	{
 		String value = configManager.getConfiguration(CONFIG_GROUP, "billboardOcclusionQuality");
-		if (com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality.isRetiredValue(value))
+		String replacement = com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality.replacementForSavedValue(value);
+		if (replacement != null)
 		{
-			configManager.setConfiguration(CONFIG_GROUP, "billboardOcclusionQuality", "HIGH");
+			configManager.setConfiguration(CONFIG_GROUP, "billboardOcclusionQuality", replacement);
 		}
 	}
 
@@ -502,6 +501,7 @@ public class NpcSnapPlugin extends Plugin
 	@Subscribe
 	public void onProfileChanged(ProfileChanged profileChanged)
 	{
+		migrateOcclusionQuality();
 		migrateSpriteShadows();
 		changelog.requestCheck();
 		interactHighlightCompatibility.onProfileChanged(
@@ -641,20 +641,8 @@ public class NpcSnapPlugin extends Plugin
 		{
 			return true;
 		}
-		switch (entry.getType())
-		{
-			case ITEM_USE_ON_GAME_OBJECT:
-			case WIDGET_TARGET_ON_GAME_OBJECT:
-			case GAME_OBJECT_FIRST_OPTION:
-			case GAME_OBJECT_SECOND_OPTION:
-			case GAME_OBJECT_THIRD_OPTION:
-			case GAME_OBJECT_FOURTH_OPTION:
-			case GAME_OBJECT_FIFTH_OPTION:
-			case EXAMINE_OBJECT:
-				return true;
-			default:
-				return false;
-		}
+		return BillboardHoverInteractionResolver.isObjectAction(entry.getType())
+			|| entry.getType() == MenuAction.EXAMINE_OBJECT;
 	}
 
 	@Subscribe

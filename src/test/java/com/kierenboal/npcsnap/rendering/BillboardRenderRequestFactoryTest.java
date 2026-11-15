@@ -97,21 +97,17 @@ public class BillboardRenderRequestFactoryTest
 		Actor actor = TestProxies.proxy(Actor.class, TestProxies.method("getWorldView", nested),
 			TestProxies.method("getLocalLocation", new LocalPoint(200, 300, nested)), TestProxies.method("getCurrentOrientation", 256));
 		Client client = TestProxies.proxy(Client.class, TestProxies.method("getTopLevelWorldView", main));
-		for (boolean ignore : new boolean[] {false, true})
+		NpcSnapConfig config = new NpcSnapConfig()
 		{
-			NpcSnapConfig config = new NpcSnapConfig()
-			{
-				@Override public boolean enableRotationSnapping() { return false; }
-				@Override public boolean ignoreCameraAwareRotation() { return ignore; }
-			};
-			BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
-				new NpcSnapDebug(client, config),
-				new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
-			BillboardRenderRequest request = factory.buildActor(actor);
-			assertEquals(mainLocation, request.localPoint);
-			assertEquals(ignore ? 6144 : 4096, request.relativeYaw);
-			assertEquals(2048, factory.buildActorSpotAnimation(TestProxies.proxy(ActorSpotAnim.class), actor).relativeYaw);
-		}
+			@Override public boolean enableRotationSnapping() { return false; }
+		};
+		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
+			new NpcSnapDebug(client, config),
+			new BillboardOrientationCalculator(client, config), new BillboardInteractionState());
+		BillboardRenderRequest request = factory.buildActor(actor);
+		assertEquals(mainLocation, request.localPoint);
+		assertEquals(4096, request.relativeYaw);
+		assertEquals(2048, factory.buildActorSpotAnimation(TestProxies.proxy(ActorSpotAnim.class), actor).relativeYaw);
 	}
 
 	@Test
@@ -396,7 +392,6 @@ public class BillboardRenderRequestFactoryTest
 		NpcSnapConfig config = new NpcSnapConfig()
 		{
 			@Override public boolean enableActorWorldPlaneProjection() { return true; }
-			@Override public boolean ignoreCameraAwareRotation() { return true; }
 		};
 		BillboardRenderRequestFactory factory = new BillboardRenderRequestFactory(client, config,
 			new NpcSnapDebug(client, config),

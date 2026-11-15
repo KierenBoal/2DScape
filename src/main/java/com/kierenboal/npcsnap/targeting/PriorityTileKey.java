@@ -4,6 +4,9 @@ import com.kierenboal.npcsnap.BillboardConstants;
 
 import net.runelite.api.coords.LocalPoint;
 
+import lombok.EqualsAndHashCode;
+
+@EqualsAndHashCode
 public final class PriorityTileKey
 {
 	private final int plane;
@@ -35,31 +38,4 @@ public final class PriorityTileKey
 			^ ((long) (tileX & 0xFFFFFF) << 24)
 			^ (tileY & 0xFFFFFFL);
 	}
-
-	@Override
-	public boolean equals(Object other)
-	{
-		if (this == other)
-		{
-			return true;
-		}
-
-		if (!(other instanceof PriorityTileKey))
-		{
-			return false;
-		}
-
-		PriorityTileKey that = (PriorityTileKey) other;
-		return plane == that.plane && tileX == that.tileX && tileY == that.tileY;
-	}
-
-	@Override
-	public int hashCode()
-	{
-		int result = plane;
-		result = 31 * result + tileX;
-		result = 31 * result + tileY;
-		return result;
-	}
 }
-

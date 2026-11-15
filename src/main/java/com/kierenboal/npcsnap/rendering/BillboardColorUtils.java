@@ -128,25 +128,6 @@ public final class BillboardColorUtils
 		return null;
 	}
 
-	public static Integer faceColorValue(int[] faceColors, int face)
-	{
-		return faceColors != null && face < faceColors.length ? faceColors[face] : null;
-	}
-
-	public static Integer unlitFaceColorValue(short[] unlitFaceColors, int face)
-	{
-		return unlitFaceColors != null && face < unlitFaceColors.length && unlitFaceColors[face] != -1
-			? Short.toUnsignedInt(unlitFaceColors[face])
-			: null;
-	}
-
-	public static String formatColor(Color color)
-	{
-		return color == null
-			? "null"
-			: color.getRed() + "," + color.getGreen() + "," + color.getBlue() + "," + color.getAlpha();
-	}
-
 	public static Color applyLightBoost(Color color, double lightBoostPercent)
 	{
 		double boost = lightBoostPercent / 100.0d;

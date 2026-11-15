@@ -41,21 +41,6 @@ public class BillboardOrientationCalculatorTest
 	}
 
 	@Test
-	public void ignoreOptionRestoresLegacyYawWithAndWithoutSnapping()
-	{
-		Client client = proxy(Client.class, method("getCameraYaw", 1024));
-		Actor actor = proxy(Actor.class, method("getCurrentOrientation", 512));
-		for (boolean snapping : new boolean[] {false, true})
-		{
-			NpcSnapConfig config = proxy(NpcSnapConfig.class, method("ignoreCameraAwareRotation", true),
-				method("enableRotationSnapping", snapping), method("numberOfYawRotationAngles", 8));
-			BillboardOrientationCalculator calculator = new BillboardOrientationCalculator(client, config);
-			Assert.assertEquals(calculator.relativeYaw(actor),
-				calculator.relativeActorBodyYaw(actor, 512, new LocalPoint(1000, 1000)));
-		}
-	}
-
-	@Test
 	public void invalidViewingRaysFallBackToCameraYaw()
 	{
 		NpcSnapConfig config = proxy(NpcSnapConfig.class);
@@ -106,11 +91,6 @@ public class BillboardOrientationCalculatorTest
 			calculator.relativeActorBodyYaw(pair[0], 0, new LocalPoint(3000, 1000)));
 		Assert.assertEquals(0, calculator.relativePitch(pair[0]));
 		Assert.assertEquals(0, calculator.relativePitch());
-		BillboardOrientationCalculator ignored = new BillboardOrientationCalculator(client,
-			proxy(NpcSnapConfig.class, method("ignoreCameraAwareRotation", true),
-				method("enableBillboardCombatSnapping", true)));
-		Assert.assertEquals(ignored.relativeYaw(pair[0], 1024),
-			ignored.relativeActorBodyYaw(pair[0], 1024, new LocalPoint(1000, 1000)));
 	}
 
 	@Test

@@ -13,6 +13,9 @@ import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
 import net.runelite.api.coords.LocalPoint;
 
+import lombok.EqualsAndHashCode;
+
+@EqualsAndHashCode
 public final class BillboardTargetKey
 {
 	private final long orderKey;
@@ -123,30 +126,4 @@ public final class BillboardTargetKey
 		long planeBits = plane & 0x3L;
 		return (planeBits << 22) | (tileX << 11) | tileY;
 	}
-
-	@Override
-	public boolean equals(Object other)
-	{
-		if (this == other)
-		{
-			return true;
-		}
-
-		if (!(other instanceof BillboardTargetKey))
-		{
-			return false;
-		}
-
-		BillboardTargetKey that = (BillboardTargetKey) other;
-		return orderKey == that.orderKey && uniqueKey == that.uniqueKey;
-	}
-
-	@Override
-	public int hashCode()
-	{
-		int result = Long.hashCode(orderKey);
-		result = (31 * result) + Long.hashCode(uniqueKey);
-		return result;
-	}
 }
-

@@ -30,7 +30,7 @@ public class BillboardCacheModelsTest
    BillboardCacheKey key = BillboardCacheKey.create(request(false,false),config,1,config.billboardColorBands(),50,7,9);
    assertTrue(keys.add(key));
    CachedBillboard cached = new CachedBillboard(key,new Rectangle(0,0,1,1),new BufferedImage(1,1,BufferedImage.TYPE_INT_ARGB),0);
-   assertTrue(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request(false,false),config,1,50,9)));
+   assertTrue(cached.matchesPreviewKey(BillboardCacheKey.preview(request(false,false),config,1,50,9)));
   }
  }
 
@@ -40,7 +40,7 @@ public class BillboardCacheModelsTest
 		NpcSnapConfig config = config();
 		BillboardRenderRequest request = request(true, false);
 		BillboardCacheKey key = BillboardCacheKey.create(request, config, 2, 12, 75, 99, 101);
-		BillboardCachePreviewKey preview = BillboardCachePreviewKey.create(request, config, 2, 75, 101);
+		BillboardCacheKey preview = BillboardCacheKey.preview(request, config, 2, 75, 101);
 		CachedBillboard cached = new CachedBillboard(
 			key, new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
 
@@ -56,8 +56,8 @@ public class BillboardCacheModelsTest
 			key, new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
 
 		assertFalse(cached.matchesPreviewKey(null));
-		assertFalse(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request(false, false), config, 2, 75, 101)));
-		assertFalse(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request(true, false), config, 2, 75, 102)));
+		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request(false, false), config, 2, 75, 101)));
+		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request(true, false), config, 2, 75, 102)));
 	}
 
 	@Test
@@ -69,8 +69,8 @@ public class BillboardCacheModelsTest
 		CachedBillboard cached = new CachedBillboard(key,
 			new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
 
-		assertTrue(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request, config, 2, 75, 101, 180)));
-		assertFalse(cached.matchesPreviewKey(BillboardCachePreviewKey.create(request, config, 2, 75, 101, 360)));
+		assertTrue(cached.matchesPreviewKey(BillboardCacheKey.preview(request, config, 2, 75, 101, 180)));
+		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request, config, 2, 75, 101, 360)));
 	}
 
 	@Test
@@ -120,13 +120,13 @@ public class BillboardCacheModelsTest
 		assertEquals(ordinaryBase, key(ordinary, retroChanged));
 		assertEquals(retroBase, key(retro, generalChanged));
 		assertNotEquals(retroBase, key(retro, retroChanged));
-		assertFalse(ordinaryCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+		assertFalse(ordinaryCached.matchesPreviewKey(BillboardCacheKey.preview(
 			ordinary, generalChanged, 1, 50, 0)));
-		assertTrue(ordinaryCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+		assertTrue(ordinaryCached.matchesPreviewKey(BillboardCacheKey.preview(
 			ordinary, retroChanged, 1, 50, 0)));
-		assertTrue(retroCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+		assertTrue(retroCached.matchesPreviewKey(BillboardCacheKey.preview(
 			retro, generalChanged, 1, 50, 0)));
-		assertFalse(retroCached.matchesPreviewKey(BillboardCachePreviewKey.create(
+		assertFalse(retroCached.matchesPreviewKey(BillboardCacheKey.preview(
 			retro, retroChanged, 1, 50, 0)));
 
 		assertEquals(180, ordinaryBase.lightBoost);
@@ -137,8 +137,8 @@ public class BillboardCacheModelsTest
 	public void previewKeysUseTheSameSourceSpecificBrightness()
 	{
 		NpcSnapConfig config = config(180, 64);
-		BillboardCachePreviewKey ordinary = BillboardCachePreviewKey.create(request(false, false), config, 1, 50, 0);
-		BillboardCachePreviewKey retro = BillboardCachePreviewKey.create(
+		BillboardCacheKey ordinary = BillboardCacheKey.preview(request(false, false), config, 1, 50, 0);
+		BillboardCacheKey retro = BillboardCacheKey.preview(
 			request(false, false, new OwnedModel(model())), config, 1, 50, 0);
 
 		assertEquals(180, ordinary.lightBoost);

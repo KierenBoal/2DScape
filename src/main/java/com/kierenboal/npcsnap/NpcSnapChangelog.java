@@ -1,6 +1,8 @@
 package com.kierenboal.npcsnap;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -11,6 +13,8 @@ final class NpcSnapChangelog
 {
 	static final String LAST_SEEN_VERSION_KEY = "lastSeenVersion";
 	static final String BASELINE_VERSION = "1.0.0";
+	private static final int MAX_RELEASES = 5;
+	private static final int MAX_ANNOUNCEMENT_LINES = 10;
 	private static final List<Release> RELEASES = List.of(
 		new Release("1.0.1", "World object exports fixed; boat hiding; XP bubble scaling; occlusion edge fixes"),
 		new Release("1.0.2", "Improved rotation calculation with camera location; Version system added; Projectile arc and height rendering fixed; Billboarded world objects no longer clip other sprites; World object occlusion and overlapping sprite ordering stabilized; Optional actor world-plane projection fits sprites to live bounds; Actor world-plane sprites now face the camera on yaw"),
@@ -20,7 +24,8 @@ final class NpcSnapChangelog
 		new Release("1.1.0", "Backend RetroNPC Swapper support (pending compatibility)"),
 		new Release("1.1.1", "Retro NPC Swapper support"),
 		new Release("1.1.2", "Config cleanup; Outlines improved & plugin override; RSC chat colours fixes; Optional wildy/PvP toggle"),
-		new Release("1.2.0", "Added new shadow settings (legacy option avaliable);Fixed ground clipping visuals;Improved click accuracy mode improvements"));
+		new Release("1.2.0", "Added new shadow settings (legacy option avaliable);Fixed ground clipping visuals;Improved click accuracy mode improvements"),
+		new Release("1.2.1", "Code reduction and deprecated unused featuers"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;
@@ -69,47 +74,65 @@ final class NpcSnapChangelog
 		{
 			if (!releases.isEmpty())
 			{
-				announce(releases.get(releases.size() - 1), sendMessage);
+				announce(previousReleaseVersion(),
+					Collections.singletonList(releases.get(releases.size() - 1)), sendMessage);
 			}
 			pending = false;
 			return;
 		}
 		String seenVersion = readVersion.get();
-		boolean firstInstall = seenVersion == null;
 		try
 		{
 			parseVersion(seenVersion);
 		}
 		catch (IllegalArgumentException ex)
 		{
-			firstInstall = true;
 			seenVersion = BASELINE_VERSION;
 		}
 		// Never move the cache backwards when an older development build is run.
 		if (compareVersions(seenVersion, currentVersion) < 0)
 		{
-			int firstRelease = firstInstall ? Math.max(0, releases.size() - 1)
-				: Math.max(0, releases.size() - 2);
-			for (int i = firstRelease; i < releases.size(); i++)
+			List<Release> missedReleases = new ArrayList<>();
+			for (Release release : releases)
 			{
-				Release release = releases.get(i);
 				if (compareVersions(release.version, seenVersion) > 0)
 				{
-					announce(release, sendMessage);
+					missedReleases.add(release);
 				}
 			}
-			// Advance only after all missed changes have actually been sent to chat.
+			if (!missedReleases.isEmpty())
+			{
+				announce(seenVersion, missedReleases, sendMessage);
+			}
+			// Advance only after the changelog has been sent to chat.
 			saveVersion.accept(currentVersion);
 		}
 		pending = false;
 	}
 
-	private static void announce(Release release, Consumer<String> sendMessage)
+	private String previousReleaseVersion()
 	{
-		sendMessage.accept("2DScape has been updated to v" + release.version + ":");
-		for (String change : release.changes)
+		return releases.size() < 2 ? BASELINE_VERSION : releases.get(releases.size() - 2).version;
+	}
+
+	private static void announce(String fromVersion, List<Release> releases, Consumer<String> sendMessage)
+	{
+		int firstRelease = Math.max(0, releases.size() - MAX_RELEASES);
+		List<String> changes = new ArrayList<>();
+		for (int i = firstRelease; i < releases.size(); i++)
 		{
-			sendMessage.accept(" - " + change);
+			Release release = releases.get(i);
+			for (String change : release.changes)
+			{
+				changes.add("- " + change + " (v" + release.version + ")");
+			}
+		}
+		int firstChange = Math.max(0, changes.size() - (MAX_ANNOUNCEMENT_LINES - 1));
+		sendMessage.accept("2DScape has updated from v" + fromVersion + " to v"
+			+ releases.get(releases.size() - 1).version);
+		for (int i = firstChange; i < changes.size(); i++)
+		{
+			sendMessage.accept(changes.get(i));
 		}
 	}
 

@@ -54,24 +54,21 @@ public final class BillboardUpdateState
 	{
 		return snapshot != null
 			&& hasObservation
-			&& lastObservedAnimationHash != Integer.MIN_VALUE
-			&& lastObservedAnimationHash != snapshot.animationHash;
+			&& knownChanged(lastObservedAnimationHash, snapshot.animationHash);
 	}
 
 	public boolean hasModelChanged(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
 			&& hasObservation
-			&& lastObservedModelStateHash != Integer.MIN_VALUE
-			&& lastObservedModelStateHash != snapshot.modelStateHash;
+			&& knownChanged(lastObservedModelStateHash, snapshot.modelStateHash);
 	}
 
 	public boolean hasTextureChanged(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
 			&& hasObservation
-			&& lastObservedTextureStateHash != Integer.MIN_VALUE
-			&& lastObservedTextureStateHash != snapshot.textureStateHash;
+			&& knownChanged(lastObservedTextureStateHash, snapshot.textureStateHash);
 	}
 
 	public boolean hasPositionChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
@@ -85,29 +82,30 @@ public final class BillboardUpdateState
 	public boolean hasViewChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
-			&& lastRedrawViewHash != Integer.MIN_VALUE
-			&& lastRedrawViewHash != snapshot.viewHash;
+			&& knownChanged(lastRedrawViewHash, snapshot.viewHash);
 	}
 
 	public boolean hasAnimationChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
-			&& lastRedrawAnimationHash != Integer.MIN_VALUE
-			&& lastRedrawAnimationHash != snapshot.animationHash;
+			&& knownChanged(lastRedrawAnimationHash, snapshot.animationHash);
 	}
 
 	public boolean hasModelChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
-			&& lastRedrawModelStateHash != Integer.MIN_VALUE
-			&& lastRedrawModelStateHash != snapshot.modelStateHash;
+			&& knownChanged(lastRedrawModelStateHash, snapshot.modelStateHash);
 	}
 
 	public boolean hasTextureChangedSinceRedraw(UpdateHeuristicSnapshot snapshot)
 	{
 		return snapshot != null
-			&& lastRedrawTextureStateHash != Integer.MIN_VALUE
-			&& lastRedrawTextureStateHash != snapshot.textureStateHash;
+			&& knownChanged(lastRedrawTextureStateHash, snapshot.textureStateHash);
+	}
+
+	private static boolean knownChanged(int previous, int current)
+	{
+		return previous != Integer.MIN_VALUE && previous != current;
 	}
 
 	public boolean hasCaptureException(UpdateHeuristicSnapshot snapshot, int resizePercent)

@@ -20,30 +20,34 @@ public class NpcSnapChangelogTest
 		new NpcSnapChangelog.Release("1.0.10", "Tenth patch"),
 		new NpcSnapChangelog.Release("1.1.0", "Minor release"),
 		new NpcSnapChangelog.Release("2.0.0", "Major release"));
-	private static final List<String> RECENT_MESSAGES = List.of(
-		"2DScape has been updated to v1.1.0:", " - Minor release",
-		"2DScape has been updated to v2.0.0:", " - Major release");
+	private static final List<String> ALL_MISSED_MESSAGES = List.of(
+		"2DScape has updated from v1.0.0 to v2.0.0",
+		"- First change (v1.0.1)", "- Second change (v1.0.1)", "- Tenth patch (v1.0.10)",
+		"- Minor release (v1.1.0)", "- Major release (v2.0.0)");
+	private static final List<String> FROM_1_0_2_MESSAGES = List.of(
+		"2DScape has updated from v1.0.2 to v2.0.0",
+		"- Tenth patch (v1.0.10)", "- Minor release (v1.1.0)", "- Major release (v2.0.0)");
 	private static final List<String> LATEST_MESSAGES = List.of(
-		"2DScape has been updated to v2.0.0:", " - Major release");
+		"2DScape has updated from v1.1.0 to v2.0.0", "- Major release (v2.0.0)");
 
 	@Test
-	public void missingVersionAnnouncesOnlyLatestReleaseBeforeSaving()
+	public void missingVersionAnnouncesFromBaselineBeforeSaving()
 	{
 		Memory memory = new Memory(null);
 		memory.check(changelog(), true);
-		assertEquals(LATEST_MESSAGES, memory.messages);
+		assertEquals(ALL_MISSED_MESSAGES, memory.messages);
 		assertEquals("2.0.0", memory.version);
-		assertEquals(expectedAnnounceEvents(LATEST_MESSAGES), memory.events);
+		assertEquals(expectedAnnounceEvents(ALL_MISSED_MESSAGES), memory.events);
 	}
 
 	@Test
-	public void olderVersionAnnouncesAtMostTwoRecentReleases()
+	public void olderVersionAnnouncesMissedChangesWithVersions()
 	{
-		for (String version : List.of("1.0.0", "1.0.2"))
+		for (String[] scenario : new String[][] {{"1.0.0", "all"}, {"1.0.2", "from1.0.2"}})
 		{
-			Memory memory = new Memory(version);
+			Memory memory = new Memory(scenario[0]);
 			memory.check(changelog(), true);
-			assertEquals(RECENT_MESSAGES, memory.messages);
+			assertEquals("all".equals(scenario[1]) ? ALL_MISSED_MESSAGES : FROM_1_0_2_MESSAGES, memory.messages);
 			assertEquals("2.0.0", memory.version);
 		}
 	}
@@ -53,13 +57,14 @@ public class NpcSnapChangelogTest
 	{
 		Memory twoBehind = new Memory("1.0.10");
 		twoBehind.check(changelog(), true);
-		assertEquals(RECENT_MESSAGES, twoBehind.messages);
+		assertEquals(List.of("2DScape has updated from v1.0.10 to v2.0.0",
+			"- Minor release (v1.1.0)", "- Major release (v2.0.0)"), twoBehind.messages);
 		Memory oneBehind = new Memory("1.1.0");
 		oneBehind.check(changelog(), true);
 		assertEquals(LATEST_MESSAGES, oneBehind.messages);
 		Memory numericOrder = new Memory("1.0.2");
 		numericOrder.check(new NpcSnapChangelog(HISTORY.subList(0, 2)), true);
-		assertEquals(List.of("2DScape has been updated to v1.0.10:", " - Tenth patch"),
+		assertEquals(List.of("2DScape has updated from v1.0.2 to v1.0.10", "- Tenth patch (v1.0.10)"),
 			numericOrder.messages);
 	}
 
@@ -82,7 +87,7 @@ public class NpcSnapChangelogTest
 		{
 			Memory memory = new Memory(version);
 			memory.check(changelog(), true);
-			assertEquals(LATEST_MESSAGES, memory.messages);
+			assertEquals(ALL_MISSED_MESSAGES, memory.messages);
 			assertEquals("2.0.0", memory.version);
 		}
 	}
@@ -96,13 +101,13 @@ public class NpcSnapChangelogTest
 		assertTrue(memory.events.isEmpty());
 		memory.check(changelog, true);
 		memory.check(changelog, true);
-		assertEquals(expectedAnnounceEvents(LATEST_MESSAGES), memory.events);
+		assertEquals(expectedAnnounceEvents(ALL_MISSED_MESSAGES), memory.events);
 		changelog.requestCheck();
 		memory.check(changelog, false);
 		memory.check(changelog, true);
 		memory.check(changelog(), true);
-		assertEquals(LATEST_MESSAGES, memory.messages);
-		List<String> expectedEvents = expectedAnnounceEvents(LATEST_MESSAGES);
+		assertEquals(ALL_MISSED_MESSAGES, memory.messages);
+		List<String> expectedEvents = expectedAnnounceEvents(ALL_MISSED_MESSAGES);
 		expectedEvents.add("read");
 		expectedEvents.add("read");
 		assertEquals(expectedEvents, memory.events);
@@ -116,7 +121,7 @@ public class NpcSnapChangelogTest
 		changelog.requestCheck();
 		Memory newProfile = new Memory("1.0.0");
 		newProfile.check(changelog, true);
-		assertEquals(RECENT_MESSAGES, newProfile.messages);
+		assertEquals(ALL_MISSED_MESSAGES, newProfile.messages);
 		assertEquals("2.0.0", newProfile.version);
 	}
 
@@ -130,7 +135,7 @@ public class NpcSnapChangelogTest
 		}, version -> memory.version = version));
 		assertEquals("1.0.0", memory.version);
 		memory.check(changelog, true);
-		assertEquals(RECENT_MESSAGES, memory.messages);
+		assertEquals(ALL_MISSED_MESSAGES, memory.messages);
 		assertEquals("2.0.0", memory.version);
 	}
 
@@ -139,7 +144,8 @@ public class NpcSnapChangelogTest
 	{
 		Memory memory = new Memory("1.0.0");
 		memory.check(new NpcSnapChangelog(List.of(new NpcSnapChangelog.Release("1.0.1", " a; b ;; ;c; d; "))), true);
-		assertEquals(List.of("2DScape has been updated to v1.0.1:", " - a", " - b", " - c", " - d"), memory.messages);
+		assertEquals(List.of("2DScape has updated from v1.0.0 to v1.0.1", "- a (v1.0.1)",
+			"- b (v1.0.1)", "- c (v1.0.1)", "- d (v1.0.1)"), memory.messages);
 		assertEquals("1.0.1", memory.version);
 	}
 

@@ -48,7 +48,7 @@ public class SceneMeshClippingTest
 			assertEquals(2, collector.occluders().size());
 			for (BillboardOcclusionQuality quality : BillboardOcclusionQuality.values())
 			{
-				if (quality == BillboardOcclusionQuality.OFF || quality == BillboardOcclusionQuality.BLOCKY) continue;
+				if (quality == BillboardOcclusionQuality.OFF) continue;
 				BillboardOcclusionMask mask = new BillboardOcclusionMask();
 				mask.prepare(collector.occluders(), quality, 0, 0, 400, 400);
 				for (int y = 0; y < 400; y++) for (int x = 0; x < 400; x++)
