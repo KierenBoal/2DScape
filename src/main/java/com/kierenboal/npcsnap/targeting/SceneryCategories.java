@@ -29,7 +29,7 @@ public final class SceneryCategories
 	private static final Set<String> ROCK_WORDS = Set.of("rock", "rocks", "boulder", "boulders");
 	private static final Set<String> PLANT_WORDS = Set.of("bush", "bushes", "plant", "plants", "fern", "ferns",
 		"flower", "flowers", "shrub", "shrubs", "cactus", "cacti", "reeds", "wheat", "potato", "nettles", "onion",
-		"cabbage", "sweetcorn", "flax");
+		"cabbage", "sweetcorn", "flax", "daisies");
 	private static final Set<String> FIRE_WORDS = Set.of("fire", "fires", "campfire", "bonfire");
 	private static final Set<String> LOG_WORDS = Set.of("log", "logs");
 	private static final Pattern NOT_LETTERS = Pattern.compile("[^a-z]+");

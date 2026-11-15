@@ -122,31 +122,31 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectRocks", name = "World objects: rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 0)
+	@ConfigItem(keyName = "worldObjectRocks", name = "Rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 0)
 	default boolean worldObjectRocks()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectPlants", name = "World objects: plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
+	@ConfigItem(keyName = "worldObjectPlants", name = "Plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
 	default boolean worldObjectPlants()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectFires", name = "World objects: fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
+	@ConfigItem(keyName = "worldObjectFires", name = "Fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
 	default boolean worldObjectFires()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectLogs", name = "World objects: logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
+	@ConfigItem(keyName = "worldObjectLogs", name = "Logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
 	default boolean worldObjectLogs()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectOther", name = "World objects: everything else", description = "All other scenery. Some, such as fences and stairs, look odd as sprites. Needs Apply to world objects.", section = worldObjectsSection, position = 4)
+	@ConfigItem(keyName = "worldObjectOther", name = "Everything else", description = "All other scenery. Some objects, such as fences and stairs, may look odd.", section = worldObjectsSection, position = 4)
 	default boolean worldObjectOther()
 	{
 		return false;
