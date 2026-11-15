@@ -105,34 +105,9 @@ public final class CachedBillboard implements TimedCacheEntry
 		return lastRedrawMillis;
 	}
 
-	public boolean matchesPreviewKey(BillboardCachePreviewKey previewKey)
+	public boolean matchesPreviewKey(BillboardCacheKey previewKey)
 	{
-		return previewKey != null
-			&& key.animationId == previewKey.animationId
-			&& key.animationFrame == previewKey.animationFrame
-			&& key.poseAnimationId == previewKey.poseAnimationId
-			&& key.poseAnimationFrame == previewKey.poseAnimationFrame
-			&& key.relativeYaw == previewKey.relativeYaw
-			&& key.relativePitch == previewKey.relativePitch
-			&& key.colorBands == previewKey.colorBands
-			&& key.lightBoost == previewKey.lightBoost
-			&& key.outlinePadding == previewKey.outlinePadding
-			&& key.highlightOutline == previewKey.highlightOutline
-			&& key.shadowOutline == previewKey.shadowOutline
-			&& key.solidOutline == previewKey.solidOutline
-			&& key.shadowType == previewKey.shadowType
-			&& key.spriteShadow == previewKey.spriteShadow
-			&& key.highlightInline == previewKey.highlightInline
-			&& key.shadowInline == previewKey.shadowInline
-			&& key.solidInline == previewKey.solidInline
-			&& key.outlineColor == previewKey.outlineColor
-			&& key.hoverOutline == previewKey.hoverOutline
-			&& key.interactOutline == previewKey.interactOutline
-			&& key.hoverOutlineColor == previewKey.hoverOutlineColor
-			&& key.interactOutlineColor == previewKey.interactOutlineColor
-			&& key.renderQuality == previewKey.renderQuality
-			&& key.modelStateHash == previewKey.modelStateHash
-			&& key.animatedTextureOffsetStateHash == previewKey.animatedTextureOffsetStateHash;
+		return key.matchesPreview(previewKey);
 	}
 
 	public boolean consumeDirty()

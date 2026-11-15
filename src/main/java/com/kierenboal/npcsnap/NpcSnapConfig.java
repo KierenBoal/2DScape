@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
-import com.kierenboal.npcsnap.occlusion.BillboardOcclusionComposition;
 import java.awt.Color;
 import net.runelite.client.config.Alpha;
 import net.runelite.client.config.Config;
@@ -184,16 +183,10 @@ public interface NpcSnapConfig extends Config
 		return 96;
 	}
 
-	@ConfigItem(keyName = "billboardOcclusionQuality", name = "Occlusion quality", description = "Hide parts of sprites behind walls, hills, trees, and other scenery. Blocky skips edge refinement for chunky occlusion. Low, Medium, and High retain accurate edges with different sampling costs.", section = renderingSection, position = 3)
+	@ConfigItem(keyName = "billboardOcclusionQuality", name = "Occlusion quality", description = "Hide parts of sprites behind scenery. Low, Medium, and High use different sampling costs.", section = renderingSection, position = 3)
 	default BillboardOcclusionQuality billboardOcclusionQuality()
 	{
 		return BillboardOcclusionQuality.MEDIUM;
-	}
-
-	@ConfigItem(keyName = "billboardOcclusionComposition", name = "Occlusion composition", description = "Choose how translucent scenery appears over sprites. Transparency-aware lets sprites show through; Hard cutout hides them completely.", section = renderingSection, position = 4)
-	default BillboardOcclusionComposition billboardOcclusionComposition()
-	{
-		return BillboardOcclusionComposition.TRANSPARENCY_AWARE;
 	}
 
 	@Range(min = 1, max = 256)
@@ -403,12 +396,6 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "useInventorySpritesForGroundItems", name = "Use inventory sprites for ground items", description = "Use the same small picture as the item in your inventory for ground-item sprites.", section = retroSection, position = 3)
-	default boolean useInventorySpritesForGroundItems()
-	{
-		return false;
-	}
-
 	@ConfigItem(keyName = "enableUiTextureBanding", name = "Reduce UI texture quality", description = "Give interface icons and artwork fewer shades for a more retro look.", section = retroSection, position = 4)
 	default boolean enableUiTextureBanding()
 	{
@@ -433,13 +420,6 @@ public interface NpcSnapConfig extends Config
 	default int uiTextureColorBands()
 	{
 		return 8;
-	}
-
-	// Retired: retain the saved key for compatibility; billboard captures use native loops.
-	@ConfigItem(keyName = "deterministicAnimationLooping", name = "Deterministic animation looping", description = "Retired setting.", hidden = true)
-	default boolean deterministicAnimationLooping()
-	{
-		return false;
 	}
 
 	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat, hitsplats and prayers", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, hitsplats, and prayers.", section = retroSection, position = 11)
@@ -475,12 +455,6 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "ignoreCameraAwareRotation", name = "Ignore camera aware rotation", description = "Use camera yaw alone as the viewing direction for NPC and player sprites, ignoring the camera's position relative to each actor.", section = retroSection, position = 13)
-	default boolean ignoreCameraAwareRotation()
-	{
-		return false;
-	}
-
 	@Range(min = 0, max = 512)
 	@ConfigItem(keyName = "retroNpcSwapperBrightness", name = "RetroNPC Swapper brightness", description = "Set the brightness for sprites made from RetroNPC Swapper models. 100% keeps normal brightness, independently of Light boost.", section = retroSection, position = 14)
 	default int retroNpcSwapperBrightness()
@@ -488,20 +462,8 @@ public interface NpcSnapConfig extends Config
 		return 64;
 	}
 
-	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw a red box around each sprite.", section = debugSection, position = 0)
+	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw sprite bounds and projected shadow bounds.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugDrawShadowBounds", name = "Draw shadow bounds", description = "Draw cyan outlines around the actual projected shadow polygons, including their skew.", section = debugSection, position = 7)
-	default boolean debugDrawShadowBounds()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "logBillboardAnimationData", name = "Log billboard animation data", description = "Write captured animation frames and redraw reasons to the developer log for troubleshooting.", section = debugLoggingSection, position = 0)
-	default boolean logBillboardAnimationData()
 	{
 		return false;
 	}
@@ -518,13 +480,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugShowReadyToRedrawFrames", name = "Show delayed sprite updates", description = "Mark sprites that are ready to update but have to wait until a later frame.", section = debugSection, position = 3)
-	default boolean debugShowReadyToRedrawFrames()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Show redraw reasons for three frames with a 3px, 2px, then 1px outline.", section = debugSection, position = 4)
+	@ConfigItem(keyName = "debugShowCacheInvalidations", name = "Show sprite redraws", description = "Show redraw reasons and delayed sprite updates.", section = debugSection, position = 4)
 	default boolean debugShowFrameRedraws()
 	{
 		return false;
@@ -554,21 +510,4 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugLogBillboardColors", name = "Log sprite colours", description = "Write the colours picked for sprites to the RuneLite log.", section = debugLoggingSection, position = 3)
-	default boolean debugLogBillboardColors()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugLogProjectionSkew", name = "Log projection skew", description = "Write projection and shear calculations for the hovered or interacted actor to the developer log.", section = debugLoggingSection, position = 4)
-	default boolean debugLogProjectionSkew()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugLogBillboardRedraws", name = "Log sprite redraws", description = "Write each sprite redraw's target, reasons, and before/after state to the developer log, even when redraw outlines are disabled.", section = debugLoggingSection, position = 5)
-	default boolean debugLogBillboardRedraws()
-	{
-		return false;
-	}
 }

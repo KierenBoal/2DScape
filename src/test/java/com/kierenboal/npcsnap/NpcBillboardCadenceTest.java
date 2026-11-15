@@ -305,7 +305,6 @@ public class NpcBillboardCadenceTest
 				@Override public boolean applyToGroundItems() { return type == BillboardTargetType.GROUND_ITEM; }
 				@Override public boolean applyToProjectiles() { return type == BillboardTargetType.PROJECTILE; }
 				@Override public boolean applyToGraphicsObjects() { return type == BillboardTargetType.GRAPHICS_OBJECT || type == BillboardTargetType.ACTOR_SPOT_ANIM; }
-				@Override public boolean useInventorySpritesForGroundItems() { return false; }
 				@Override public boolean useRetroOverheads() { return false; }
 				@Override public boolean enableActorWorldPlaneProjection() { return improved; }
 				@Override public SpriteShadowType shadowType() { return shadowType; }

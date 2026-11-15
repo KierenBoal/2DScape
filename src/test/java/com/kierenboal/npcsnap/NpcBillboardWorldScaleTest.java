@@ -37,7 +37,7 @@ public class NpcBillboardWorldScaleTest
 	{
 		for (boolean gpu : new boolean[] {false, true})
 		{
-			Fixture fixture = new Fixture(gpu, false);
+			Fixture fixture = new Fixture(gpu);
 			BillboardTarget near = worldTarget(fixture.location, proxy(Model.class));
 			BillboardTarget far = worldTarget(new LocalPoint(512, 1280), proxy(Model.class));
 			int nearAnchor = fixture.overlay.sortBottomY(near, new Rectangle(0, 0, 100, 100));
@@ -60,7 +60,7 @@ public class NpcBillboardWorldScaleTest
 	@Test
 	public void worldObjectSortDepthIgnoresLiveModelHeight()
 	{
-		Fixture fixture = new Fixture(true, false);
+		Fixture fixture = new Fixture(true);
 		AtomicInteger height = new AtomicInteger(100);
 		Renderable renderable = proxy(DynamicObject.class, methodSupplier("getModelHeight", height::get));
 		ObservedTileObject observed = worldTarget(fixture.location, renderable).observedTileObject;
@@ -85,7 +85,7 @@ public class NpcBillboardWorldScaleTest
 	{
 		for (boolean gpu : new boolean[] {false, true})
 		{
-			Fixture fixture = new Fixture(gpu, false);
+			Fixture fixture = new Fixture(gpu);
 			for (Class<? extends Renderable> type : java.util.List.of(Model.class, DynamicObject.class, TileItem.class))
 			{
 				AtomicInteger height = new AtomicInteger(100);
@@ -102,23 +102,9 @@ public class NpcBillboardWorldScaleTest
 	}
 
 	@Test
-	public void inventoryItemScaleAlsoIgnoresLiveHeight()
-	{
-		Fixture fixture = new Fixture(true, true);
-		AtomicInteger height = new AtomicInteger(100);
-		TileItem item = proxy(TileItem.class, methodSupplier("getModelHeight", height::get));
-		Rectangle source = new Rectangle(-18, -32, 36, 32);
-		Rectangle initial = fixture.draw(item, source, 20).bounds;
-		height.set(1000);
-		assertEquals(initial, fixture.draw(item, source, 20).bounds);
-		Rectangle modelSprite = new Fixture(true, false).draw(item, source, 20).bounds;
-		assertTrue("Inventory zoom adjustment must remain active", initial.width < modelSprite.width);
-	}
-
-	@Test
 	public void shortWideSpritesScaleEachDimensionWithoutAmplifyingHeightRounding()
 	{
-		Fixture fixture = new Fixture(false, false);
+		Fixture fixture = new Fixture(false);
 		Renderable scenery = proxy(Model.class, method("getModelHeight", 100));
 		Rectangle source = new Rectangle(-500, -3, 1000, 6);
 		BillboardCanvasPoint origin = new BillboardDepthCalculator(fixture.client)
@@ -131,7 +117,7 @@ public class NpcBillboardWorldScaleTest
 	@Test
 	public void spritesStillRespondToZoomAndGroundItemStackHeight()
 	{
-		Fixture fixture = new Fixture(true, false);
+		Fixture fixture = new Fixture(true);
 		TileItem item = proxy(TileItem.class, method("getModelHeight", 100));
 		Rectangle source = new Rectangle(-50, -100, 100, 100);
 		Rectangle initial = fixture.draw(item, source, 0).bounds;
@@ -150,7 +136,7 @@ public class NpcBillboardWorldScaleTest
 		private final Client client;
 		private final NpcBillboardOverlay overlay;
 
-		private Fixture(boolean gpu, boolean inventorySprites)
+		private Fixture(boolean gpu)
 		{
 			WorldView view = proxy(WorldView.class, method("getTileSettings", new byte[4][16][16]),
 				method("getTileHeights", new int[4][17][17]));
@@ -161,10 +147,7 @@ public class NpcBillboardWorldScaleTest
 				methodSupplier("getScale", scale::get), method("getViewportWidth", 1600),
 				method("getViewportHeight", 1200), method("getViewportXOffset", 10),
 				method("getViewportYOffset", 20));
-			NpcSnapConfig config = new NpcSnapConfig()
-			{
-				@Override public boolean useInventorySpritesForGroundItems() { return inventorySprites; }
-			};
+			NpcSnapConfig config = new NpcSnapConfig() {};
 			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
 				null);
 		}

@@ -1,6 +1,7 @@
 package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
+import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics.Timer;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Path2D;
@@ -55,8 +56,6 @@ public final class BillboardOcclusionMask
 	private int width;
 	private int height;
 	private int step;
-	private boolean blocky;
-	private BillboardOcclusionComposition composition = BillboardOcclusionComposition.TRANSPARENCY_AWARE;
 	private int references;
 	private int coveredCellCount;
 	private long uniformDecisions;
@@ -67,27 +66,19 @@ public final class BillboardOcclusionMask
 	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
 		int x, int y, int w, int h)
 	{
-		prepare(occluders, quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, x, y, w, h, null, null);
+		prepare(occluders, quality, x, y, w, h, null, null);
 	}
 
 	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
 		int x, int y, int w, int h, Rectangle interest)
 	{
-		prepare(occluders, quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, x, y, w, h, interest, null);
+		prepare(occluders, quality, x, y, w, h, interest, null);
 	}
 
 	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
 		int x, int y, int w, int h, Rectangle interest, Collection<Rectangle> activeRegions)
 	{
-		prepare(occluders, quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, x, y, w, h, interest, activeRegions);
-	}
-
-	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality, BillboardOcclusionComposition composition,
-		int x, int y, int w, int h, Rectangle interest, Collection<Rectangle> activeRegions)
-	{
 		step = BillboardOcclusionQuality.normalize(quality).sampleStep();
-		blocky = quality == BillboardOcclusionQuality.BLOCKY;
-		this.composition = BillboardOcclusionComposition.normalize(composition);
 		bounds = new Rectangle(x, y, Math.max(0, w), Math.max(0, h));
 		if (interest != null)
 		{
@@ -116,7 +107,7 @@ public final class BillboardOcclusionMask
 				}
 			}
 		}
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Initialize mask buffers"))
+		try (Timer ignored = performanceMetrics.time("Initialize mask buffers"))
 		{
 			width = (bounds.width + step - 1) / step;
 			height = (bounds.height + step - 1) / step;
@@ -140,7 +131,7 @@ public final class BillboardOcclusionMask
 			Arrays.fill(fullRegion, 0, size, false);
 			Arrays.fill(rowCoverage, 0, height, false);
 		}
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Mark active mask regions"))
+		try (Timer ignored = performanceMetrics.time("Mark active mask regions"))
 		{
 			// Mark each rectangle's cell span directly, rather than visiting every region per cell.
 			for (Rectangle region : regions)
@@ -163,7 +154,7 @@ public final class BillboardOcclusionMask
 				}
 			}
 		}
-		try (BillboardPerformanceMetrics.Timer ignored = performanceMetrics.time("Index occluder coverage"))
+		try (Timer ignored = performanceMetrics.time("Index occluder coverage"))
 		{
 			for (int id = 0; id < this.occluders.size(); id++)
 			{
@@ -181,7 +172,7 @@ public final class BillboardOcclusionMask
 					int py = bounds.y + cy * step;
 					int ch = Math.min(step, bounds.y + bounds.height - py);
 					float near = o.minimumDepth(py, ch);
-					float far = blocky ? near : o.maximumDepth(py, ch);
+					float far = o.maximumDepth(py, ch);
 					for (int cx = left; cx <= right; cx++)
 					{
 						int cell = cy * width + cx;
@@ -191,8 +182,7 @@ public final class BillboardOcclusionMask
 						}
 						int px = bounds.x + cx * step;
 						int cw = Math.min(step, bounds.x + bounds.width - px);
-						// Blocky fills bounding-box cells without triangle or per-pixel coverage tests.
-						int coverage = blocky ? 2 : o.coverage(px, py, cw, ch);
+						int coverage = o.coverage(px, py, cw, ch);
 						if (coverage == 0)
 						{
 							continue;
@@ -236,7 +226,7 @@ public final class BillboardOcclusionMask
 						int reference = references++;
 						candidateFar[reference] = far;
 						candidates[reference] = id;
-						candidateTransmittance[reference] = effectiveTransmittance(o);
+						candidateTransmittance[reference] = o.transmittance;
 						candidateTintRgb[reference] = o.tintRgb;
 						next[reference] = heads[cell];
 						heads[cell] = reference;
@@ -332,11 +322,6 @@ public final class BillboardOcclusionMask
 		return false;
 	}
 
-	private int effectiveTransmittance(Occluder occluder)
-	{
-		return composition == BillboardOcclusionComposition.HARD_CUTOUT ? 0 : occluder.transmittance;
-	}
-
 	/**
 	 * Returns the amount of the billboard pixel which remains visible after all
 	 * closer world geometry. 255 is fully visible and 0 is fully occluded.
@@ -358,10 +343,7 @@ public final class BillboardOcclusionMask
 		{
 			return 255;
 		}
-		if (!blocky)
-		{
-			refinedPixels++;
-		}
+		refinedPixels++;
 		int localX = (x - bounds.x) % step;
 		int localY = (y - bounds.y) % step;
 		int bit = 1 << localX;
@@ -379,10 +361,6 @@ public final class BillboardOcclusionMask
 			}
 			if (candidateFar[ref] + depthBias() >= depth)
 			{
-				if (blocky)
-				{
-					continue;
-				}
 				float value = occluders.get(candidates[ref]).depthAt(x, y);
 				if (!Float.isFinite(value) || value + depthBias() >= depth)
 				{
@@ -435,9 +413,8 @@ public final class BillboardOcclusionMask
 			{
 				continue;
 			}
-			// Exact depth is needed for layer ordering even when the whole face is
-			// known to be in front. Blocky deliberately retains its coarse depth.
-			float value = blocky ? candidateFar[ref] : occluder.depthAt(x, y);
+			// Exact depth is needed for layer ordering even when the whole face is known to be in front.
+			float value = occluder.depthAt(x, y);
 			if (!Float.isFinite(value) || value + depthBias() >= depth)
 			{
 				continue;
@@ -565,37 +542,7 @@ public final class BillboardOcclusionMask
 		{
 			return;
 		}
-		if (blocky)
-		{
-			int cell = ((y - bounds.y) / step) * width + sampleX;
-			int value = 255;
-			for (int reference = heads[cell]; reference != -1; reference = next[reference])
-			{
-				candidateTests++;
-				if (occluders.get(candidates[reference]).excludedBy(ignoredTileObject, supportingGround))
-				{
-					continue;
-				}
-				if (candidateFar[reference] + depthBias() < depth)
-				{
-					value = multiplyTransmittance(value, candidateTransmittance[reference]);
-				}
-			}
-			Arrays.fill(output, 0, step, value);
-			// Keep clipping to actual sprite regions even though geometry edges are coarse.
-			int startX = bounds.x + sampleX * step;
-			if (!fullRegion[cell])
-			{
-				for (int offset = 0; offset < step; offset++)
-				{
-					if (index(startX + offset, y) < 0)
-					{
-						output[offset] = 255;
-					}
-				}
-			}
-			return;
-		}
+
 		int cell = ((y - bounds.y) / step) * width + sampleX;
 		int localY = (y - bounds.y) % step;
 		int x = bounds.x + sampleX * step;
@@ -611,10 +558,7 @@ public final class BillboardOcclusionMask
 			while (covered != 0)
 			{
 				int offset = Integer.numberOfTrailingZeros(covered);
-				if (!blocky)
-		{
-			refinedPixels++;
-		}
+				refinedPixels++;
 				if (candidateFar[ref] + depthBias() < depth)
 				{
 					output[offset] = multiplyTransmittance(output[offset], candidateTransmittance[ref]);

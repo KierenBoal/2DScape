@@ -5,7 +5,9 @@ import com.kierenboal.npcsnap.SpriteShadowType;
 import com.kierenboal.npcsnap.rendering.BillboardBrightness;
 import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
+import lombok.EqualsAndHashCode;
 
+@EqualsAndHashCode
 public final class BillboardCacheKey
 {
 	public final int animationId;
@@ -87,59 +89,51 @@ public final class BillboardCacheKey
 			animatedTextureOffsetStateHash);
 	}
 
-	public BillboardCacheKey(
-		int animationId,
-		int animationFrame,
-		int poseAnimationId,
-		int poseAnimationFrame,
-		int relativeYaw,
-		int relativePitch,
-		int colorBands,
-		int lightBoost,
-		int outlinePadding,
-		boolean highlightOutline,
-		boolean shadowOutline,
-		boolean solidOutline,
-		boolean spriteShadow,
-		boolean highlightInline,
-		boolean shadowInline,
-		boolean solidInline,
-		int outlineColor,
-		boolean hoverOutline,
-		boolean interactOutline,
-		int hoverOutlineColor,
-		int interactOutlineColor,
-		int renderQuality,
-		int modelStateHash,
-		int textureStateHash,
-		int animatedTextureOffsetStateHash)
+	public static BillboardCacheKey preview(
+		BillboardRenderRequest request, NpcSnapConfig config, int outlinePadding,
+		int renderQuality, int animatedTextureOffsetStateHash, int effectiveLightBoost)
 	{
-		this(
-			animationId,
-			animationFrame,
-			poseAnimationId,
-			poseAnimationFrame,
-			relativeYaw,
-			relativePitch,
-			colorBands,
-			lightBoost,
-			outlinePadding,
-			highlightOutline,
-			shadowOutline,
-			solidOutline,
-			spriteShadow ? SpriteShadowType.LEGACY : SpriteShadowType.OFF,
-			highlightInline,
-			shadowInline,
-			solidInline,
-			outlineColor,
-			hoverOutline,
-			interactOutline,
-			hoverOutlineColor,
-			interactOutlineColor,
-			renderQuality,
-			modelStateHash,
-			textureStateHash,
-			animatedTextureOffsetStateHash);
+		return create(request, config, outlinePadding, config.billboardColorBands(),
+			renderQuality, 0, animatedTextureOffsetStateHash, effectiveLightBoost);
+	}
+
+	public static BillboardCacheKey preview(
+		BillboardRenderRequest request, NpcSnapConfig config, int outlinePadding,
+		int renderQuality, int animatedTextureOffsetStateHash)
+	{
+		return preview(request, config, outlinePadding, renderQuality,
+			animatedTextureOffsetStateHash,
+			BillboardBrightness.configuredLightBoostPercent(config, request.model));
+	}
+
+	public boolean matchesPreview(BillboardCacheKey preview)
+	{
+		return preview != null
+			&& animationId == preview.animationId
+			&& animationFrame == preview.animationFrame
+			&& poseAnimationId == preview.poseAnimationId
+			&& poseAnimationFrame == preview.poseAnimationFrame
+			&& relativeYaw == preview.relativeYaw
+			&& relativePitch == preview.relativePitch
+			&& colorBands == preview.colorBands
+			&& lightBoost == preview.lightBoost
+			&& outlinePadding == preview.outlinePadding
+			&& highlightOutline == preview.highlightOutline
+			&& shadowOutline == preview.shadowOutline
+			&& solidOutline == preview.solidOutline
+			&& spriteShadow == preview.spriteShadow
+			&& shadowType == preview.shadowType
+			&& highlightInline == preview.highlightInline
+			&& shadowInline == preview.shadowInline
+			&& solidInline == preview.solidInline
+			&& outlineColor == preview.outlineColor
+			&& hoverOutline == preview.hoverOutline
+			&& interactOutline == preview.interactOutline
+			&& hoverOutlineColor == preview.hoverOutlineColor
+			&& interactOutlineColor == preview.interactOutlineColor
+			&& renderQuality == preview.renderQuality
+			&& modelStateHash == preview.modelStateHash
+			&& animatedTextureOffsetStateHash == preview.animatedTextureOffsetStateHash;
 	}
 
 	public BillboardCacheKey(
@@ -197,77 +191,8 @@ public final class BillboardCacheKey
 		this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
 	}
 
-	@Override
-	public boolean equals(Object other)
-	{
-		if (this == other)
-		{
-			return true;
-		}
 
-		if (!(other instanceof BillboardCacheKey))
-		{
-			return false;
-		}
 
-		BillboardCacheKey that = (BillboardCacheKey) other;
-		return animationId == that.animationId
-			&& animationFrame == that.animationFrame
-			&& poseAnimationId == that.poseAnimationId
-			&& poseAnimationFrame == that.poseAnimationFrame
-			&& relativeYaw == that.relativeYaw
-			&& relativePitch == that.relativePitch
-			&& colorBands == that.colorBands
-			&& lightBoost == that.lightBoost
-			&& outlinePadding == that.outlinePadding
-			&& highlightOutline == that.highlightOutline
-			&& shadowOutline == that.shadowOutline
-			&& solidOutline == that.solidOutline
-			&& shadowType == that.shadowType
-			&& spriteShadow == that.spriteShadow
-			&& highlightInline == that.highlightInline
-			&& shadowInline == that.shadowInline
-			&& solidInline == that.solidInline
-			&& outlineColor == that.outlineColor
-			&& hoverOutline == that.hoverOutline
-			&& interactOutline == that.interactOutline
-			&& hoverOutlineColor == that.hoverOutlineColor
-			&& interactOutlineColor == that.interactOutlineColor
-			&& renderQuality == that.renderQuality
-			&& modelStateHash == that.modelStateHash
-			&& textureStateHash == that.textureStateHash
-			&& animatedTextureOffsetStateHash == that.animatedTextureOffsetStateHash;
-	}
 
-	@Override
-	public int hashCode()
-	{
-		int result = 31 * animationId + shadowType.hashCode();
-		result = 31 * result + animationFrame;
-		result = 31 * result + poseAnimationId;
-		result = 31 * result + poseAnimationFrame;
-		result = 31 * result + relativeYaw;
-		result = 31 * result + relativePitch;
-		result = 31 * result + colorBands;
-		result = 31 * result + lightBoost;
-		result = 31 * result + outlinePadding;
-		result = 31 * result + (highlightOutline ? 1 : 0);
-		result = 31 * result + (shadowOutline ? 1 : 0);
-		result = 31 * result + (solidOutline ? 1 : 0);
-		result = 31 * result + (spriteShadow ? 1 : 0);
-		result = 31 * result + (highlightInline ? 1 : 0);
-		result = 31 * result + (shadowInline ? 1 : 0);
-		result = 31 * result + (solidInline ? 1 : 0);
-		result = 31 * result + outlineColor;
-		result = 31 * result + (hoverOutline ? 1 : 0);
-		result = 31 * result + (interactOutline ? 1 : 0);
-		result = 31 * result + hoverOutlineColor;
-		result = 31 * result + interactOutlineColor;
-		result = 31 * result + renderQuality;
-		result = 31 * result + modelStateHash;
-		result = 31 * result + textureStateHash;
-		result = 31 * result + animatedTextureOffsetStateHash;
-		return result;
-	}
 }
 

@@ -4,9 +4,7 @@ import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import com.kierenboal.npcsnap.state.BillboardRedrawReason;
-import com.kierenboal.npcsnap.state.BillboardCacheKey;
 import com.kierenboal.npcsnap.state.CachedBillboard;
-import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -27,17 +25,10 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
-import net.runelite.api.NPC;
 import net.runelite.api.Player;
-import net.runelite.api.Projectile;
-import net.runelite.api.GraphicsObject;
-import net.runelite.api.TileItem;
-import net.runelite.api.TileObject;
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.FontManager;
 
 @Singleton
-@Slf4j
 public class NpcSnapDebug
 {
 	private static final Color BILLBOARD_RED = new Color(255, 0, 0, 220);
@@ -66,42 +57,9 @@ public class NpcSnapDebug
 		actorFrames.clear();
 	}
 
-	void recordBillboardRedraw(BillboardRenderRequest request, CachedBillboard previous,
-		CachedBillboard current, Collection<BillboardRedrawReason> reasons)
+	void recordBillboardRedraw(CachedBillboard current, Collection<BillboardRedrawReason> reasons)
 	{
 		current.markDebugFrameRedrawn(reasons);
-		if (!config.debugLogBillboardRedraws() || !log.isDebugEnabled())
-		{
-			return;
-		}
-		log.debug("Sprite redraw: cycle={} target={} location={} plane={} reasons=[{}] before=[{}] after=[{}]",
-			client.getGameCycle(), redrawTarget(request.renderable), request.localPoint, request.plane,
-			BillboardRedrawReason.format(reasons), redrawState(previous), redrawState(current));
-	}
-
-	private static String redrawTarget(Object source)
-	{
-		if (source == null) return "unknown";
-		String identity = "@" + Integer.toHexString(System.identityHashCode(source));
-		if (source instanceof NPC) return "NPC id=" + ((NPC) source).getId() + " index=" + ((NPC) source).getIndex() + identity;
-		if (source instanceof Player) return "Player index=" + ((Player) source).getId() + identity;
-		if (source instanceof Projectile) return "Projectile id=" + ((Projectile) source).getId() + identity;
-		if (source instanceof GraphicsObject) return "GraphicsObject id=" + ((GraphicsObject) source).getId() + identity;
-		if (source instanceof TileItem) return "TileItem id=" + ((TileItem) source).getId() + " quantity=" + ((TileItem) source).getQuantity() + identity;
-		if (source instanceof TileObject) return "TileObject id=" + ((TileObject) source).getId() + identity;
-		return source.getClass().getSimpleName() + identity;
-	}
-
-	private static String redrawState(CachedBillboard sprite)
-	{
-		if (sprite == null) return "none";
-		BillboardCacheKey key = sprite.key;
-		return "animation=" + key.animationId + ":" + key.animationFrame
-			+ " pose=" + key.poseAnimationId + ":" + key.poseAnimationFrame
-			+ " yaw=" + key.relativeYaw + " pitch=" + key.relativePitch
-			+ " model=" + key.modelStateHash + " texture=" + key.textureStateHash
-			+ " animatedTexture=" + key.animatedTextureOffsetStateHash
-			+ " quality=" + key.renderQuality + " bounds=" + sprite.bounds;
 	}
 
 	void recordActorFrames(Actor actor, int animationId, int animationFrame, int forcedAnimationFrame, int poseFrame, int forcedPoseFrame)
@@ -130,13 +88,9 @@ public class NpcSnapDebug
 		return new FrameDebugInfo(state.animationId, state.animationFrame, state.forcedAnimationFrame, state.poseFrame, state.forcedPoseFrame);
 	}
 
-	void drawBillboardDebug(Graphics2D graphics, RenderDebug renderDebug)
-	{
-	}
-
 	void drawShadowBounds(Graphics2D graphics, BillboardRenderResult shadow)
 	{
-		if (!config.debugDrawShadowBounds() || shadow == null) return;
+		if (!config.debugDrawBillboardOutline() || shadow == null) return;
 		Color color = graphics.getColor();
 		Stroke stroke = graphics.getStroke();
 		try
@@ -178,7 +132,7 @@ public class NpcSnapDebug
 			graphics.setStroke(stroke);
 		}
 		
-		if (config.debugShowReadyToRedrawFrames() && renderDebug.readyToRedraw)
+		if (config.debugShowFrameRedraws() && renderDebug.readyToRedraw)
 		{
 			int size = 2;
 			Stroke stroke = graphics.getStroke();
@@ -217,11 +171,6 @@ public class NpcSnapDebug
 			}
 		}
 
-	}
-
-	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
-	{
-		drawPerformanceMetrics(graphics, viewport, rows, java.util.Collections.emptyMap());
 	}
 
 	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, Map<String, Long> counters)
@@ -293,11 +242,6 @@ public class NpcSnapDebug
 	{
 		return value >= 1_000_000L ? String.format(Locale.ROOT, "%.1fm", value / 1_000_000d)
 			: value >= 1_000L ? String.format(Locale.ROOT, "%.1fk", value / 1_000d) : Long.toString(value);
-	}
-
-	static int performanceRowCapacity(int viewportHeight, int lineHeight, int contextLines)
-	{
-		return performanceRowCapacityForContextHeight(viewportHeight, lineHeight, contextLines * lineHeight);
 	}
 
 	static int performanceRowCapacityForContextHeight(int viewportHeight, int lineHeight, int contextHeight)

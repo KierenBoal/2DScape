@@ -50,13 +50,13 @@ public class BillboardOcclusionMaskTest
 			new BillboardRenderResult(geometry, body, bounds, layer), 1, null, 1);
 		BillboardDepthCalculator camera = new BillboardDepthCalculator(proxy(Client.class));
 		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
-			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.LOW,
 			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
 		{
 			BillboardOcclusionMask mask = new BillboardOcclusionMask();
 			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
 				new Rectangle(0, 0, 16, 4), 100f, "wall")), quality,
-				BillboardOcclusionComposition.HARD_CUTOUT, 0, 0, 32, 4, null, null);
+				0, 0, 32, 4, null, null);
 			BillboardFrameBuffer frame = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
 				prepared -> BillboardDepthSurface.from(camera, prepared, 0));
 			for (boolean debug : new boolean[] {false, true})
@@ -96,26 +96,23 @@ public class BillboardOcclusionMaskTest
 		assertTrue(quad.sample(7.5, 1.5, sample));
 		double farDepth = sample.depth;
 		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
-			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.LOW,
 			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
 		{
-			for (BillboardOcclusionComposition composition : BillboardOcclusionComposition.values())
-			{
-				BillboardOcclusionMask mask = new BillboardOcclusionMask();
-				BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
-					prepared -> BillboardDepthSurface.from(camera, prepared, 0));
-				mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(imageBounds,
-					180f, "wall", 128, 0x102030)), quality, composition, 0, 0, 8, 8, null, null);
-				buffer.begin(8, 8);
-				buffer.blit(draw, 0, 0, 8, 8, false);
-				assertEquals("Near side at " + quality, 0xFF804020, buffer.image().getRGB(0, 1));
-				assertEquals("Far side at " + quality + " / " + composition,
-					composition == BillboardOcclusionComposition.HARD_CUTOUT ? 0 : mask.tintPixel(7, 1, farDepth, 0xFF804020),
-					buffer.image().getRGB(7, 1));
-				buffer.begin(8, 8);
-				buffer.blit(new PreparedBillboardDraw(request, draw.result, 1, null, 1), 0, 0, 8, 8, false);
-				assertEquals(0, buffer.image().getRGB(0, 1));
-			}
+			BillboardOcclusionMask mask = new BillboardOcclusionMask();
+			BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+				prepared -> BillboardDepthSurface.from(camera, prepared, 0));
+			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(imageBounds,
+				180f, "wall", 128, 0x102030)), quality, 0, 0, 8, 8, null, null);
+			buffer.begin(8, 8);
+			buffer.blit(draw, 0, 0, 8, 8, false);
+			assertEquals("Near side at " + quality, 0xFF804020, buffer.image().getRGB(0, 1));
+			assertEquals("Far side at " + quality,
+				mask.tintPixel(7, 1, farDepth, 0xFF804020),
+				buffer.image().getRGB(7, 1));
+			buffer.begin(8, 8);
+			buffer.blit(new PreparedBillboardDraw(request, draw.result, 1, null, 1), 0, 0, 8, 8, false);
+			assertEquals(0, buffer.image().getRGB(0, 1));
 		}
 	}
 
@@ -154,7 +151,7 @@ public class BillboardOcclusionMaskTest
 				mask.prepare(Arrays.asList(
 					new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 4, 8), 20f, "opaque leaf"),
 					new BillboardOcclusionMask.Occluder(new Rectangle(4, 0, 4, 8), 20f, "translucent leaf", 128, 0x102030)),
-					quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, 0, 0, 8, 8, null, null);
+					quality, 0, 0, 8, 8, null, null);
 				buffer.begin(8, 8);
 				buffer.blit(draw, 0, 0, 8, 8, false);
 				assertEquals("Opaque leaf at " + quality + " frame " + frame, 0, buffer.image().getRGB(1, 1));
@@ -216,23 +213,19 @@ public class BillboardOcclusionMaskTest
 	}
 
 	@Test
-	public void transparentSceneryAttenuatesInsteadOfHardCuttingOut()
+	public void transparentSceneryAttenuatesAndTints()
 	{
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		BillboardOcclusionMask.Occluder translucent = new BillboardOcclusionMask.Occluder(
 			new Rectangle(0, 0, 8, 8), 20f, "canopy", 128);
 		mask.prepare(Collections.singletonList(translucent), BillboardOcclusionQuality.HIGH,
-			BillboardOcclusionComposition.TRANSPARENCY_AWARE, 0, 0, 8, 8, null, null);
+			0, 0, 8, 8, null, null);
 
 		assertEquals(BillboardOcclusionMask.CellResult.REFINE, mask.classifySample(0, 2, 40d));
 		assertEquals(128, mask.transmittanceAt(2, 2, 40d));
 		assertEquals(0xFFFF7F7F, mask.tintPixel(2, 2, 40d, 0xFFFF0000));
 		assertFalse(mask.isOccluded(2, 2, 40d));
 
-		mask.prepare(Collections.singletonList(translucent), BillboardOcclusionQuality.HIGH,
-			BillboardOcclusionComposition.HARD_CUTOUT, 0, 0, 8, 8, null, null);
-		assertEquals(BillboardOcclusionMask.CellResult.OCCLUDED, mask.classifySample(0, 2, 40d));
-		assertEquals(0, mask.transmittanceAt(2, 2, 40d));
 	}
 
 	@Test
@@ -242,8 +235,7 @@ public class BillboardOcclusionMaskTest
 		mask.prepare(Arrays.asList(
 			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 20f, "front", 128),
 			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 10f, "back", 128)),
-			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
-			0, 0, 8, 8, null, null);
+			BillboardOcclusionQuality.HIGH, 			0, 0, 8, 8, null, null);
 
 		assertEquals(64, mask.transmittanceAt(2, 2, 40d));
 	}
@@ -315,9 +307,6 @@ public class BillboardOcclusionMaskTest
 					mask.tintPixel(8, 1, 500d, 0xFF000000));
 			}
 		}
-		mask.prepare(Arrays.asList(red, blue), BillboardOcclusionQuality.BLOCKY, 0, 0, 16, 16);
-		assertEquals(0xFF40007F, mask.tintPixel(1, 1, 500d, 0xFF000000));
-		assertEquals(0xFF40007F, mask.tintPixel(12, 1, 500d, 0xFF000000));
 	}
 
 	@Test
@@ -326,7 +315,7 @@ public class BillboardOcclusionMaskTest
 		TileObject owner = proxy(TileObject.class);
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
-			BillboardOcclusionQuality.BLOCKY, BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.LOW,
 			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
 		{
 			mask.prepare(Arrays.asList(
@@ -361,8 +350,7 @@ public class BillboardOcclusionMaskTest
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
 			new Rectangle(0, 0, 4, 4), 20f, "canopy", 128, 0x102030)),
-			BillboardOcclusionQuality.HIGH, BillboardOcclusionComposition.TRANSPARENCY_AWARE,
-			0, 0, 4, 4, null, null);
+			BillboardOcclusionQuality.HIGH, 			0, 0, 4, 4, null, null);
 		Client client = proxy(
 			Client.class,
 			method("getCameraY", -1000),

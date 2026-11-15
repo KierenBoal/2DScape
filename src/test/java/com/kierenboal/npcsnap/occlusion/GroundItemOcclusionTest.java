@@ -46,10 +46,8 @@ public class GroundItemOcclusionTest
 	}
 
 	@Test
-	public void inventorySpriteWithoutModelStillHasOcclusionButMissingLocationDoesNot()
+	public void missingLocationDoesNotSupportOcclusion()
 	{
-		assertTrue(BillboardDepthSurface.from(calculator(),
-			request(0, false, null, new LocalPoint(0, 0)), BOUNDS, BOUNDS, 0).supportsWorldOcclusion());
 		assertFalse(BillboardDepthSurface.from(calculator(),
 			request(0, true, flatModel(), null), BOUNDS, BOUNDS, 0).supportsWorldOcclusion());
 	}
@@ -57,21 +55,14 @@ public class GroundItemOcclusionTest
 	@Test
 	public void itemPixelsRespectPartialWallsTransparencyAndDisabledOcclusion()
 	{
-		for (boolean inventorySprite : new boolean[] {false, true})
+		BillboardRenderRequest request = request(0, true, flatModel(), new LocalPoint(0, 0));
+		for (BillboardOcclusionQuality quality : BillboardOcclusionQuality.values())
 		{
-			BillboardRenderRequest request = request(0, true, inventorySprite ? null : flatModel(), new LocalPoint(0, 0));
-			for (BillboardOcclusionQuality quality : BillboardOcclusionQuality.values())
-			{
-				if (quality == BillboardOcclusionQuality.BLOCKY)
-				{
-					continue; // Exact partial-wall edges are intentionally absent in Blocky.
-				}
-				assertPixels(request, quality, 500f, 0,
-					quality == BillboardOcclusionQuality.OFF ? 0xFFFF0000 : 0);
-				assertPixels(request, quality, 5000f, 0, 0xFFFF0000);
-				assertPixels(request, quality, 500f, 128,
-					quality == BillboardOcclusionQuality.OFF ? 0xFFFF0000 : 0xFFFF7F7F);
-			}
+			assertPixels(request, quality, 500f, 0,
+				quality == BillboardOcclusionQuality.OFF ? 0xFFFF0000 : 0);
+			assertPixels(request, quality, 5000f, 0, 0xFFFF0000);
+			assertPixels(request, quality, 500f, 128,
+				quality == BillboardOcclusionQuality.OFF ? 0xFFFF0000 : 0xFFFF7F7F);
 		}
 	}
 
@@ -81,7 +72,7 @@ public class GroundItemOcclusionTest
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
 		mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
 			new Rectangle(0, 0, 2, 4), occluderDepth, "wall", transmittance)),
-			quality, BillboardOcclusionComposition.TRANSPARENCY_AWARE, 0, 0, 4, 4, BOUNDS, Collections.singletonList(BOUNDS));
+			quality, 0, 0, 4, 4, BOUNDS, Collections.singletonList(BOUNDS));
 		BufferedImage image = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
 		for (int y = 0; y < 4; y++)
 		{

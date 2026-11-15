@@ -7,6 +7,9 @@ import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.coords.LocalPoint;
 
+import lombok.EqualsAndHashCode;
+
+@EqualsAndHashCode
 public final class EffectDedupKey
 {
 	private final int id;
@@ -53,35 +56,4 @@ public final class EffectDedupKey
 			localPoint.getY() / BillboardConstants.LOCAL_TILE_SIZE
 		);
 	}
-
-	@Override
-	public boolean equals(Object other)
-	{
-		if (this == other)
-		{
-			return true;
-		}
-
-		if (!(other instanceof EffectDedupKey))
-		{
-			return false;
-		}
-
-		EffectDedupKey that = (EffectDedupKey) other;
-		return id == that.id
-			&& plane == that.plane
-			&& tileX == that.tileX
-			&& tileY == that.tileY;
-	}
-
-	@Override
-	public int hashCode()
-	{
-		int result = Integer.hashCode(id);
-		result = (31 * result) + Integer.hashCode(plane);
-		result = (31 * result) + Integer.hashCode(tileX);
-		result = (31 * result) + Integer.hashCode(tileY);
-		return result;
-	}
 }
-

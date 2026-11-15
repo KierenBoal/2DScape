@@ -236,7 +236,7 @@ public final class BillboardPerformanceMetrics
 		}
 		children.sort(Comparator
 			.comparingDouble(MetricNode::sampleAverageNanos).reversed()
-			.thenComparing(MetricNode::name));
+			.thenComparing(child -> child.name));
 		for (MetricNode child : children)
 		{
 			appendRows(child, depth + 1, maxRows, rows);
@@ -360,10 +360,7 @@ public final class BillboardPerformanceMetrics
 			return child;
 		}
 
-		private String name()
-		{
-			return name;
-		}
+
 
 		private double sampleAverageNanos()
 		{

@@ -25,7 +25,7 @@ public class SupportingTerrainTest
 	private BillboardOcclusionMask prepared(BillboardOcclusionQuality quality, BillboardOcclusionMask.Occluder... occluders)
 	{
 		BillboardOcclusionMask mask=new BillboardOcclusionMask();
-		mask.prepare(Arrays.asList(occluders),quality,BillboardOcclusionComposition.TRANSPARENCY_AWARE,0,0,32,32,null,null);
+		mask.prepare(Arrays.asList(occluders),quality,0,0,32,32,null,null);
 		return mask;
 	}
 	@Test public void supportingGroundIsExcludedInEveryDecisionPath()
@@ -110,7 +110,7 @@ public class SupportingTerrainTest
 			BillboardOcclusionMask.Occluder terrain=new BillboardOcclusionMask.Occluder(bounds,983.09f,"terrain plane=0");
 			terrain.terrain=new TerrainSurface(0,0,54,supporting ? 51 : 50,false);
 			mask.prepare(Collections.singletonList(terrain),BillboardOcclusionQuality.MEDIUM,
-				BillboardOcclusionComposition.HARD_CUTOUT,0,0,782,503,null,null);
+				0,0,782,503,null,null);
 			BillboardFrameBuffer frame=new BillboardFrameBuffer(mask,new BillboardPerformanceMetrics(),
 				prepared->BillboardDepthSurface.from(depth,prepared,-248));
 			for(boolean debug:new boolean[]{false,true})

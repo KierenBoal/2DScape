@@ -3,7 +3,6 @@ package com.kierenboal.npcsnap.occlusion;
 public enum BillboardOcclusionQuality
 {
 	OFF(0, Integer.MAX_VALUE),
-	BLOCKY(16, 8),
 	LOW(16, 8),
 	MEDIUM(8, 4),
 	HIGH(4, 1);
@@ -32,8 +31,10 @@ public enum BillboardOcclusionQuality
 		return quality != null ? quality : OFF;
 	}
 
-	public static boolean isRetiredValue(String value)
+	public static String replacementForSavedValue(String value)
 	{
-		return "ULTRA".equals(value) || "MAX".equals(value);
+		if ("BLOCKY".equals(value)) return "MEDIUM";
+		if ("ULTRA".equals(value) || "MAX".equals(value)) return "HIGH";
+		return null;
 	}
 }
