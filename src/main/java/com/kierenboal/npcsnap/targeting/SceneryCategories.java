@@ -17,8 +17,8 @@ import net.runelite.api.TileObject;
 
 /**
  * Sorts world objects into categories from their own definition (right-click options and
- * name), so new objects need no ID list. Unnamed decorative scenery cannot be told apart
- * and lands in OTHER. Look objects up on the client thread only: object definitions are
+ * name), so new objects need no ID list. Uncategorized scenery without operations
+ * is excluded. Look objects up on the client thread only: object definitions are
  * not thread safe.
  */
 public final class SceneryCategories
@@ -53,18 +53,18 @@ public final class SceneryCategories
 	/** Whether the current settings turn any object into a sprite; cheaper than building the set. */
 	public static boolean anyEnabled(NpcSnapConfig config)
 	{
-		return config.applyToTrees() || (config.applyToObjects() && (config.worldObjectRocks()
+		return config.applyToObjects() && (config.applyToTrees() || config.worldObjectRocks()
 			|| config.worldObjectPlants() || config.worldObjectFires() || config.worldObjectLogs()
-			|| config.worldObjectOther()));
+			|| config.worldObjectOther());
 	}
 
 	/** The categories the current settings turn into sprites. */
 	public static Set<SceneryCategory> enabled(NpcSnapConfig config)
 	{
 		Set<SceneryCategory> enabled = EnumSet.noneOf(SceneryCategory.class);
-		if (config.applyToTrees()) enabled.add(SceneryCategory.TREE);
 		if (config.applyToObjects())
 		{
+			if (config.applyToTrees()) enabled.add(SceneryCategory.TREE);
 			if (config.worldObjectRocks()) enabled.add(SceneryCategory.ROCK);
 			if (config.worldObjectPlants()) enabled.add(SceneryCategory.PLANT);
 			if (config.worldObjectFires()) enabled.add(SceneryCategory.FIRE);
@@ -78,7 +78,7 @@ public final class SceneryCategories
 	{
 		if (object == null)
 		{
-			return SceneryCategory.OTHER;
+			return SceneryCategory.EXCLUDED;
 		}
 
 		int id = object.getId();
@@ -145,7 +145,7 @@ public final class SceneryCategories
 	{
 		if (composition == null)
 		{
-			return SceneryCategory.OTHER;
+			return SceneryCategory.EXCLUDED;
 		}
 
 		Set<String> options = options(composition.getActions());
@@ -170,7 +170,7 @@ public final class SceneryCategories
 		{
 			return SceneryCategory.LOG;
 		}
-		return SceneryCategory.OTHER;
+		return options.isEmpty() ? SceneryCategory.EXCLUDED : SceneryCategory.OTHER;
 	}
 
 	private static Set<String> options(String[] actions)
@@ -180,7 +180,10 @@ public final class SceneryCategories
 		{
 			for (String action : actions)
 			{
-				if (action != null) options.add(action.toLowerCase(Locale.ROOT).replace('-', ' ').trim());
+				if (action != null && !action.isBlank())
+				{
+					options.add(action.toLowerCase(Locale.ROOT).replace('-', ' ').trim());
+				}
 			}
 		}
 		return options;

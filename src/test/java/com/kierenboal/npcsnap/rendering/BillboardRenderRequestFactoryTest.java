@@ -80,12 +80,12 @@ public class BillboardRenderRequestFactoryTest
 		state.noteObjectClick(tree, 10);
 
 		NpcSnapConfig treesOnly = new NpcSnapConfig() { @Override public boolean applyToTrees() { return true; } };
-		assertTrue("Trees are converted without Apply to world objects, so they are outlined without it too",
+		assertFalse("Trees require Apply to world objects for outlines too",
 			factory(client, treesOnly, state).build(target, part).shouldInteractOutline);
 
-		NpcSnapConfig noCategory = new NpcSnapConfig() { @Override public boolean applyToObjects() { return true; } };
-		assertFalse("World objects with no category ticked convert nothing",
-			factory(client, noCategory, state).build(target, part).shouldInteractOutline);
+		NpcSnapConfig defaultCategories = new NpcSnapConfig() { @Override public boolean applyToObjects() { return true; } };
+		assertTrue("Default world object categories enable outlines",
+			factory(client, defaultCategories, state).build(target, part).shouldInteractOutline);
 	}
 
 	private static BillboardRenderRequestFactory factory(Client client, NpcSnapConfig config, BillboardInteractionState state)

@@ -72,7 +72,7 @@ public class NpcBillboardStaticSceneryTest
 	@Test
 	public void turningTheSettingOffPutsTheModelBack()
 	{
-		Fixture fixture = new Fixture(OAK, true, false, false);
+		Fixture fixture = new Fixture(OAK, true, true, false);
 		assertTrue(fixture.swaps());
 		fixture.rebuilds.clear();
 
@@ -89,10 +89,34 @@ public class NpcBillboardStaticSceneryTest
 	}
 
 	@Test
-	public void applyToTreesConvertsTreesWithoutWorldObjects()
+	public void disablingWorldObjectsRestoresStaticTrees()
 	{
-		assertTrue(new Fixture(OAK, true, false, false).swaps());
-		assertFalse("A crate is not a tree", new Fixture(CRATE, true, false, false).swaps());
+		Fixture fixture = new Fixture(OAK, true, true, false);
+		assertTrue(fixture.swaps());
+		fixture.rebuilds.clear();
+		fixture.objects = false;
+		assertFalse(fixture.frame(20));
+		assertFalse("The static model must be re-uploaded", fixture.rebuilds.isEmpty());
+		assertEquals(Boolean.TRUE, fixture.overlay.drawStaticScenery(fixture.scene, fixture.object));
+	}
+
+	@Test
+	public void everythingElseSkipsStaticSceneryWithoutOperations()
+	{
+		ObjectComposition floor = proxy(ObjectComposition.class, method("getName", "Floor"));
+		assertFalse(new Fixture(floor, true, true, true).swaps());
+		assertTrue(new Fixture(CRATE, false, true, true).swaps());
+		ObjectComposition stump = proxy(ObjectComposition.class, method("getName", "Tree stump"));
+		assertTrue("Named categories still include decorative objects",
+			new Fixture(stump, true, true, false).swaps());
+	}
+
+	@Test
+	public void treesRequireWorldObjects()
+	{
+		assertTrue(new Fixture(OAK, true, true, false).swaps());
+		assertFalse("Trees require the master switch", new Fixture(OAK, true, false, false).swaps());
+		assertFalse("A crate is not a tree", new Fixture(CRATE, true, true, false).swaps());
 	}
 
 	@Test
@@ -111,7 +135,7 @@ public class NpcBillboardStaticSceneryTest
 		ObjectComposition[] form = {WEEDS};
 		ObjectComposition patch = proxy(ObjectComposition.class, method("getName", "null"),
 			method("getImpostorIds", new int[] {10, 11}), methodSupplier("getImpostor", () -> form[0]));
-		Fixture fixture = new Fixture(patch, true, false, false);
+		Fixture fixture = new Fixture(patch, true, true, false);
 		assertFalse("Weeds are not a tree", fixture.swaps());
 
 		form[0] = OAK;
@@ -128,10 +152,12 @@ public class NpcBillboardStaticSceneryTest
 		private final GameObject object;
 		private final NpcBillboardOverlay overlay;
 		private boolean trees;
+		private boolean objects;
 
 		private Fixture(ObjectComposition definition, boolean trees, boolean objects, boolean everythingElse)
 		{
 			this.trees = trees;
+			this.objects = objects;
 			LocalPoint location = new LocalPoint(SCENE_X * 128 + 64, SCENE_Y * 128 + 64);
 			// Static scenery is already a Model. In the live client getModel() on it gives
 			// nothing back, so the proxy's default null is the faithful stand-in.
@@ -180,7 +206,7 @@ public class NpcBillboardStaticSceneryTest
 			NpcSnapConfig config = new NpcSnapConfig()
 			{
 				@Override public boolean applyToTrees() { return Fixture.this.trees; }
-				@Override public boolean applyToObjects() { return objects; }
+				@Override public boolean applyToObjects() { return Fixture.this.objects; }
 				@Override public boolean worldObjectRocks() { return true; }
 				@Override public boolean worldObjectOther() { return everythingElse; }
 				@Override public boolean applyToNpcs() { return false; }

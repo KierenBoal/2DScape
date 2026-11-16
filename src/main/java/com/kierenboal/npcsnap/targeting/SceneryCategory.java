@@ -8,5 +8,7 @@ public enum SceneryCategory
 	PLANT,
 	FIRE,
 	LOG,
-	OTHER
+	OTHER,
+	// Objects that must never be converted by a render-target setting.
+	EXCLUDED
 }

@@ -18,7 +18,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigSection(name = "Render Targets", description = "Choose which things use the sprite look.", position = 3, closedByDefault = true)
 	String targetsSection = "targetsSection";
 
-	@ConfigSection(name = "World Objects Targets", description = "Choose which kinds of world object use the sprite look. Needs Apply to world objects.", position = 4, closedByDefault = true)
+	@ConfigSection(name = "World Object Render Targets", description = "Choose which kinds of world object use the sprite look. Needs Apply to world objects.", position = 4, closedByDefault = true)
 	String worldObjectsSection = "worldObjectsSection";
 
 	@ConfigSection(name = "Rendering config", description = "Choose how the sprite look is drawn.", position = 5, closedByDefault = true)
@@ -109,43 +109,43 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "applyToTrees", name = "Apply to trees", description = "Use sprites for trees and their stumps.", section = targetsSection, position = 5)
+	@ConfigItem(keyName = "applyToTrees", name = "Trees", description = "Trees and their stumps. Needs Apply to world objects.", section = worldObjectsSection, position = 0)
 	default boolean applyToTrees()
 	{
-		return false;
+		return true;
 	}
 
-	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for the kinds of world object ticked in World Objects Targets.", section = targetsSection, position = 6)
+	@ConfigItem(keyName = "applyToObjects", name = "Apply to world objects", description = "Use sprites for the kinds of world object ticked in World Object Render Targets.", section = targetsSection, position = 6)
 	default boolean applyToObjects()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectRocks", name = "Rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 0)
+	@ConfigItem(keyName = "worldObjectRocks", name = "Rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
 	default boolean worldObjectRocks()
 	{
-		return false;
+		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectPlants", name = "Plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
+	@ConfigItem(keyName = "worldObjectPlants", name = "Plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
 	default boolean worldObjectPlants()
 	{
-		return false;
+		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectFires", name = "Fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
+	@ConfigItem(keyName = "worldObjectFires", name = "Fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
 	default boolean worldObjectFires()
 	{
-		return false;
+		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectLogs", name = "Logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
+	@ConfigItem(keyName = "worldObjectLogs", name = "Logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 4)
 	default boolean worldObjectLogs()
 	{
-		return false;
+		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectOther", name = "Everything else", description = "All other scenery. Some objects, such as fences and stairs, may look odd.", section = worldObjectsSection, position = 4)
+	@ConfigItem(keyName = "worldObjectOther", name = "Everything else", description = "Other objects with interaction options. Some, such as fences and stairs, may look odd.", section = worldObjectsSection, position = 5)
 	default boolean worldObjectOther()
 	{
 		return false;

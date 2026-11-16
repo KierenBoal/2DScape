@@ -158,7 +158,7 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	@Test
-	public void applyToTreesAloneObservesObjects()
+	public void applyToTreesAloneDoesNotObserveObjects()
 	{
 		FakeOverlay overlay = new FakeOverlay();
 		GameObject object = TestProxies.proxy(GameObject.class,
@@ -167,7 +167,7 @@ public class BillboardSceneDrawCallbacksTest
 			TestProxies.method("applyToTrees", true));
 
 		assertTrue(new BillboardSceneDrawCallbacks(config, overlay).drawObject(object));
-		assertTrue(overlay.observed.contains(object));
+		assertFalse(overlay.observed.contains(object));
 	}
 
 	@Test
@@ -177,6 +177,7 @@ public class BillboardSceneDrawCallbacksTest
 		AtomicInteger reads = new AtomicInteger();
 		boolean[] trees = {true};
 		NpcSnapConfig config = TestProxies.proxy(NpcSnapConfig.class,
+			TestProxies.method("applyToObjects", true),
 			TestProxies.methodSupplier("applyToTrees", () ->
 			{
 				reads.incrementAndGet();

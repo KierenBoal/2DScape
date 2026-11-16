@@ -89,34 +89,44 @@ public class SceneryCategoriesTest
 	@Test
 	public void everythingElseIsOther()
 	{
-		assertEquals(SceneryCategory.OTHER, category("Fireplace"));
+		assertEquals(SceneryCategory.EXCLUDED, category("Fireplace"));
 		assertEquals(SceneryCategory.OTHER, category("Logbook", "Read"));
-		assertEquals(SceneryCategory.OTHER, SceneryCategories.categoryOfDefinition(null));
+		assertEquals(SceneryCategory.EXCLUDED, SceneryCategories.categoryOfDefinition(null));
 		assertEquals(SceneryCategory.OTHER, category("Crate", "Search"));
-		assertEquals(SceneryCategory.OTHER, category("Fence"));
+		assertEquals(SceneryCategory.EXCLUDED, category("Fence"));
 		assertEquals(SceneryCategory.OTHER, category("Rocking chair", "Sit"));
-		assertEquals(SceneryCategory.OTHER, category("Treehouse"));
+		assertEquals(SceneryCategory.EXCLUDED, category("Treehouse"));
 		assertEquals(SceneryCategory.OTHER, category(null, "Chop wood"));
-		assertEquals(SceneryCategory.OTHER, category("null"));
+		assertEquals(SceneryCategory.EXCLUDED, category("null"));
+	}
+
+	@Test
+	public void uncategorizedObjectsRequireANonblankOperation()
+	{
+		assertEquals(SceneryCategory.EXCLUDED, category("Floor", (String[]) null));
+		assertEquals(SceneryCategory.EXCLUDED, category("Floor"));
+		assertEquals(SceneryCategory.EXCLUDED, category("Floor", null, null));
+		assertEquals(SceneryCategory.EXCLUDED, category("Floor", "", " ", "\t"));
+		assertEquals(SceneryCategory.OTHER, category("Crate", null, " Search ", ""));
 	}
 
 	@Test
 	public void settingsChooseWhichCategoriesConvert()
 	{
 		assertEquals(EnumSet.noneOf(SceneryCategory.class), SceneryCategories.enabled(config(false, false, false)));
-		assertEquals(EnumSet.of(SceneryCategory.TREE), SceneryCategories.enabled(config(true, false, false)));
-		assertEquals("Every world object box starts unticked",
+		assertEquals(EnumSet.noneOf(SceneryCategory.class), SceneryCategories.enabled(config(true, false, false)));
+		assertEquals("Explicitly disabled category boxes convert nothing",
 			EnumSet.noneOf(SceneryCategory.class), SceneryCategories.enabled(config(false, true, false)));
 		assertEquals(EnumSet.of(SceneryCategory.TREE, SceneryCategory.OTHER), SceneryCategories.enabled(config(true, true, true)));
 		assertEquals("The category boxes do nothing while world objects are off",
 			EnumSet.noneOf(SceneryCategory.class), SceneryCategories.enabled(config(false, false, true)));
-		NpcSnapConfig firesOnly = new NpcSnapConfig()
-		{
-			@Override public boolean applyToObjects() { return true; }
-			@Override public boolean worldObjectFires() { return true; }
-		};
 		assertEquals("Each box only switches its own category",
-			EnumSet.of(SceneryCategory.FIRE), SceneryCategories.enabled(firesOnly));
+			EnumSet.of(SceneryCategory.FIRE), SceneryCategories.enabled(only(SceneryCategory.FIRE)));
+		NpcSnapConfig defaults = new NpcSnapConfig() { @Override public boolean applyToObjects() { return true; } };
+		assertEquals(EnumSet.of(SceneryCategory.TREE, SceneryCategory.ROCK, SceneryCategory.PLANT,
+			SceneryCategory.FIRE, SceneryCategory.LOG), SceneryCategories.enabled(defaults));
+		assertFalse(new NpcSnapConfig() {}.applyToObjects());
+		assertFalse(new NpcSnapConfig() {}.worldObjectOther());
 		NpcSnapConfig everything = new NpcSnapConfig()
 		{
 			@Override public boolean applyToTrees() { return true; }
@@ -127,7 +137,7 @@ public class SceneryCategoriesTest
 			@Override public boolean worldObjectLogs() { return true; }
 			@Override public boolean worldObjectOther() { return true; }
 		};
-		assertEquals(EnumSet.allOf(SceneryCategory.class), SceneryCategories.enabled(everything));
+		assertEquals(EnumSet.complementOf(EnumSet.of(SceneryCategory.EXCLUDED)), SceneryCategories.enabled(everything));
 	}
 
 	@Test
@@ -138,7 +148,8 @@ public class SceneryCategoriesTest
 		for (SceneryCategory category : SceneryCategory.values())
 		{
 			NpcSnapConfig only = only(category);
-			assertEquals(EnumSet.of(category), SceneryCategories.enabled(only));
+			assertEquals(category == SceneryCategory.EXCLUDED ? EnumSet.noneOf(SceneryCategory.class)
+				: EnumSet.of(category), SceneryCategories.enabled(only));
 			settings.add(only);
 		}
 		for (NpcSnapConfig config : settings)
@@ -182,8 +193,8 @@ public class SceneryCategoriesTest
 		assertEquals(SceneryCategory.TREE, categories.categoryOf(object(ObjectID.TREE)));
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(2)));
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(2)));
-		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(3)));
-		assertEquals(SceneryCategory.OTHER, categories.categoryOf(null));
+		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(object(3)));
+		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(null));
 		assertEquals(3, lookups.get());
 	}
 
@@ -199,9 +210,15 @@ public class SceneryCategoriesTest
 			SceneryCategory.OTHER, categories.categoryOf(object(1)));
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
-		current[0] = null;
+		current[0] = form(12, "Floor", new AtomicInteger());
+		categories.invalidateTransforms();
+		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(object(1)));
+		current[0] = form(13, "Crate", new AtomicInteger(), "Search");
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
+		current[0] = null;
+		categories.invalidateTransforms();
+		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(object(1)));
 	}
 
 	@Test
@@ -251,6 +268,10 @@ public class SceneryCategoriesTest
 			@Override public boolean applyToTrees() { return trees; }
 			@Override public boolean applyToObjects() { return objects; }
 			@Override public boolean worldObjectOther() { return other; }
+			@Override public boolean worldObjectRocks() { return false; }
+			@Override public boolean worldObjectPlants() { return false; }
+			@Override public boolean worldObjectFires() { return false; }
+			@Override public boolean worldObjectLogs() { return false; }
 		};
 	}
 
@@ -259,7 +280,7 @@ public class SceneryCategoriesTest
 		return new NpcSnapConfig()
 		{
 			@Override public boolean applyToTrees() { return category == SceneryCategory.TREE; }
-			@Override public boolean applyToObjects() { return category != SceneryCategory.TREE; }
+			@Override public boolean applyToObjects() { return true; }
 			@Override public boolean worldObjectRocks() { return category == SceneryCategory.ROCK; }
 			@Override public boolean worldObjectPlants() { return category == SceneryCategory.PLANT; }
 			@Override public boolean worldObjectFires() { return category == SceneryCategory.FIRE; }

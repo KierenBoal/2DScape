@@ -290,6 +290,8 @@ public class NpcBillboardCadenceTest
 				method("getSceneMaxLocation", new Point(4, 8)), method("getRenderable", renderable)) : null;
 			Player local = proxy(Player.class, method("getWorldView", view), method("getLocalLocation", location));
 			client = proxy(Client.class, method("getTopLevelWorldView", view), method("getWorldView", view),
+				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
+					method("getName", "Crate"), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", local), method("getGameState", GameState.LOGGED_IN), method("isClientThread", true),
 				method("getCameraX", 512), methodSupplier("getCameraZ", () -> improved ? -1024 : 0), method("getScale", 512), method("get3dZoom", 512),
 				method("getViewportWidth", 320), method("getViewportHeight", 240), methodSupplier("getGameCycle", cycle::get),

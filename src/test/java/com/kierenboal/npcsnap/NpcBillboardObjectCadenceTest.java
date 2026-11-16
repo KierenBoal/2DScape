@@ -82,6 +82,8 @@ public class NpcBillboardObjectCadenceTest
 			LocalPoint location = new LocalPoint(512, 1024);
 			Player localPlayer = proxy(Player.class, method("getWorldView", view), method("getLocalLocation", location));
 			Client client = proxy(Client.class, method("getTopLevelWorldView", view), method("getWorldView", view),
+				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
+					method("getName", "Crate"), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", localPlayer), method("getGameState", GameState.LOGGED_IN),
 				method("isClientThread", true), method("getScale", 512), method("get3dZoom", 512),
 				method("getViewportWidth", 800), method("getViewportHeight", 600),
