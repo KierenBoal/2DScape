@@ -7,6 +7,8 @@ import com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility;
 import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
+import com.kierenboal.npcsnap.targeting.ClassifiedObjectType;
+import com.kierenboal.npcsnap.targeting.ObjectClassifier;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 
@@ -236,14 +238,17 @@ public final class BillboardRenderRequestFactory
 
 	private boolean objectInteract(TileObject object)
 	{
-		return config.applyToObjects() && config.enableObjectInteractionOutline() && object == interactionState.clickedObject()
+		// The identity check comes first: this runs for every scenery part, and only one can match.
+		return object == interactionState.clickedObject() && config.enableObjectInteractionOutline()
+			&& ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config)
 			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
 				|| interactHighlightCompatibility.objectShowInteract());
 	}
 
 	private boolean objectHover(TileObject object)
 	{
-		return config.applyToObjects() && config.enableObjectInteractionOutline() && object == interactionState.hoveredObject()
+		return object == interactionState.hoveredObject() && config.enableObjectInteractionOutline()
+			&& ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config)
 			&& !objectInteract(object)
 			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
 				|| interactHighlightCompatibility.objectShowHover());
@@ -345,6 +350,12 @@ public final class BillboardRenderRequestFactory
 		if (renderable == null)
 		{
 			return null;
+		}
+
+		// Static scenery is already a Model, and asking one for its model yields nothing.
+		if (renderable instanceof Model)
+		{
+			return (Model) renderable;
 		}
 
 		try
