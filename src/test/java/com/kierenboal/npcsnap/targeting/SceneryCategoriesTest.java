@@ -53,19 +53,23 @@ public class SceneryCategoriesTest
 	}
 
 	@Test
-	public void plantsAreNamedAsPlants()
+	public void plantsAndFarmingNamesAreClassifiedSeparately()
 	{
 		assertEquals(SceneryCategory.PLANT, category("Bush"));
+		assertEquals(SceneryCategory.FARMING, category("Bush patch"));
 		assertEquals(SceneryCategory.PLANT, category("Fern"));
 		assertEquals(SceneryCategory.PLANT, category("Flowers", "Pick"));
-		assertEquals(SceneryCategory.PLANT, category("Cactus"));
-		assertEquals(SceneryCategory.PLANT, category("Wheat", "Pick"));
-		assertEquals(SceneryCategory.PLANT, category("Potato", "Pick"));
 		assertEquals(SceneryCategory.PLANT, category("Nettles", "Pick"));
-		assertEquals(SceneryCategory.PLANT, category("Onion", "Pick"));
-		assertEquals(SceneryCategory.PLANT, category("Cabbage", "Pick"));
-		assertEquals(SceneryCategory.PLANT, category("Sweetcorn"));
-		assertEquals(SceneryCategory.PLANT, category("Flax", "Pick"));
+		assertEquals(SceneryCategory.PLANT, category("Cactus"));
+		assertEquals(SceneryCategory.FARMING, category("Flower patch"));
+		assertEquals(SceneryCategory.FARMING, category("Herb patch"));
+		assertEquals(SceneryCategory.FARMING, category("Allotment"));
+		assertEquals(SceneryCategory.FARMING, category("Wheat", "Pick"));
+		assertEquals(SceneryCategory.FARMING, category("Potato", "Pick"));
+		assertEquals(SceneryCategory.FARMING, category("Onion", "Pick"));
+		assertEquals(SceneryCategory.FARMING, category("Cabbage", "Pick"));
+		assertEquals(SceneryCategory.FARMING, category("Sweetcorn"));
+		assertEquals(SceneryCategory.FARMING, category("Flax", "Pick"));
 	}
 
 	@Test
@@ -89,25 +93,27 @@ public class SceneryCategoriesTest
 	@Test
 	public void everythingElseIsOther()
 	{
-		assertEquals(SceneryCategory.EXCLUDED, category("Fireplace"));
+		assertEquals(SceneryCategory.OTHER, category("Fireplace"));
 		assertEquals(SceneryCategory.OTHER, category("Logbook", "Read"));
 		assertEquals(SceneryCategory.EXCLUDED, SceneryCategories.categoryOfDefinition(null));
 		assertEquals(SceneryCategory.OTHER, category("Crate", "Search"));
-		assertEquals(SceneryCategory.EXCLUDED, category("Fence"));
+		assertEquals(SceneryCategory.OTHER, category("Fence"));
 		assertEquals(SceneryCategory.OTHER, category("Rocking chair", "Sit"));
-		assertEquals(SceneryCategory.EXCLUDED, category("Treehouse"));
+		assertEquals(SceneryCategory.OTHER, category("Treehouse"));
 		assertEquals(SceneryCategory.OTHER, category(null, "Chop wood"));
-		assertEquals(SceneryCategory.EXCLUDED, category("null"));
+		assertEquals(SceneryCategory.OTHER, category("null"));
 	}
 
 	@Test
-	public void uncategorizedObjectsRequireANonblankOperation()
+	public void examineOnlyObjectsAreIncludedButMissingOpsAreExcluded()
 	{
-		assertEquals(SceneryCategory.EXCLUDED, category("Floor", (String[]) null));
-		assertEquals(SceneryCategory.EXCLUDED, category("Floor"));
-		assertEquals(SceneryCategory.EXCLUDED, category("Floor", null, null));
-		assertEquals(SceneryCategory.EXCLUDED, category("Floor", "", " ", "\t"));
-		assertEquals(SceneryCategory.OTHER, category("Crate", null, " Search ", ""));
+		assertEquals(SceneryCategory.OTHER, category("Fence", (String[]) null));
+		assertEquals(SceneryCategory.OTHER, category("Fence"));
+		assertEquals(SceneryCategory.OTHER, category("Fence", null, null));
+		assertEquals(SceneryCategory.OTHER, category("Fence", "", " ", "\t"));
+		assertEquals(SceneryCategory.OTHER, category("Crate", "Search"));
+		ObjectComposition floor = proxy(ObjectComposition.class, method("getName", "Floor"));
+		assertEquals(SceneryCategory.EXCLUDED, SceneryCategories.categoryOfDefinition(floor));
 	}
 
 	@Test
@@ -127,12 +133,14 @@ public class SceneryCategoriesTest
 			SceneryCategory.FIRE, SceneryCategory.LOG), SceneryCategories.enabled(defaults));
 		assertFalse(new NpcSnapConfig() {}.applyToObjects());
 		assertFalse(new NpcSnapConfig() {}.worldObjectOther());
+		assertFalse(new NpcSnapConfig() {}.worldObjectFarming());
 		NpcSnapConfig everything = new NpcSnapConfig()
 		{
 			@Override public boolean applyToTrees() { return true; }
 			@Override public boolean applyToObjects() { return true; }
 			@Override public boolean worldObjectRocks() { return true; }
 			@Override public boolean worldObjectPlants() { return true; }
+			@Override public boolean worldObjectFarming() { return true; }
 			@Override public boolean worldObjectFires() { return true; }
 			@Override public boolean worldObjectLogs() { return true; }
 			@Override public boolean worldObjectOther() { return true; }
@@ -204,13 +212,13 @@ public class SceneryCategoriesTest
 		ObjectComposition[] current = {form(10, "Weeds", new AtomicInteger(), "Rake")};
 		SceneryCategories categories = new SceneryCategories(client(patch(current), new AtomicInteger()));
 
-		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
+		assertEquals(SceneryCategory.FARMING, categories.categoryOf(object(1)));
 		current[0] = form(11, "Oak", new AtomicInteger(), "Chop down");
 		assertEquals("A transform is only re-read after it is invalidated",
-			SceneryCategory.OTHER, categories.categoryOf(object(1)));
+			SceneryCategory.FARMING, categories.categoryOf(object(1)));
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
-		current[0] = form(12, "Floor", new AtomicInteger());
+		current[0] = proxy(ObjectComposition.class, method("getId", 12), method("getName", "Floor"));
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(object(1)));
 		current[0] = form(13, "Crate", new AtomicInteger(), "Search");
@@ -234,7 +242,7 @@ public class SceneryCategoriesTest
 		{
 			current[0] = weeds;
 			categories.invalidateTransforms();
-			assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));
+			assertEquals(SceneryCategory.FARMING, categories.categoryOf(object(1)));
 			current[0] = oak;
 			categories.invalidateTransforms();
 			assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
@@ -253,7 +261,7 @@ public class SceneryCategoriesTest
 
 	private static ObjectComposition form(int id, String name, AtomicInteger nameReads, String... actions)
 	{
-		return proxy(ObjectComposition.class, method("getId", id), method("getActions", actions),
+		return proxy(ObjectComposition.class, method("getId", id), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", actions),
 			methodSupplier("getName", () ->
 			{
 				nameReads.incrementAndGet();
@@ -270,6 +278,7 @@ public class SceneryCategoriesTest
 			@Override public boolean worldObjectOther() { return other; }
 			@Override public boolean worldObjectRocks() { return false; }
 			@Override public boolean worldObjectPlants() { return false; }
+			@Override public boolean worldObjectFarming() { return false; }
 			@Override public boolean worldObjectFires() { return false; }
 			@Override public boolean worldObjectLogs() { return false; }
 		};
@@ -283,6 +292,7 @@ public class SceneryCategoriesTest
 			@Override public boolean applyToObjects() { return true; }
 			@Override public boolean worldObjectRocks() { return category == SceneryCategory.ROCK; }
 			@Override public boolean worldObjectPlants() { return category == SceneryCategory.PLANT; }
+			@Override public boolean worldObjectFarming() { return category == SceneryCategory.FARMING; }
 			@Override public boolean worldObjectFires() { return category == SceneryCategory.FIRE; }
 			@Override public boolean worldObjectLogs() { return category == SceneryCategory.LOG; }
 			@Override public boolean worldObjectOther() { return category == SceneryCategory.OTHER; }
@@ -301,7 +311,7 @@ public class SceneryCategoriesTest
 
 	private static ObjectComposition composition(String name, String... actions)
 	{
-		return proxy(ObjectComposition.class, method("getName", name), method("getActions", actions));
+		return proxy(ObjectComposition.class, method("getName", name), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", actions));
 	}
 
 	/** getObjectDefinition takes an argument, which the shared proxy helper cannot see. */

@@ -69,7 +69,7 @@ public class BillboardNpcSurfaceOcclusionTest
 		assertEquals(Integer.MAX_VALUE, cutoff(client, null));
 		addSurface();
 		BillboardRenderRequest player = new BillboardRenderRequest(proxy(Player.class), proxy(Model.class), location,
-			0, -10, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, -10, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		assertEquals(Integer.MAX_VALUE, cutoff(client, player));
 		tiles[0][4][8] = proxy(Tile.class); // Empty scene tile is not an occluding surface.
 		assertEquals(Integer.MAX_VALUE, cutoff(client, request(20, -10)));
@@ -82,7 +82,7 @@ public class BillboardNpcSurfaceOcclusionTest
 		WorldView nested = proxy(WorldView.class, method("getId", 1), method("contains", true), method("getScene", scene));
 		NPC npc = proxy(NPC.class, method("getWorldView", nested));
 		BillboardRenderRequest request = new BillboardRenderRequest(npc, proxy(Model.class, method("getBottomY", 20)), location,
-			0, -10, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, -10, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		assertEquals(Integer.MAX_VALUE, cutoff(client, request));
 	}
 
@@ -96,7 +96,7 @@ public class BillboardNpcSurfaceOcclusionTest
 		NPC npc = proxy(NPC.class, method("getWorldView", view));
 		Model model = proxy(Model.class, method("getBottomY", bottomY));
 		return new BillboardRenderRequest(npc, model, location,
-			0, verticalOffset, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, verticalOffset, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 	}
 
 	private Client client(int pitch)

@@ -30,16 +30,20 @@ public class RetroModelCompatibilityTest
     @Test public void npcCaptureOwnsSharedArraysBeforeAnotherNpcIsPosed()
     {
         float[] vertices = {1, 2, 3}; int[] colors = {40}; byte[] alpha = {5};
+        short[] textures = {12};
         Model shared = proxy(Model.class, method("getVerticesX", vertices), method("getFaceColors1", colors),
-            method("getFaceTransparencies", alpha));
+            method("getFaceTransparencies", alpha), method("getFaceTextures", textures));
         Model original = proxy(Model.class);
         NPC npc = proxy(NPC.class, method("getModel", original));
         compat.accept(state(Map.of("npcModel", (Function<NPC, Model>) actor -> shared)));
         Model captured = compat.model(npc);
         vertices[0] = 99; colors[0] = 80; alpha[0] = 100;
+        textures[0] = 24;
         assertEquals(1, captured.getVerticesX()[0], 0);
         assertEquals(40, captured.getFaceColors1()[0]);
         assertEquals(5, captured.getFaceTransparencies()[0]);
+        assertEquals(12, captured.getFaceTextures()[0]);
+        assertNull(captured.getFaceRenderPriorities());
         assertSame(captured, captured.getModel());
         assertEquals(99, compat.model(npc).getVerticesX()[0], 0);
         compat.accept(state(Map.of()));

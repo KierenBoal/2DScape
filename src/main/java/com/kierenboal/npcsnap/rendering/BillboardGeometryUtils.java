@@ -224,7 +224,12 @@ public final class BillboardGeometryUtils
 			return new Rectangle();
 		}
 
-		return new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+		return inclusivePixelBounds(minX, minY, maxX, maxY);
+	}
+
+	public static Rectangle inclusivePixelBounds(int minX, int minY, int maxX, int maxY)
+	{
+		return new Rectangle(minX, minY, Math.max(1, maxX - minX + 1), Math.max(1, maxY - minY + 1));
 	}
 
 	public static double wrapUnit(double coordinate)

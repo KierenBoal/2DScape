@@ -1,8 +1,10 @@
 package com.kierenboal.npcsnap.targeting;
 
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Renderable;
 import net.runelite.api.coords.LocalPoint;
 
+@RequiredArgsConstructor
 public final class ObjectRenderablePart
 {
 	public final Renderable renderable;
@@ -21,13 +23,5 @@ public final class ObjectRenderablePart
 		this(renderable, localPoint, plane, worldHeight, 0);
 	}
 
-	public ObjectRenderablePart(Renderable renderable, LocalPoint localPoint, int plane, int worldHeight, int modelOrientation)
-	{
-		this.renderable = renderable;
-		this.localPoint = localPoint;
-		this.plane = plane;
-		this.worldHeight = worldHeight;
-		this.modelOrientation = modelOrientation;
-	}
 }
 

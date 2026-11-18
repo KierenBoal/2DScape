@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.rendering.*;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
@@ -111,7 +110,7 @@ public class SupportingTerrainTest
 			terrain.terrain=new TerrainSurface(0,0,54,supporting ? 51 : 50,false);
 			mask.prepare(Collections.singletonList(terrain),BillboardOcclusionQuality.MEDIUM,
 				0,0,782,503,null,null);
-			BillboardFrameBuffer frame=new BillboardFrameBuffer(mask,new BillboardPerformanceMetrics(),
+			BillboardFrameBuffer frame=new BillboardFrameBuffer(mask,
 				prepared->BillboardDepthSurface.from(depth,prepared,-248));
 			for(boolean debug:new boolean[]{false,true})
 			{
@@ -124,6 +123,6 @@ public class SupportingTerrainTest
 	private BillboardRenderRequest request(Renderable actor, LocalPoint point)
 	{
 		Model model=proxy(Model.class,method("getVerticesCount",2),method("getVerticesY",new float[]{0,-202}),method("getVerticesX",new float[]{-20,20}),method("getVerticesZ",new float[]{0,0}));
-		return new BillboardRenderRequest(actor,model,point,0,0,0,0,-1,-1,-1,-1,-1,false,false,VerticalAnchor.BOTTOM,null);
+		return new BillboardRenderRequest(actor,model,point,0,0,0,0,-1,-1,-1,-1,-1,VerticalAnchor.BOTTOM,null, false);
 	}
 }

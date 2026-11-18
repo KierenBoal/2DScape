@@ -35,13 +35,13 @@ public class NpcBillboardStaticSceneryTest
 	private static final int SCENE_X = 4;
 	private static final int SCENE_Y = 8;
 	private static final ObjectComposition OAK = proxy(ObjectComposition.class, method("getName", "Oak tree"),
-		method("getId", 11), method("getActions", new String[] {"Chop down"}));
+		method("getId", 11), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Chop down"}));
 	private static final ObjectComposition WEEDS = proxy(ObjectComposition.class, method("getName", "Weeds"),
-		method("getId", 10), method("getActions", new String[] {"Rake"}));
+		method("getId", 10), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Rake"}));
 	private static final ObjectComposition ROCKS = proxy(ObjectComposition.class, method("getName", "Rocks"),
-		method("getActions", new String[] {"Mine"}));
+		method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Mine"}));
 	private static final ObjectComposition CRATE = proxy(ObjectComposition.class, method("getName", "Crate"),
-		method("getActions", new String[] {"Search"}));
+		method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Search"}));
 
 	@Test
 	public void staticModelIsSwappedForItsSpriteAfterTheZoneReuploads()
@@ -101,10 +101,13 @@ public class NpcBillboardStaticSceneryTest
 	}
 
 	@Test
-	public void everythingElseSkipsStaticSceneryWithoutOperations()
+	public void everythingElseIncludesExamineOnlySceneryButSkipsMissingOps()
 	{
 		ObjectComposition floor = proxy(ObjectComposition.class, method("getName", "Floor"));
 		assertFalse(new Fixture(floor, true, true, true).swaps());
+		ObjectComposition fence = proxy(ObjectComposition.class, method("getName", "Fence"),
+			method("getOps", proxy(net.runelite.api.EntityOps.class)));
+		assertTrue(new Fixture(fence, false, true, true).swaps());
 		assertTrue(new Fixture(CRATE, false, true, true).swaps());
 		ObjectComposition stump = proxy(ObjectComposition.class, method("getName", "Tree stump"));
 		assertTrue("Named categories still include decorative objects",
@@ -218,7 +221,7 @@ public class NpcBillboardStaticSceneryTest
 				@Override public boolean enableRotationSnapping() { return false; }
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
-			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config), null);
+			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(config), null);
 			overlay.setActive(true);
 		}
 

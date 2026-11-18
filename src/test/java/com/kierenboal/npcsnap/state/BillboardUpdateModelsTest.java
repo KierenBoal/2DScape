@@ -230,10 +230,8 @@ public class BillboardUpdateModelsTest
 			poseAnimationId,
 			poseAnimationFrame,
 			animatedTextureId,
-			false,
-			false,
 			VerticalAnchor.BOTTOM,
-			null);
+			null, false);
 	}
 
 	private static Renderable renderable()

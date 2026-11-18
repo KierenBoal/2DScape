@@ -2,7 +2,6 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.util.Collections;
 import java.util.List;
@@ -88,7 +87,7 @@ public class BillboardedSceneryOcclusionTest
 			tiles[0][4][8] = proxy(Tile.class, method("getPlane", 0), method("getSceneLocation", new Point(4, 8)),
 				method("getGameObjects", new GameObject[] {first, second}));
 			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {},
-				new BillboardDepthCalculator(client), new BillboardPerformanceMetrics(),
+				new BillboardDepthCalculator(client),
 				org.slf4j.LoggerFactory.getLogger(getClass()));
 		}
 

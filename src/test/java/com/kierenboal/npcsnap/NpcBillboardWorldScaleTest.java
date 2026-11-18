@@ -148,14 +148,14 @@ public class NpcBillboardWorldScaleTest
 				method("getViewportHeight", 1200), method("getViewportXOffset", 10),
 				method("getViewportYOffset", 20));
 			NpcSnapConfig config = new NpcSnapConfig() {};
-			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
+			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(config),
 				null);
 		}
 
 		private BillboardDrawGeometry draw(Renderable renderable, Rectangle source, int verticalOffset)
 		{
 			BillboardRenderRequest request = new BillboardRenderRequest(renderable, null, location, 0,
-				verticalOffset, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+				verticalOffset, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 			BillboardDrawGeometry geometry = overlay.buildDrawGeometry(request, renderable, source, source);
 			assertNotNull(geometry);
 			return geometry;

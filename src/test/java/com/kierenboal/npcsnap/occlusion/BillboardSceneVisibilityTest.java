@@ -8,7 +8,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Projection;
@@ -168,7 +167,7 @@ public class BillboardSceneVisibilityTest
 		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
 		Client api = proxy(Client.class, method("isGpu", true));
 		BillboardWorldOcclusionCollector collector = new BillboardWorldOcclusionCollector(api,
-			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api), new BillboardPerformanceMetrics(),
+			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api),
 			org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 		byte[][][] flags = new byte[4][16][16];
 		int[][][] roofs = new int[4][16][16];
@@ -195,7 +194,7 @@ public class BillboardSceneVisibilityTest
 		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
 		Client api = proxy(Client.class, method("isGpu", true));
 		BillboardWorldOcclusionCollector collector = new BillboardWorldOcclusionCollector(api,
-			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api), new BillboardPerformanceMetrics(),
+			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api),
 			org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 		byte[][][] flags = new byte[4][104][104];
 		int[][][] roofs = new int[4][104][104];
@@ -242,7 +241,7 @@ public class BillboardSceneVisibilityTest
 		BillboardSceneVisibility visibility = new BillboardSceneVisibility(() -> client.callbacks, value -> client.callbacks = value);
 		Client api = proxy(Client.class, method("isGpu", true));
 		BillboardWorldOcclusionCollector collector = new BillboardWorldOcclusionCollector(api,
-			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api), new BillboardPerformanceMetrics(),
+			proxy(NpcSnapConfig.class), new BillboardDepthCalculator(api),
 			org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 		byte[][][] flags = new byte[4][104][104];
 		flags[1][59][40] = Constants.TILE_FLAG_UNDER_ROOF;

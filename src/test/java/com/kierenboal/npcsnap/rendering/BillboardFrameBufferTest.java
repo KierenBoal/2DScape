@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -13,6 +12,26 @@ import static org.junit.Assert.assertNotNull;
 
 public class BillboardFrameBufferTest
 {
+	@Test
+	public void highlightUsesScreenPixelsAndRespectsColorAlphaFeatherAndForeground()
+	{
+		BillboardFrameBuffer frame = buffer();
+		PreparedBillboardDraw target = draw(image(1, 1, new int[] {0xff00ff00}), new Rectangle(1, 2, 2, 2), 3);
+		target.highlight = new java.awt.Color(0x90ff0000, true);
+		target.highlightWidth = 2;
+		frame.begin(6, 6);
+		frame.blit(target, 0, 0, 6, 6, false);
+		assertEquals(0x90ff0000, frame.image().getRGB(4, 2));
+		assertEquals(0, frame.image().getRGB(5, 2));
+		assertEquals(0xff00ff00, frame.image().getRGB(1, 2));
+		target.highlightFeather = 4;
+		frame.begin(6, 6);
+		frame.blit(draw(image(1, 1, new int[] {0xff0000ff}), new Rectangle(3, 2, 1, 1), 5), 0, 0, 6, 6, false);
+		frame.blit(target, 0, 0, 6, 6, false);
+		assertEquals(0xff0000ff, frame.image().getRGB(3, 2));
+		assertEquals(0x30ff0000, frame.image().getRGB(4, 2));
+	}
+
 	@Test
 	public void shadowsIgnoreSurfaceCutoffWhileBodyStillClips()
 	{
@@ -257,7 +276,6 @@ public class BillboardFrameBufferTest
 	{
 		return new BillboardFrameBuffer(
 			new BillboardOcclusionMask(),
-			new BillboardPerformanceMetrics(),
 			draw -> BillboardDepthSurface.invalid());
 	}
 

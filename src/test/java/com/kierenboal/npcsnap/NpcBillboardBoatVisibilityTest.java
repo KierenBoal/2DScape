@@ -125,7 +125,7 @@ public class NpcBillboardBoatVisibilityTest
 				@Override public boolean useRetroOverheads() { return false; }
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
-			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
+			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(config),
 				null, new BillboardWorldViewVisibility(client, callbacks));
 		}
 

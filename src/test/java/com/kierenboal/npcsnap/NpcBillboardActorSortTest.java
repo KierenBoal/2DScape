@@ -22,7 +22,7 @@ public class NpcBillboardActorSortTest
 			method("getCameraPitch",Perspective.SINE14.length/16),method("getScale",512),
 			method("getViewportWidth",800),method("getViewportHeight",600));
 		NpcSnapConfig config=new NpcSnapConfig() {};
-		NpcBillboardOverlay overlay=new NpcBillboardOverlay(client,null,config,new NpcSnapDebug(client,config),null);
+		NpcBillboardOverlay overlay=new NpcBillboardOverlay(client,null,config,new NpcSnapDebug(config),null);
 		LocalPoint nearPoint=new LocalPoint(640,640,view), farPoint=new LocalPoint(640,1000,view);
 		NPC flying=proxy(NPC.class,method("getIndex",1),method("getWorldView",view),method("getLocalLocation",nearPoint),
 			method("getFootprintSize",128),method("getAnimationHeightOffset",200));
@@ -49,7 +49,7 @@ public class NpcBillboardActorSortTest
 	@Test public void invalidActorAnchorRetainsExistingFallbacks()
 	{
 		Client client=proxy(Client.class); NpcSnapConfig config=new NpcSnapConfig() {};
-		NpcBillboardOverlay overlay=new NpcBillboardOverlay(client,null,config,new NpcSnapDebug(client,config),null);
+		NpcBillboardOverlay overlay=new NpcBillboardOverlay(client,null,config,new NpcSnapDebug(config),null);
 		BillboardTarget target=BillboardTarget.forRenderable(BillboardTargetType.NPC,ClassifiedObjectType.UNKNOWN,
 			proxy(NPC.class),123,new LocalPoint(640,640),0);
 		assertEquals(50,overlay.sortBottomY(target,new Rectangle(0,10,20,40)));

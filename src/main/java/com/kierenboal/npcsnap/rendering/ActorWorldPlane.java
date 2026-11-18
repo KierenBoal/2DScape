@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
+import lombok.RequiredArgsConstructor;
 import java.awt.Rectangle;
 import net.runelite.api.Client;
 import net.runelite.api.coords.LocalPoint;
@@ -81,19 +82,12 @@ public final class ActorWorldPlane
 			Math.max(MIN_HEIGHT_RATIO, Math.min(1.0d, height)));
 	}
 
+	@RequiredArgsConstructor(access = lombok.AccessLevel.PRIVATE)
 	private static final class ProjectionBasis
 	{
 		final BillboardCanvasPoint base;
 		final double axisX, axisY, missingHeight, ratio;
 
-		ProjectionBasis(BillboardCanvasPoint base, double axisX, double axisY, double missingHeight, double ratio)
-		{
-			this.base = base;
-			this.axisX = axisX;
-			this.axisY = axisY;
-			this.missingHeight = missingHeight;
-			this.ratio = ratio;
-		}
 	}
 
 	public static double shadowHeightRatio(double heightRatio)

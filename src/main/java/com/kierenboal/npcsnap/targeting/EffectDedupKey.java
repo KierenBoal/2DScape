@@ -7,23 +7,18 @@ import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.coords.LocalPoint;
 
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
+import lombok.RequiredArgsConstructor;
 
 @EqualsAndHashCode
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class EffectDedupKey
 {
 	private final int id;
 	private final int plane;
 	private final int tileX;
 	private final int tileY;
-
-	private EffectDedupKey(int id, int plane, int tileX, int tileY)
-	{
-		this.id = id;
-		this.plane = plane;
-		this.tileX = tileX;
-		this.tileY = tileY;
-	}
 
 	public static EffectDedupKey of(GraphicsObject graphicsObject)
 	{

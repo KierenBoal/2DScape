@@ -55,7 +55,7 @@ public class NpcBillboardResizeTest
 		method("getScale", 512), method("get3dZoom", 512), method("getViewportWidth", 800),
 		method("getViewportHeight", 600), methodSupplier("getGameCycle", cycle::get));
 	private final NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
-		new NpcSnapDebug(client, config), null);
+		new NpcSnapDebug(config), null);
 
 	@Test
 	public void forcedResizeBypassesCadenceAndMatchingCacheButStillRespectsDrawBudget()

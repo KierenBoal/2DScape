@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.occlusion;
 
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics.Timer;
+import com.kierenboal.npcsnap.rendering.BillboardGeometryUtils;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Path2D;
@@ -20,18 +19,6 @@ public final class BillboardOcclusionMask
 		VISIBLE,
 		OCCLUDED,
 		REFINE
-	}
-
-	private final BillboardPerformanceMetrics performanceMetrics;
-
-	public BillboardOcclusionMask()
-	{
-		this(new BillboardPerformanceMetrics());
-	}
-
-	public BillboardOcclusionMask(BillboardPerformanceMetrics performanceMetrics)
-	{
-		this.performanceMetrics = performanceMetrics;
 	}
 
 	private int[] heads = new int[0];
@@ -107,134 +94,125 @@ public final class BillboardOcclusionMask
 				}
 			}
 		}
-		try (Timer ignored = performanceMetrics.time("Initialize mask buffers"))
+		width = (bounds.width + step - 1) / step;
+		height = (bounds.height + step - 1) / step;
+		int size = width * height;
+		if (heads.length < size)
 		{
-			width = (bounds.width + step - 1) / step;
-			height = (bounds.height + step - 1) / step;
-			int size = width * height;
-			if (heads.length < size)
-			{
-				heads = new int[size];
-				lower = new float[size];
-				upper = new float[size];
-				active = new boolean[size];
-				fullRegion = new boolean[size];
-			}
-			if (rowCoverage.length < height)
-			{
-				rowCoverage = new boolean[height];
-			}
-			Arrays.fill(heads, 0, size, -1);
-			Arrays.fill(lower, 0, size, Float.POSITIVE_INFINITY);
-			Arrays.fill(upper, 0, size, Float.POSITIVE_INFINITY);
-			Arrays.fill(active, 0, size, false);
-			Arrays.fill(fullRegion, 0, size, false);
-			Arrays.fill(rowCoverage, 0, height, false);
+			heads = new int[size];
+			lower = new float[size];
+			upper = new float[size];
+			active = new boolean[size];
+			fullRegion = new boolean[size];
 		}
-		try (Timer ignored = performanceMetrics.time("Mark active mask regions"))
+		if (rowCoverage.length < height)
 		{
-			// Mark each rectangle's cell span directly, rather than visiting every region per cell.
-			for (Rectangle region : regions)
+			rowCoverage = new boolean[height];
+		}
+		Arrays.fill(heads, 0, size, -1);
+		Arrays.fill(lower, 0, size, Float.POSITIVE_INFINITY);
+		Arrays.fill(upper, 0, size, Float.POSITIVE_INFINITY);
+		Arrays.fill(active, 0, size, false);
+		Arrays.fill(fullRegion, 0, size, false);
+		Arrays.fill(rowCoverage, 0, height, false);
+		// Mark each rectangle's cell span directly, rather than visiting every region per cell.
+		for (Rectangle region : regions)
+		{
+			int left = (region.x - bounds.x) / step;
+			int right = (region.x + region.width - 1 - bounds.x) / step;
+			int top = (region.y - bounds.y) / step;
+			int bottom = (region.y + region.height - 1 - bounds.y) / step;
+			for (int cy = top; cy <= bottom; cy++)
 			{
-				int left = (region.x - bounds.x) / step;
-				int right = (region.x + region.width - 1 - bounds.x) / step;
-				int top = (region.y - bounds.y) / step;
-				int bottom = (region.y + region.height - 1 - bounds.y) / step;
-				for (int cy = top; cy <= bottom; cy++)
+				int py = bounds.y + cy * step;
+				int ch = Math.min(step, bounds.y + bounds.height - py);
+				Arrays.fill(active, cy * width + left, cy * width + right + 1, true);
+				for (int cx = left; cx <= right; cx++)
 				{
-					int py = bounds.y + cy * step;
-					int ch = Math.min(step, bounds.y + bounds.height - py);
-					Arrays.fill(active, cy * width + left, cy * width + right + 1, true);
-					for (int cx = left; cx <= right; cx++)
+					int px = bounds.x + cx * step;
+					int cw = Math.min(step, bounds.x + bounds.width - px);
+					fullRegion[cy * width + cx] |= region.contains(px, py, cw, ch);
+				}
+			}
+		}
+		for (int id = 0; id < this.occluders.size(); id++)
+		{
+			Occluder o = this.occluders.get(id);
+			if (o == null || o.bounds == null || !o.bounds.intersects(bounds))
+			{
+				continue;
+			}
+			int left = Math.max(0, Math.floorDiv(o.bounds.x - bounds.x, step));
+			int top = Math.max(0, Math.floorDiv(o.bounds.y - bounds.y, step));
+			int right = Math.min(width - 1, Math.floorDiv(o.bounds.x + o.bounds.width - 1 - bounds.x, step));
+			int bottom = Math.min(height - 1, Math.floorDiv(o.bounds.y + o.bounds.height - 1 - bounds.y, step));
+			for (int cy = top; cy <= bottom; cy++)
+			{
+				int py = bounds.y + cy * step;
+				int ch = Math.min(step, bounds.y + bounds.height - py);
+				float near = o.minimumDepth(py, ch);
+				float far = o.maximumDepth(py, ch);
+				for (int cx = left; cx <= right; cx++)
+				{
+					int cell = cy * width + cx;
+					if (!active[cell])
 					{
-						int px = bounds.x + cx * step;
-						int cw = Math.min(step, bounds.x + bounds.width - px);
-						fullRegion[cy * width + cx] |= region.contains(px, py, cw, ch);
+						continue;
 					}
-				}
-			}
-		}
-		try (Timer ignored = performanceMetrics.time("Index occluder coverage"))
-		{
-			for (int id = 0; id < this.occluders.size(); id++)
-			{
-				Occluder o = this.occluders.get(id);
-				if (o == null || o.bounds == null || !o.bounds.intersects(bounds))
-				{
-					continue;
-				}
-				int left = Math.max(0, Math.floorDiv(o.bounds.x - bounds.x, step));
-				int top = Math.max(0, Math.floorDiv(o.bounds.y - bounds.y, step));
-				int right = Math.min(width - 1, Math.floorDiv(o.bounds.x + o.bounds.width - 1 - bounds.x, step));
-				int bottom = Math.min(height - 1, Math.floorDiv(o.bounds.y + o.bounds.height - 1 - bounds.y, step));
-				for (int cy = top; cy <= bottom; cy++)
-				{
-					int py = bounds.y + cy * step;
-					int ch = Math.min(step, bounds.y + bounds.height - py);
-					float near = o.minimumDepth(py, ch);
-					float far = o.maximumDepth(py, ch);
-					for (int cx = left; cx <= right; cx++)
+					int px = bounds.x + cx * step;
+					int cw = Math.min(step, bounds.x + bounds.width - px);
+					int coverage = o.coverage(px, py, cw, ch);
+					if (coverage == 0)
 					{
-						int cell = cy * width + cx;
-						if (!active[cell])
+						continue;
+					}
+					if (references == next.length)
+					{
+						int capacity = Math.max(256, references + references / 2);
+						next = Arrays.copyOf(next, capacity);
+						candidates = Arrays.copyOf(candidates, capacity);
+						candidateFar = Arrays.copyOf(candidateFar, capacity);
+						coverageOffsets = Arrays.copyOf(coverageOffsets, capacity);
+						candidateTransmittance = Arrays.copyOf(candidateTransmittance, capacity);
+						candidateTintRgb = Arrays.copyOf(candidateTintRgb, capacity);
+					}
+					if (heads[cell] == -1)
+					{
+						coveredCellCount++;
+						rowCoverage[cy] = true;
+					}
+					// Coverage bits retain crisp edges without repeating triangle membership
+					// calculations for each overlapping billboard.
+					if (coverage == 2)
+					{
+						// Negative offsets encode a constant full row, without allocating row data.
+						coverageOffsets[references] = -((1 << cw) - 1);
+					}
+					else
+					{
+						int requiredRows = coverageRowCount + ch;
+						if (coverageRows.length < requiredRows)
 						{
-							continue;
+							coverageRows = Arrays.copyOf(coverageRows,
+								Math.max(requiredRows, Math.max(256, coverageRows.length * 2)));
 						}
-						int px = bounds.x + cx * step;
-						int cw = Math.min(step, bounds.x + bounds.width - px);
-						int coverage = o.coverage(px, py, cw, ch);
-						if (coverage == 0)
+						coverageOffsets[references] = coverageRowCount;
+						for (int row = 0; row < ch; row++)
 						{
-							continue;
+							coverageRows[coverageRowCount++] = o.coverageRow(px, py + row, cw);
 						}
-						if (references == next.length)
-						{
-							int capacity = Math.max(256, references + references / 2);
-							next = Arrays.copyOf(next, capacity);
-							candidates = Arrays.copyOf(candidates, capacity);
-							candidateFar = Arrays.copyOf(candidateFar, capacity);
-							coverageOffsets = Arrays.copyOf(coverageOffsets, capacity);
-							candidateTransmittance = Arrays.copyOf(candidateTransmittance, capacity);
-							candidateTintRgb = Arrays.copyOf(candidateTintRgb, capacity);
-						}
-						if (heads[cell] == -1)
-						{
-							coveredCellCount++;
-							rowCoverage[cy] = true;
-						}
-						// Coverage bits retain crisp edges without repeating triangle membership
-						// calculations for each overlapping billboard.
-						if (coverage == 2)
-						{
-							// Negative offsets encode a constant full row, without allocating row data.
-							coverageOffsets[references] = -((1 << cw) - 1);
-						}
-						else
-						{
-							int requiredRows = coverageRowCount + ch;
-							if (coverageRows.length < requiredRows)
-							{
-								coverageRows = Arrays.copyOf(coverageRows,
-									Math.max(requiredRows, Math.max(256, coverageRows.length * 2)));
-							}
-							coverageOffsets[references] = coverageRowCount;
-							for (int row = 0; row < ch; row++)
-							{
-								coverageRows[coverageRowCount++] = o.coverageRow(px, py + row, cw);
-							}
-						}
-						int reference = references++;
-						candidateFar[reference] = far;
-						candidates[reference] = id;
-						candidateTransmittance[reference] = o.transmittance;
-						candidateTintRgb[reference] = o.tintRgb;
-						next[reference] = heads[cell];
-						heads[cell] = reference;
-						lower[cell] = Math.min(lower[cell], near);
-						if (coverage == 2 && candidateTransmittance[reference] == 0)
-						{
-							upper[cell] = Math.min(upper[cell], far);
-						}
+					}
+					int reference = references++;
+					candidateFar[reference] = far;
+					candidates[reference] = id;
+					candidateTransmittance[reference] = o.transmittance;
+					candidateTintRgb[reference] = o.tintRgb;
+					next[reference] = heads[cell];
+					heads[cell] = reference;
+					lower[cell] = Math.min(lower[cell], near);
+					if (coverage == 2 && candidateTransmittance[reference] == 0)
+					{
+						upper[cell] = Math.min(upper[cell], far);
 					}
 				}
 			}
@@ -865,7 +843,7 @@ public final class BillboardOcclusionMask
 			int minY = Math.min(y0, Math.min(y1, y2));
 			int maxX = Math.max(x0, Math.max(x1, x2));
 			int maxY = Math.max(y0, Math.max(y1, y2));
-			bounds = new Rectangle(minX, minY, Math.max(1, (maxX - minX) + 1), Math.max(1, (maxY - minY) + 1));
+			bounds = BillboardGeometryUtils.inclusivePixelBounds(minX, minY, maxX, maxY);
 			this.source = source;
 			this.transmittance = clampTransmittance(transmittance);
 			this.tintRgb = tintRgb & 0xFFFFFF;

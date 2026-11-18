@@ -83,7 +83,7 @@ public class NpcBillboardObjectCadenceTest
 			Player localPlayer = proxy(Player.class, method("getWorldView", view), method("getLocalLocation", location));
 			Client client = proxy(Client.class, method("getTopLevelWorldView", view), method("getWorldView", view),
 				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
-					method("getName", "Crate"), method("getActions", new String[] {"Search"}))),
+					method("getName", "Crate"), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", localPlayer), method("getGameState", GameState.LOGGED_IN),
 				method("isClientThread", true), method("getScale", 512), method("get3dZoom", 512),
 				method("getViewportWidth", 800), method("getViewportHeight", 600),
@@ -109,7 +109,7 @@ public class NpcBillboardObjectCadenceTest
 				@Override public int animationFrameCount() { return frameRate; }
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
-			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(client, config),
+			overlay = new NpcBillboardOverlay(client, null, config, new NpcSnapDebug(config),
 				null);
 			overlay.setActive(true);
 		}

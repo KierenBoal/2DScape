@@ -166,7 +166,7 @@ public class NpcBillboardCadenceTest
 			Actor actor = (Actor) f.renderable;
 			Rectangle source = new Rectangle(-50, -100, 101, 101);
 			BillboardRenderRequest request = new BillboardRenderRequest(actor, actor.getModel(), actor.getLocalLocation(),
-				0, 0, 0, 0, 7, 0, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+				0, 0, 0, 0, 7, 0, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 			BillboardDrawGeometry first = f.overlay.buildDrawGeometry(request, actor, source, source);
 			BillboardDrawGeometry expected = ActorWorldPlane.project(new BillboardDepthCalculator(f.client),
 				actor.getLocalLocation(), 0, ActorWorldPlane.viewingBearing(f.client, actor.getLocalLocation()), source, source);
@@ -291,7 +291,7 @@ public class NpcBillboardCadenceTest
 			Player local = proxy(Player.class, method("getWorldView", view), method("getLocalLocation", location));
 			client = proxy(Client.class, method("getTopLevelWorldView", view), method("getWorldView", view),
 				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
-					method("getName", "Crate"), method("getActions", new String[] {"Search"}))),
+					method("getName", "Crate"), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", local), method("getGameState", GameState.LOGGED_IN), method("isClientThread", true),
 				method("getCameraX", 512), methodSupplier("getCameraZ", () -> improved ? -1024 : 0), method("getScale", 512), method("get3dZoom", 512),
 				method("getViewportWidth", 320), method("getViewportHeight", 240), methodSupplier("getGameCycle", cycle::get),
@@ -312,16 +312,14 @@ public class NpcBillboardCadenceTest
 				@Override public SpriteShadowType shadowType() { return shadowType; }
     @Override public ShadowLighting shadowLighting() { return lighting; }
     @Override public java.awt.Color shadowColor() { return shadowColor; }
-				@Override public boolean enablePlayerInteractionOutline() { return false; }
-				@Override public boolean enableNpcInteractionOutline() { return false; }
-				@Override public boolean enableGroundItemInteractionOutline() { return false; }
+				@Override public boolean useInteractionHighlight() { return false; }
 				@Override public boolean enableRotationSnapping() { return false; }
 				@Override public boolean enableAnimationFrameSnapping() { return limited; }
 				@Override public int animationFrameCount() { return fps; }
 				@Override public int redrawOnClickboxResizePercent() { return resizePercent.get(); }
 				@Override public BillboardOcclusionQuality billboardOcclusionQuality() { return BillboardOcclusionQuality.OFF; }
 			};
-			debug = new NpcSnapDebug(client, config);
+			debug = new NpcSnapDebug(config);
 			overlay = new NpcBillboardOverlay(client, null, config, debug, null);
 			overlay.setActive(true);
 			if (type == BillboardTargetType.GROUND_ITEM)

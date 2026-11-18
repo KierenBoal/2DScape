@@ -2,9 +2,12 @@ package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Polygon;
 import java.awt.Rectangle;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Point;
 
 /** A world parallelogram projected through the camera, including its perspective divide. */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BillboardProjectedQuad
 {
 	public final Rectangle bounds;
@@ -12,16 +15,6 @@ public final class BillboardProjectedQuad
 	private final double[] inverse;
 	private final double contentCenterU;
 	private final double contentTopV;
-
-	private BillboardProjectedQuad(Rectangle bounds, double[] forward, double[] inverse,
-		double contentCenterU, double contentTopV)
-	{
-		this.bounds = bounds;
-		this.forward = forward;
-		this.inverse = inverse;
-		this.contentCenterU = contentCenterU;
-		this.contentTopV = contentTopV;
-	}
 
 	public static BillboardProjectedQuad create(BillboardCanvasPoint topLeft, BillboardCanvasPoint topRight,
 		BillboardCanvasPoint bottomRight, BillboardCanvasPoint bottomLeft, Rectangle image, Rectangle content)
@@ -83,6 +76,11 @@ public final class BillboardProjectedQuad
 		public double u;
 		public double v;
 		public double depth;
+	}
+
+	boolean sameSampling(BillboardProjectedQuad other)
+	{
+		return other != null && java.util.Arrays.equals(inverse, other.inverse);
 	}
 
 	public boolean sample(double x, double y, Sample result)

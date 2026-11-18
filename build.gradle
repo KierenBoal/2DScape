@@ -52,8 +52,40 @@ tasks.register('run', JavaExec) {
     mainClass = pluginMainClass
 
     jvmArgs "-ea"
+    if (providers.gradleProperty('disableHardwareAcceleration').isPresent()) {
+        systemProperty 'sun.java2d.d3d', 'false'
+        systemProperty 'sun.java2d.opengl', 'false'
+        def localAppData = providers.environmentVariable('LOCALAPPDATA').orNull
+        if (localAppData != null) {
+            def runeLiteJava = new File(localAppData, 'RuneLite/jre/bin/java.exe')
+            if (runeLiteJava.isFile()) {
+                executable = runeLiteJava.absolutePath
+            }
+        }
+    }
 
     args "--developer-mode", "--debug"
+}
+
+tasks.register('runWithProfiling', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = pluginMainClass
+    workingDir = projectDir
+
+    def profileName = providers.gradleProperty('profileName')
+        .getOrElse("2dscape-${System.currentTimeMillis()}.jfr")
+    if (!(profileName ==~ /[A-Za-z0-9_.-]+\.jfr/)) {
+        throw new GradleException('profileName must be a simple .jfr filename')
+    }
+
+    def profileFile = layout.buildDirectory.file("profiling/${profileName}").get().asFile
+    doFirst {
+        profileFile.parentFile.mkdirs()
+    }
+
+    jvmArgs '-ea', "-XX:StartFlightRecording=settings=profile,filename=${profileFile.absolutePath},dumponexit=true"
+    args '--developer-mode', '--debug'
 }
 
 tasks.register('renderRetroHitsplatPreview', JavaExec) {

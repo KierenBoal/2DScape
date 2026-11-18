@@ -11,6 +11,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 final class RetroChatRenderer
 {
@@ -301,6 +303,7 @@ final class RetroChatRenderer
 		return Collections.unmodifiableMap(colors);
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	static final class ParsedChat
 	{
 		final String text;
@@ -309,17 +312,6 @@ final class RetroChatRenderer
 		final Motion motion;
 		final Color[] colors;
 		final ColorMode[] colorModes;
-
-		private ParsedChat(String text, Color color, ColorMode colorMode, Motion motion,
-			Color[] colors, ColorMode[] colorModes)
-		{
-			this.text = text;
-			this.color = color;
-			this.colorMode = colorMode;
-			this.motion = motion;
-			this.colors = colors;
-			this.colorModes = colorModes;
-		}
 	}
 
 	enum ColorMode { SOLID, RANDOM, FLASH1, FLASH2, FLASH3, GLOW1, GLOW2, GLOW3 }

@@ -73,6 +73,14 @@ public final class BillboardDrawGeometry
 			bounds, contentCenterX, contentTopY, contentBottomY, topOffsetX, bottomOffsetX);
 	}
 
+	boolean sameSampling(BillboardDrawGeometry other)
+	{
+		if (other == null || !unskewedBounds.equals(other.unskewedBounds)) return false;
+		if (projectedQuad != null) return projectedQuad.sameSampling(other.projectedQuad);
+		return other.projectedQuad == null && contentTopY == other.contentTopY && contentBottomY == other.contentBottomY
+			&& topOffsetX == other.topOffsetX && bottomOffsetX == other.bottomOffsetX;
+	}
+
 	public boolean isSheared()
 	{
 		return topOffsetX != 0.0d || bottomOffsetX != 0.0d;

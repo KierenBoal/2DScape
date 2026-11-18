@@ -6,6 +6,7 @@ public enum SceneryCategory
 	TREE,
 	ROCK,
 	PLANT,
+	FARMING,
 	FIRE,
 	LOG,
 	OTHER,

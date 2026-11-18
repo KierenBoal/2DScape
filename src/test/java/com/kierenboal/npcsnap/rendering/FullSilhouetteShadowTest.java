@@ -101,4 +101,44 @@ public class FullSilhouetteShadowTest
 			assertSame(mask,mask.directionalCaster());
 		}
 	}
+
+	@Test
+	public void offCenterBlobKeepsItsPixelCenterAndProjectionAnchor()
+	{
+		BufferedImage source = new BufferedImage(9, 7, BufferedImage.TYPE_INT_ARGB);
+		source.setRGB(4, 2, 0x80FFFFFF);
+		source.setRGB(5, 4, 0xFFFFFFFF);
+		SpriteShadowMask mask = capture(source, SpriteShadowType.BLOB);
+
+		assertEquals(4, mask.feet);
+		assertEquals(3, mask.visibleHeight);
+		assertEquals(5.0, mask.centerX, 0.0);
+		assertTrue(alpha(mask, 4, 5) > 0);
+		assertEquals(alpha(mask, 4, 5), alpha(mask, 5, 5));
+		assertEquals(0, alpha(mask, 6, 5));
+	}
+
+	@Test
+	public void emptyCaptureKeepsItsMaskAndAnchorDefaults()
+	{
+		BufferedImage source = new BufferedImage(9, 7, BufferedImage.TYPE_INT_ARGB);
+		for (SpriteShadowType type : SpriteShadowType.values())
+		{
+			SpriteShadowMask mask = capture(source, type);
+			if (type == SpriteShadowType.OFF)
+			{
+				assertNull(mask);
+				continue;
+			}
+			for (SpriteShadowMask layer : new SpriteShadowMask[] {mask, mask.directionalCaster()})
+			{
+				assertEquals(0, layer.feet);
+				assertEquals(1, layer.visibleHeight);
+				assertEquals(4.5, layer.centerX, 0.0);
+				assertEquals(1, layer.image.getWidth());
+				assertEquals(1, layer.image.getHeight());
+				assertEquals(0, layer.image.getRGB(0, 0) >>> 24);
+			}
+		}
+	}
 }

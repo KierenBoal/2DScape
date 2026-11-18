@@ -121,31 +121,37 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "worldObjectRocks", name = "Rocks", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
+	@ConfigItem(keyName = "worldObjectRocks", name = "Rocks and Ores", description = "Rocks, ore rocks, and boulders. Needs Apply to world objects.", section = worldObjectsSection, position = 1)
 	default boolean worldObjectRocks()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectPlants", name = "Plants", description = "Named bushes, ferns, flowers, and similar plants. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
+	@ConfigItem(keyName = "worldObjectPlants", name = "Plants", description = "Named bushes, ferns, flowers, and similar non-farming plants. Needs Apply to world objects.", section = worldObjectsSection, position = 2)
 	default boolean worldObjectPlants()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectFires", name = "Fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
+	@ConfigItem(keyName = "worldObjectFarming", name = "Farming", description = "Herbs, crops, allotments, and bush, flower, or tree patches. Needs Apply to world objects.", section = worldObjectsSection, position = 3)
+	default boolean worldObjectFarming()
+	{
+		return false;
+	}
+
+	@ConfigItem(keyName = "worldObjectFires", name = "Fires", description = "Fires, campfires, and bonfires. Needs Apply to world objects.", section = worldObjectsSection, position = 4)
 	default boolean worldObjectFires()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectLogs", name = "Logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 4)
+	@ConfigItem(keyName = "worldObjectLogs", name = "Logs", description = "Hollow logs, log piles, and other objects named as logs. Needs Apply to world objects.", section = worldObjectsSection, position = 5)
 	default boolean worldObjectLogs()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "worldObjectOther", name = "Everything else", description = "Other objects with interaction options. Some, such as fences and stairs, may look odd.", section = worldObjectsSection, position = 5)
+	@ConfigItem(keyName = "worldObjectOther", name = "Everything else", description = "Other objects with an Examine option. Some, such as fences and stairs, may look odd.", section = worldObjectsSection, position = 6)
 	default boolean worldObjectOther()
 	{
 		return false;
@@ -248,90 +254,16 @@ public interface NpcSnapConfig extends Config
 		return Color.BLACK;
 	}
 
-	@ConfigItem(keyName = "enablePlayerInteractionOutline", name = "Player outlines", description = "Show hover and interaction outlines on player sprites.", section = spriteInteractionOutlineSection, position = 1)
-	default boolean enablePlayerInteractionOutline()
+	@ConfigItem(keyName = "useInteractionHighlight", name = "Use interaction highlight", description = "Draw sprite highlights using RuneLite Interact Highlight settings, even when that plugin is off.", section = spriteInteractionOutlineSection, position = 1)
+	default boolean useInteractionHighlight()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "playerHoverOutlineColor", name = "Player hover colour", description = "Choose the outline colour shown when hovering a player sprite.", section = spriteInteractionOutlineSection, position = 2)
-	@Alpha
-	default Color playerHoverOutlineColor()
-	{
-		return new Color(0x9000FFFF, true);
-	}
-
-	@ConfigItem(keyName = "playerInteractionOutlineColor", name = "Player interaction colour", description = "Choose the outline colour shown while interacting with a player sprite.", section = spriteInteractionOutlineSection, position = 3)
-	@Alpha
-	default Color playerInteractionOutlineColor()
-	{
-		return new Color(0x90FF0000, true);
-	}
-
-	@ConfigItem(keyName = "enableNpcInteractionOutline", name = "NPC outlines", description = "Show hover and interaction outlines on NPC sprites.", section = spriteInteractionOutlineSection, position = 4)
-	default boolean enableNpcInteractionOutline()
-	{
-		return true;
-	}
-
-	@ConfigItem(keyName = "npcHoverOutlineColor", name = "NPC hover colour", description = "Choose the outline colour shown when hovering an NPC sprite.", section = spriteInteractionOutlineSection, position = 5)
-	@Alpha
-	default Color npcHoverOutlineColor()
-	{
-		return new Color(0x90FFFF00, true);
-	}
-
-	@ConfigItem(keyName = "npcInteractionOutlineColor", name = "NPC interaction colour", description = "Choose the outline colour shown while interacting with an NPC sprite.", section = spriteInteractionOutlineSection, position = 6)
-	@Alpha
-	default Color npcInteractionOutlineColor()
-	{
-		return new Color(0x90FF0000, true);
-	}
-
-	@ConfigItem(keyName = "overrideInteractHighlightOutlines", name = "Override Interaction Highlight", description = "Replace Interaction Highlight outlines only for enabled render targets with sprite outlines enabled. Keeps its hover/interact toggles; colours come from 2DScape.", position = 1)
+	@ConfigItem(keyName = "overrideInteractHighlightOutlines", name = "Override Interaction Highlight", description = "Suppress native outlines for sprite categories while sprite interaction highlights are enabled.", section = spriteInteractionOutlineSection, position = 2)
 	default boolean overrideInteractHighlightOutlines()
 	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "enableGroundItemInteractionOutline", name = "Ground item outlines", description = "Show hover and interaction outlines on ground-item sprites.", section = spriteInteractionOutlineSection, position = 7)
-	default boolean enableGroundItemInteractionOutline()
-	{
 		return true;
-	}
-
-	@ConfigItem(keyName = "groundItemHoverOutlineColor", name = "Ground item hover colour", description = "Choose the outline colour shown when hovering a ground-item sprite.", section = spriteInteractionOutlineSection, position = 8)
-	@Alpha
-	default Color groundItemHoverOutlineColor()
-	{
-		return new Color(0x9000FFFF, true);
-	}
-
-	@ConfigItem(keyName = "groundItemInteractionOutlineColor", name = "Ground item interaction colour", description = "Choose the outline colour shown while interacting with a ground-item sprite.", section = spriteInteractionOutlineSection, position = 9)
-	@Alpha
-	default Color groundItemInteractionOutlineColor()
-	{
-		return new Color(0x90FF0000, true);
-	}
-
-	@ConfigItem(keyName = "enableObjectInteractionOutline", name = "Object outlines", description = "Show hover and interaction outlines on world-object sprites.", section = spriteInteractionOutlineSection, position = 10)
-	default boolean enableObjectInteractionOutline()
-	{
-		return true;
-	}
-
-	@ConfigItem(keyName = "objectHoverOutlineColor", name = "Object hover colour", description = "Choose the outline colour shown when hovering a world-object sprite.", section = spriteInteractionOutlineSection, position = 11)
-	@Alpha
-	default Color objectHoverOutlineColor()
-	{
-		return new Color(0x9000FFFF, true);
-	}
-
-	@ConfigItem(keyName = "objectInteractionOutlineColor", name = "Object interaction colour", description = "Choose the outline colour shown while interacting with a world-object sprite.", section = spriteInteractionOutlineSection, position = 12)
-	@Alpha
-	default Color objectInteractionOutlineColor()
-	{
-		return new Color(0x90FF0000, true);
 	}
 
 	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 3)
@@ -449,12 +381,6 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "ignoreProjectionSkewCorrection", name = "Ignore projection skew correction", description = "Disable the gentle perspective lean on actor sprites. Their proportions are preserved and the lean fades near overhead views.", section = retroSection, position = 12)
-	default boolean ignoreProjectionSkewCorrection()
-	{
-		return false;
-	}
-
 	@Range(min = 0, max = 512)
 	@ConfigItem(keyName = "retroNpcSwapperBrightness", name = "RetroNPC Swapper brightness", description = "Set the brightness for sprites made from RetroNPC Swapper models. 100% keeps normal brightness, independently of Light boost.", section = retroSection, position = 14)
 	default int retroNpcSwapperBrightness()
@@ -492,7 +418,7 @@ public interface NpcSnapConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(keyName = "debugPerformanceMetrics", name = "Show performance numbers", description = "Show how much time the plugin spends drawing sprites.", section = debugSection, position = 6)
+	@ConfigItem(keyName = "debugPerformanceMetrics", name = "Show performance timings", description = "Show elapsed times for major rendering methods.", section = debugSection, position = 6)
 	default boolean debugPerformanceMetrics()
 	{
 		return false;

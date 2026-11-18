@@ -1,198 +1,92 @@
 package com.kierenboal.npcsnap.targeting;
 
-import net.runelite.api.Actor;
-import net.runelite.api.Client;
-import net.runelite.api.Player;
-import net.runelite.api.Renderable;
-import net.runelite.api.TileItem;
-import net.runelite.api.TileObject;
-import net.runelite.api.WorldView;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import java.util.Map;
+import net.runelite.api.*;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.WidgetUtil;
+
+import static com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver.*;
 
 public final class BillboardInteractionState
 {
-	private TileObject clickedObject;
-	private TileObject frameHoveredObject;
-	private int objectClickTick = Integer.MIN_VALUE;
-	private Actor clickedActor;
-	private TileItem clickedGroundItem;
-	private int clickedActorTick = Integer.MIN_VALUE;
-	private Renderable frameHoveredTarget;
-	private Renderable frameInteractionTarget;
-	private Renderable lastHoveredTarget;
-	private Renderable lastInteractionTarget;
+	public Object hovered, interacted;
+	public boolean hoverAttack, attacked;
+	private int clickTick = -1;
+	private int clickCycle = -1;
+	private Renderable priority;
 
-	public void noteClick(Actor actor, int tickCount)
+	public void click(Client client, MenuEntry entry, boolean itemOp, Iterable<Map.Entry<TileItem, GroundItemBillboard>> items)
 	{
-		clickedObject = null;
-		clickedGroundItem = null;
-		clickedActor = actor;
-		clickedActorTick = actor != null ? tickCount : Integer.MIN_VALUE;
-	}
-
-	public void noteGroundItemClick(TileItem item)
-	{
-		clickedObject = null;
-		clickedActor = null;
-		clickedActorTick = Integer.MIN_VALUE;
-		clickedGroundItem = item;
-	}
-
-	public void clearIfStale(Player localPlayer, int tickCount)
-	{
-		if (clickedActor == null || tickCount <= clickedActorTick)
+		MenuAction action = entry.getType();
+		Object target;
+		if (isActorInteractionAction(action)) target = entry.getActor();
+		else if (isObjectAction(action)) target = tileObject(client, entry);
+		else if (isGroundItemAction(action)) target = groundItem(entry, items);
+		else
 		{
+			if (action == MenuAction.WALK || action == MenuAction.WIDGET_TARGET_ON_WIDGET || itemOp) clear();
 			return;
 		}
-
-		Actor currentTarget = localPlayer != null ? localPlayer.getInteracting() : null;
-		if (currentTarget != clickedActor)
-		{
-			clear();
-		}
+		select(target, client.getTickCount(), client.getGameCycle(), attack(client, action));
 	}
 
-	public void onLocalPlayerInteractionChanged(Actor target, int tickCount)
+	void select(Object target, int tick, int cycle, boolean attack)
 	{
-		if (tickCount > objectClickTick) clickedObject = null;
-		if (clickedActor != null && target != clickedActor && tickCount > clickedActorTick)
-		{
-			clear();
-		}
+		interacted = target;
+		clickTick = tick;
+		clickCycle = cycle;
+		attacked = attack;
 	}
 
-	public void clearIfMatches(Actor actor)
+	private static boolean attack(Client client, MenuAction action)
 	{
-		if (actor == clickedActor)
-		{
-			clear();
-		}
+		return action == MenuAction.NPC_SECOND_OPTION || action == MenuAction.WIDGET_TARGET_ON_NPC
+			&& client.getSelectedWidget() != null
+			&& WidgetUtil.componentToInterface(client.getSelectedWidget().getId()) == InterfaceID.MAGIC_SPELLBOOK;
 	}
 
-	public void clear()
+	public void update(Client client, Iterable<Map.Entry<TileItem, GroundItemBillboard>> items)
 	{
-		clickedObject = null;
-		frameHoveredObject = null;
-		clickedActor = null;
-		clickedGroundItem = null;
-		clickedActorTick = Integer.MIN_VALUE;
-		frameInteractionTarget = null;
-		lastInteractionTarget = null;
+		MenuEntry entry = hoveredMenuEntry(client);
+		hoverAttack = entry != null && attack(client, entry.getType());
+		hovered = hoveredTarget(entry, items);
+		if (hovered == null) hovered = tileObject(client, entry);
+		priority = interacted instanceof Renderable ? (Renderable) interacted
+			: hovered instanceof Renderable ? (Renderable) hovered : null;
 	}
 
-	public Change update(Client client, Iterable<Map.Entry<TileItem, GroundItemBillboard>> groundItems)
-	{
-		frameHoveredObject = BillboardHoverInteractionResolver.tileObject(client,
-			BillboardHoverInteractionResolver.hoveredMenuEntry(client));
-		Renderable hoveredTarget = BillboardHoverInteractionResolver.hoveredTarget(client, groundItems);
-		Renderable interactionTarget = clickedGroundItem != null
-			? clickedGroundItem
-			: clickedObject != null ? null : BillboardHoverInteractionResolver.interactedActor(client, clickedActor);
-		frameHoveredTarget = hoveredTarget;
-		frameInteractionTarget = interactionTarget;
-		if (hoveredTarget == lastHoveredTarget && interactionTarget == lastInteractionTarget)
-		{
-			return Change.unchanged();
-		}
+	public Renderable priorityTarget() { return priority; }
+	public int clickAge(int cycle) { return clickCycle < 0 ? 10 : cycle - clickCycle; }
 
-		Change change = new Change(lastHoveredTarget, hoveredTarget, lastInteractionTarget, interactionTarget);
-		lastHoveredTarget = hoveredTarget;
-		lastInteractionTarget = interactionTarget;
-		return change;
+	public void onLocalPlayerInteractionChanged(Actor target, int tick)
+	{
+		if (tick <= clickTick) return;
+		interacted = target;
+		attacked = target != null && target.getCombatLevel() > 0;
 	}
 
-	public Renderable frameHoveredTarget()
+	public void clearOnArrival(Client client)
 	{
-		return frameHoveredTarget;
+		if (!(interacted instanceof Actor) && client.getTickCount() > clickTick
+			&& client.getLocalDestinationLocation() == null) interacted = null;
 	}
 
-	public Renderable frameInteractionTarget()
+	public void clearIfMatches(Object target)
 	{
-		return frameInteractionTarget;
-	}
-
-	public Renderable priorityTarget()
-	{
-		return frameInteractionTarget != null ? frameInteractionTarget : frameHoveredTarget;
-	}
-
-	public Actor clickedActor()
-	{
-		return clickedActor;
-	}
-
-	public TileItem clickedGroundItem()
-	{
-		return clickedGroundItem;
-	}
-
-	public void clearIfMatches(TileItem item)
-	{
-		if (item == clickedGroundItem)
-		{
-			clear();
-		}
-	}
-
-	public void noteObjectClick(TileObject object, int tick)
-	{
-		clear();
-		clickedObject = object;
-		objectClickTick = tick;
-	}
-
-	public TileObject hoveredObject() { return frameHoveredObject; }
-	public TileObject clickedObject() { return clickedObject; }
-
-	public void clearIfMatches(TileObject object)
-	{
-		if (object == clickedObject) clickedObject = null;
-		if (object == frameHoveredObject) frameHoveredObject = null;
+		if (target == interacted) interacted = null;
+		if (target == hovered) hovered = null;
 	}
 
 	public void unloadWorldView(WorldView view)
 	{
-		if (clickedObject != null && clickedObject.getWorldView() == view) clickedObject = null;
-		if (frameHoveredObject != null && frameHoveredObject.getWorldView() == view) frameHoveredObject = null;
+		if (interacted instanceof TileObject && ((TileObject) interacted).getWorldView() == view) interacted = null;
 	}
 
-	public void clearStaleObject(Client client)
+	public void clear()
 	{
-		if (clickedObject != null && client.getTickCount() > objectClickTick
-			&& client.getLocalDestinationLocation() == null
-			&& (client.getLocalPlayer() == null || client.getLocalPlayer().getInteracting() == null))
-		{
-			clickedObject = null;
-		}
-	}
-
-	public static final class Change
-	{
-		private static final Change UNCHANGED = new Change(null, null, null, null, false);
-		public final Renderable previousHoveredTarget;
-		public final Renderable hoveredTarget;
-		public final Renderable previousInteractionTarget;
-		public final Renderable interactionTarget;
-		public final boolean changed;
-
-		private Change(Renderable previousHoveredTarget, Renderable hoveredTarget, Renderable previousInteractionTarget, Renderable interactionTarget)
-		{
-			this(previousHoveredTarget, hoveredTarget, previousInteractionTarget, interactionTarget, true);
-		}
-
-		private Change(Renderable previousHoveredTarget, Renderable hoveredTarget, Renderable previousInteractionTarget, Renderable interactionTarget, boolean changed)
-		{
-			this.previousHoveredTarget = previousHoveredTarget;
-			this.hoveredTarget = hoveredTarget;
-			this.previousInteractionTarget = previousInteractionTarget;
-			this.interactionTarget = interactionTarget;
-			this.changed = changed;
-		}
-
-		private static Change unchanged()
-		{
-			return UNCHANGED;
-		}
+		hovered = interacted = priority = null;
+		clickTick = clickCycle = -1;
+		attacked = hoverAttack = false;
 	}
 }

@@ -1,9 +1,8 @@
 package com.kierenboal.npcsnap.targeting;
 
-import java.util.Collections;
+import com.kierenboal.npcsnap.IdentitySets;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +83,7 @@ public final class ActorStackTracker
 
 	private static final class Overlap
 	{
-		private final Set<Actor> actors = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<Actor> actors = IdentitySets.create();
 		private final Actor topActor;
 		private final int firstObservedTick;
 		private final int lastTopX;

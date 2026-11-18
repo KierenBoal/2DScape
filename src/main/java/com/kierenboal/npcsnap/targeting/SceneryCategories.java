@@ -17,7 +17,7 @@ import net.runelite.api.TileObject;
 
 /**
  * Sorts world objects into categories from their own definition (right-click options and
- * name), so new objects need no ID list. Uncategorized scenery without operations
+ * name), so new objects need no ID list. Uncategorized scenery without menu options
  * is excluded. Look objects up on the client thread only: object definitions are
  * not thread safe.
  */
@@ -27,9 +27,18 @@ public final class SceneryCategories
 	private static final Set<String> CHOP_OPTIONS = Set.of("chop down", "chop", "cut", "cut down");
 	private static final Set<String> TREE_WORDS = Set.of("tree", "trees", "stump");
 	private static final Set<String> ROCK_WORDS = Set.of("rock", "rocks", "boulder", "boulders");
+	private static final Set<String> FARMING_WORDS = Set.of("allotment", "allotments", "herb", "herbs", "crop", "crops",
+		"hop", "hops", "wheat", "potato", "potatoes", "onion", "onions", "cabbage", "cabbages", "sweetcorn", "flax",
+		"strawberry", "strawberries", "watermelon", "watermelons", "tomato", "tomatoes", "marigold", "rosemary",
+		"nasturtium", "woad", "limpwurt", "guam", "marrentill", "tarromin", "harralander",
+		"ranarr", "toadflax", "irit", "avantoe", "kwuarm", "snapdragon", "cadantine", "lantadyme", "torstol",
+		"redberry", "cadavaberry", "dwellberry", "jangerberry", "whiteberry", "ivy", "weed", "weeds", "barley",
+		"hammerstone", "asgarnian", "yanillian", "krandorian", "wildblood", "mushroom", "mushrooms", "bittercap",
+		"compost", "seedling", "seedlings", "sapling", "saplings");
+	private static final Set<String> FARMING_PATCH_WORDS = Set.of("tree", "trees", "bush", "bushes", "flower", "flowers",
+		"plant", "plants");
 	private static final Set<String> PLANT_WORDS = Set.of("bush", "bushes", "plant", "plants", "fern", "ferns",
-		"flower", "flowers", "shrub", "shrubs", "cactus", "cacti", "reeds", "wheat", "potato", "nettles", "onion",
-		"cabbage", "sweetcorn", "flax", "daisies");
+		"flower", "flowers", "shrub", "shrubs", "cactus", "cacti", "reeds", "nettles", "daisies");
 	private static final Set<String> FIRE_WORDS = Set.of("fire", "fires", "campfire", "bonfire");
 	private static final Set<String> LOG_WORDS = Set.of("log", "logs");
 	private static final Pattern NOT_LETTERS = Pattern.compile("[^a-z]+");
@@ -54,7 +63,7 @@ public final class SceneryCategories
 	public static boolean anyEnabled(NpcSnapConfig config)
 	{
 		return config.applyToObjects() && (config.applyToTrees() || config.worldObjectRocks()
-			|| config.worldObjectPlants() || config.worldObjectFires() || config.worldObjectLogs()
+			|| config.worldObjectPlants() || config.worldObjectFarming() || config.worldObjectFires() || config.worldObjectLogs()
 			|| config.worldObjectOther());
 	}
 
@@ -67,6 +76,7 @@ public final class SceneryCategories
 			if (config.applyToTrees()) enabled.add(SceneryCategory.TREE);
 			if (config.worldObjectRocks()) enabled.add(SceneryCategory.ROCK);
 			if (config.worldObjectPlants()) enabled.add(SceneryCategory.PLANT);
+			if (config.worldObjectFarming()) enabled.add(SceneryCategory.FARMING);
 			if (config.worldObjectFires()) enabled.add(SceneryCategory.FIRE);
 			if (config.worldObjectLogs()) enabled.add(SceneryCategory.LOG);
 			if (config.worldObjectOther()) enabled.add(SceneryCategory.OTHER);
@@ -148,8 +158,14 @@ public final class SceneryCategories
 			return SceneryCategory.EXCLUDED;
 		}
 
-		Set<String> options = options(composition.getActions());
+		boolean hasOps = composition.getOps() != null;
+		Set<String> options = options(hasOps ? composition.getActions() : null);
 		Set<String> words = words(composition.getName());
+		if (!Collections.disjoint(words, FARMING_WORDS)
+			|| words.contains("patch") && !Collections.disjoint(words, FARMING_PATCH_WORDS))
+		{
+			return SceneryCategory.FARMING;
+		}
 		if (!Collections.disjoint(options, CHOP_OPTIONS) || !Collections.disjoint(words, TREE_WORDS))
 		{
 			return SceneryCategory.TREE;
@@ -170,7 +186,8 @@ public final class SceneryCategories
 		{
 			return SceneryCategory.LOG;
 		}
-		return options.isEmpty() ? SceneryCategory.EXCLUDED : SceneryCategory.OTHER;
+		// A non-null ops definition also allows Examine-only objects with no actions.
+		return hasOps ? SceneryCategory.OTHER : SceneryCategory.EXCLUDED;
 	}
 
 	private static Set<String> options(String[] actions)

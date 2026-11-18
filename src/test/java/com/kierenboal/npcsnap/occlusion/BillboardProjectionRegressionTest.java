@@ -11,7 +11,6 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -68,7 +67,7 @@ public class BillboardProjectionRegressionTest
 			method("getVerticesY", new float[] {-200, -200, 0, 0}), method("getVerticesZ", new float[4]));
 		BillboardRenderRequest request = new BillboardRenderRequest(
 			proxy(Renderable.class, method("getModelHeight", 200)), model, actor.mainPoint,
-			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		BillboardDrawGeometry geometry = worldPlane
 			? ActorWorldPlane.project(camera, actor.mainPoint, actor.height,
 				ActorWorldPlane.viewingBearing(client, actor.mainPoint), source, source)
@@ -79,7 +78,7 @@ public class BillboardProjectionRegressionTest
 		Arrays.fill(pixels, 0xFF804020);
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request, new BillboardRenderResult(geometry, sprite, source), 1);
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,
 			prepared -> BillboardDepthSurface.from(camera, prepared, actor.height));
 		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
 			for (int sceneryY : new int[] {1250, 1550})

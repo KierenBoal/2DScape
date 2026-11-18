@@ -116,12 +116,12 @@ public class NpcBillboardWorldPlaneTest
 			@Override public boolean enableAnimationFrameSnapping() { return false; }
 		};
 		private final NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
-			new NpcSnapDebug(client, config), null);
+			new NpcSnapDebug(config), null);
 
 		private BillboardDrawGeometry draw(Actor target, int requestedYaw)
 		{
 			BillboardRenderRequest request = new BillboardRenderRequest(target, model, location, 0, 0,
-				requestedYaw, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+				requestedYaw, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 			Rectangle image = new Rectangle(-50, -100, 100, 100);
 			BillboardDrawGeometry geometry = overlay.buildDrawGeometry(request, target, image, image);
 			assertNotNull(geometry);

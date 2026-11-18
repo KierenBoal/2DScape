@@ -1,6 +1,8 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Rectangle;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Model;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
@@ -197,6 +199,7 @@ public final class BillboardDepthSurface
 		return depthAt(sourceX, sourceY, sourceWidth, sourceHeight, canvasY);
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	public static final class DebugPoint
 	{
 		public final int localX;
@@ -205,16 +208,6 @@ public final class BillboardDepthSurface
 		public final double horizontalOffset;
 		public final double verticalOffset;
 		public final double depth;
-
-		private DebugPoint(int localX, int localY, double height, double horizontalOffset, double verticalOffset, double depth)
-		{
-			this.localX = localX;
-			this.localY = localY;
-			this.height = height;
-			this.horizontalOffset = horizontalOffset;
-			this.verticalOffset = verticalOffset;
-			this.depth = depth;
-		}
 
 		private static DebugPoint invalid()
 		{

@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.occlusion;
 
+import lombok.RequiredArgsConstructor;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import net.runelite.api.Actor;
 import net.runelite.api.GameObject;
@@ -10,13 +11,10 @@ import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 
 /** Immutable per-draw terrain exclusion. It never removes geometry from the shared mask. */
+@RequiredArgsConstructor
 public final class SupportingFootprint
 {
 	public final int worldView, plane, minX, minY, maxX, maxY;
-	public SupportingFootprint(int worldView, int plane, int minX, int minY, int maxX, int maxY)
-	{
-		this.worldView=worldView; this.plane=plane; this.minX=minX; this.minY=minY; this.maxX=maxX; this.maxY=maxY;
-	}
 	public boolean contains(TerrainSurface surface)
 	{
 		return surface!=null && !surface.upperSurface && worldView==surface.worldView && plane==surface.plane

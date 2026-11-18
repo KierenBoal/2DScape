@@ -1,5 +1,7 @@
 package com.kierenboal.npcsnap.targeting;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Actor;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
@@ -58,6 +60,7 @@ public final class WorldViewLocationResolver
 			new LocalPoint(Math.round(projected[0]), Math.round(projected[2]), top), projected[1]);
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	public static final class ResolvedLocation
 	{
 		public final WorldView source;
@@ -65,15 +68,6 @@ public final class WorldViewLocationResolver
 		public final int sourcePlane;
 		public final LocalPoint mainPoint;
 		public final double height;
-
-		private ResolvedLocation(WorldView source, LocalPoint sourcePoint, int sourcePlane, LocalPoint mainPoint, double height)
-		{
-			this.source = source;
-			this.sourcePoint = sourcePoint;
-			this.sourcePlane = sourcePlane;
-			this.mainPoint = mainPoint;
-			this.height = height;
-		}
 	}
 
 	public static LocalPoint toMainWorld(WorldView topLevel, Actor actor)

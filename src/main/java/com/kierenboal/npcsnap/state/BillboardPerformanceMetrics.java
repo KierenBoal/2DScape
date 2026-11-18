@@ -6,6 +6,8 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.LongSupplier;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 public final class BillboardPerformanceMetrics
 {
@@ -14,21 +16,6 @@ public final class BillboardPerformanceMetrics
 	private final List<MetricNode> stack = new ArrayList<>();
 	private final LongSupplier nanoTime;
 	private List<MetricRow> publishedRows = Collections.emptyList();
-	private final java.util.Map<String, Long> counters = new java.util.LinkedHashMap<>();
-	private java.util.Map<String, Long> publishedCounters = Collections.emptyMap();
-
-	public void count(String name, long value)
-	{
-		if (enabled)
-		{
-			counters.put(name, value);
-		}
-	}
-
-	public java.util.Map<String, Long> counters()
-	{
-		return publishedCounters;
-	}
 	private boolean enabled;
 	private long rootStartNanos = -1L;
 	private long intervalStartNanos = -1L;
@@ -45,7 +32,6 @@ public final class BillboardPerformanceMetrics
 
 	public void beginFrame(boolean enabled)
 	{
-		counters.clear();
 		long now = nanoTime.getAsLong();
 		if (!enabled)
 		{
@@ -53,7 +39,6 @@ public final class BillboardPerformanceMetrics
 			rootStartNanos = -1L;
 			intervalStartNanos = -1L;
 			publishedRows = Collections.emptyList();
-			publishedCounters = Collections.emptyMap();
 			stack.clear();
 			resetCurrent(root);
 			resetInterval(root);
@@ -90,19 +75,6 @@ public final class BillboardPerformanceMetrics
 		return new Timer(this, node);
 	}
 
-	public void addElapsed(String name, long elapsedNanos)
-	{
-		if (!enabled || stack.isEmpty() || elapsedNanos <= 0L)
-		{
-			return;
-		}
-
-		MetricNode parent = stack.get(stack.size() - 1);
-		MetricNode node = parent.child(name);
-		node.touched = true;
-		node.currentNanos += elapsedNanos;
-	}
-
 	public void finishFrame()
 	{
 		if (!enabled || rootStartNanos < 0L)
@@ -117,7 +89,6 @@ public final class BillboardPerformanceMetrics
 		if (now - intervalStartNanos >= SNAPSHOT_INTERVAL_NANOS)
 		{
 			publishedRows = buildRows(Integer.MAX_VALUE);
-			publishedCounters = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(counters));
 			resetInterval(root);
 			intervalStartNanos = now;
 		}
@@ -261,6 +232,7 @@ public final class BillboardPerformanceMetrics
 		return 140 + Math.floorMod(value, 116);
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	public static final class MetricRow
 	{
 		public final String name;
@@ -270,17 +242,6 @@ public final class BillboardPerformanceMetrics
 		public final double maxMillis;
 		public final double percentOfOverall;
 		public final Color color;
-
-		private MetricRow(String name, int depth, double minMillis, double avgMillis, double maxMillis, double percentOfOverall, Color color)
-		{
-			this.name = name;
-			this.depth = depth;
-			this.minMillis = minMillis;
-			this.avgMillis = avgMillis;
-			this.maxMillis = maxMillis;
-			this.percentOfOverall = percentOfOverall;
-			this.color = color;
-		}
 
 		private static MetricRow from(MetricNode node, int depth)
 		{

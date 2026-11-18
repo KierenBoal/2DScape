@@ -23,9 +23,9 @@ import java.util.Locale;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Actor;
-import net.runelite.api.Client;
-import net.runelite.api.Player;
 import net.runelite.client.ui.FontManager;
 
 @Singleton
@@ -41,14 +41,12 @@ public class NpcSnapDebug
 	private static final String[] METRIC_HEADERS = {"Method", "Min ms", "Avg ms", "Max ms", "% plugin"};
 	private static final int HOTSPOT_METRIC_COUNT = 3;
 
-	private final Client client;
 	private final NpcSnapConfig config;
-	private final Map<Actor, FrameState> actorFrames = new IdentityHashMap<>();
+	private final Map<Actor, FrameDebugInfo> actorFrames = new IdentityHashMap<>();
 
 	@Inject
-	public NpcSnapDebug(Client client, NpcSnapConfig config)
+	public NpcSnapDebug(NpcSnapConfig config)
 	{
-		this.client = client;
 		this.config = config;
 	}
 
@@ -69,7 +67,7 @@ public class NpcSnapDebug
 			return;
 		}
 
-		actorFrames.put(actor, new FrameState(animationId, animationFrame, forcedAnimationFrame, poseFrame, forcedPoseFrame));
+		actorFrames.put(actor, new FrameDebugInfo(animationId, animationFrame, forcedAnimationFrame, poseFrame, forcedPoseFrame));
 	}
 
 	public FrameDebugInfo actorFrameDebugInfo(Actor actor)
@@ -79,13 +77,13 @@ public class NpcSnapDebug
 			return null;
 		}
 
-		FrameState state = actorFrames.get(actor);
+		FrameDebugInfo state = actorFrames.get(actor);
 		if (state == null)
 		{
 			return new FrameDebugInfo(actor.getAnimation(), actor.getAnimationFrame(), actor.getAnimationFrame(), actor.getPoseAnimationFrame(), actor.getPoseAnimationFrame());
 		}
 
-		return new FrameDebugInfo(state.animationId, state.animationFrame, state.forcedAnimationFrame, state.poseFrame, state.forcedPoseFrame);
+		return state;
 	}
 
 	void drawShadowBounds(Graphics2D graphics, BillboardRenderResult shadow)
@@ -173,7 +171,7 @@ public class NpcSnapDebug
 
 	}
 
-	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, Map<String, Long> counters)
+	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
 	{
 		if (graphics == null || viewport == null)
 		{
@@ -184,7 +182,7 @@ public class NpcSnapDebug
 		{
 			clipped.clip(new Rectangle(viewport.x + 8, viewport.y + 8,
 				Math.max(0, viewport.width - 16), Math.max(0, viewport.height - 16)));
-			drawPerformanceTable(clipped, viewport, rows, performanceContext(counters));
+			drawPerformanceTable(clipped, viewport, rows);
 		}
 		finally
 		{
@@ -192,64 +190,7 @@ public class NpcSnapDebug
 		}
 	}
 
-	private static String sceneryCount(Map<String, Long> counters, String stage)
-	{
-		return compactCount(counters.getOrDefault("Scenery " + stage, 0L));
-	}
-
-	List<String> performanceContext(Map<String, Long> counters)
-	{
-		List<String> lines = new ArrayList<>(4);
-		net.runelite.api.Player player = client.getLocalPlayer();
-		net.runelite.api.WorldView top = client.getTopLevelWorldView();
-		com.kierenboal.npcsnap.targeting.WorldViewLocationResolver.ResolvedLocation location =
-			player != null && top != null ? com.kierenboal.npcsnap.targeting.WorldViewLocationResolver.resolve(client, player) : null;
-		String source = location != null && !location.source.isTopLevel()
-			? String.format(Locale.ROOT, ", Source: %d/%d, View: %d", location.sourcePoint.getX(), location.sourcePoint.getY(), location.source.getId()) : "";
-		lines.add(location != null
-			? String.format(Locale.ROOT, "Player (X: %d, Y: %d, Z: %.1f, Plane: %d%s)",
-				top.getBaseX() + location.mainPoint.getSceneX(), top.getBaseY() + location.mainPoint.getSceneY(), location.height, top.getPlane(), source)
-			: "Player (unavailable)");
-		lines.add(String.format(Locale.ROOT, "Camera (X: %.1f, Y: %.1f, Z: %.1f, Pitch: %d, Yaw: %d, Zoom: %d, %s %dx%d)",
-			client.getCameraFpX(), client.getCameraFpY(), client.getCameraFpZ(), client.getCameraPitch(), client.getCameraYaw(), client.get3dZoom(),
-			client.isGpu() ? "GPU" : "CPU", client.getViewportWidth(), client.getViewportHeight()));
-		lines.add(String.format(Locale.ROOT, "Renderables (Actors: %s, Items: %s, Effects: %s, Boats: %s, Hidden: %s, Objects: %s/%s)",
-			compactCount(counters.getOrDefault("Actors", 0L)), compactCount(counters.getOrDefault("Items", 0L)),
-			compactCount(counters.getOrDefault("Effects", 0L)), compactCount(counters.getOrDefault("Boats", 0L)),
-			compactCount(counters.getOrDefault("Boats skipped", 0L)), compactCount(counters.getOrDefault("Objects accepted", 0L)),
-			compactCount(counters.getOrDefault("Objects checked", 0L))));
-		lines.add(String.format(Locale.ROOT, "Geometry (Faces: %s, Inspected: %s, Accepted: %s, Terrain: %s/%s)",
-			compactCount(counters.getOrDefault("Faces available", 0L)), compactCount(counters.getOrDefault("Faces inspected", 0L)),
-			compactCount(counters.getOrDefault("Faces accepted", 0L)), compactCount(counters.getOrDefault("Terrain tris accepted", 0L)),
-			compactCount(counters.getOrDefault("Terrain tris checked", 0L))));
-		if (counters.containsKey("Scenery GPU"))
-		{
-			// One count per stage of the static scenery swap; the first zero is where it stops.
-			lines.add(String.format(Locale.ROOT, "Scenery (GPU: %d, Tracked: %s, Model/Baked/Other: %s/%s/%s, Eligible: %s, Active: %s)",
-				counters.get("Scenery GPU"), sceneryCount(counters, "tracked"),
-				sceneryCount(counters, "seen models"), sceneryCount(counters, "seen baked"), sceneryCount(counters, "seen other"),
-				sceneryCount(counters, "eligible"), sceneryCount(counters, "active")));
-			lines.add(String.format(Locale.ROOT, "Scenery swap (Requests: %s, Plans: %s, Cached: %s, Drawable: %s, Zones: %s, Hide/Show/Untracked: %s/%s/%s, Replaced: %s)",
-				sceneryCount(counters, "requests"), sceneryCount(counters, "plans"), sceneryCount(counters, "cached"),
-				sceneryCount(counters, "drawable"), sceneryCount(counters, "zones"),
-				sceneryCount(counters, "hidden"), sceneryCount(counters, "shown"), sceneryCount(counters, "untracked"),
-				sceneryCount(counters, "replaced")));
-		}
-		return lines;
-	}
-
-	static String compactCount(long value)
-	{
-		return value >= 1_000_000L ? String.format(Locale.ROOT, "%.1fm", value / 1_000_000d)
-			: value >= 1_000L ? String.format(Locale.ROOT, "%.1fk", value / 1_000d) : Long.toString(value);
-	}
-
-	static int performanceRowCapacityForContextHeight(int viewportHeight, int lineHeight, int contextHeight)
-	{
-		return Math.max(0, (viewportHeight - 16 - 10 - contextHeight) / Math.max(1, lineHeight) - 1);
-	}
-
-	private void drawPerformanceTable(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows, List<String> context)
+	private void drawPerformanceTable(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
 	{
 		if (graphics == null || viewport == null || rows == null)
 		{
@@ -270,13 +211,10 @@ public class NpcSnapDebug
 		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 		graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
 		FontMetrics metrics = graphics.getFontMetrics();
-		Font contextFont = font.deriveFont(Math.max(1f, font.getSize2D() - 2f));
-		FontMetrics contextMetrics = graphics.getFontMetrics(contextFont);
 		int padding = 5;
 		int gap = 12;
 		int lineHeight = metrics.getHeight();
-		int contextHeight = context.size() * contextMetrics.getHeight();
-		int capacity = performanceRowCapacityForContextHeight(viewport.height, lineHeight, contextHeight);
+		int capacity = Math.max(0, (viewport.height - 16 - padding * 2) / Math.max(1, lineHeight) - 1);
 		rows = rows.subList(0, Math.min(rows.size(), capacity));
 		int[] columnWidths = new int[METRIC_HEADERS.length];
 		for (int column = 0; column < METRIC_HEADERS.length; column++)
@@ -299,24 +237,12 @@ public class NpcSnapDebug
 		{
 			width += columnWidth;
 		}
-		for (String line : context)
-		{
-			width = Math.max(width, contextMetrics.stringWidth(line) + padding * 2);
-		}
-		int height = (lineHeight * (rows.size() + 1)) + contextHeight + (padding * 2);
+		int height = (lineHeight * (rows.size() + 1)) + (padding * 2);
 		graphics.setColor(TEXT_BACKGROUND);
 		graphics.fillRect(x, y, width, height);
 		int[] columnX = metricColumnPositions(x + padding, columnWidths, gap);
-		int contextY = y + padding + contextMetrics.getAscent();
+		int headerY = y + padding + metrics.getAscent();
 		graphics.setColor(METRIC_VALUE_FOREGROUND);
-		graphics.setFont(contextFont);
-		for (String line : context)
-		{
-			graphics.drawString(line, x + padding, contextY);
-			contextY += contextMetrics.getHeight();
-		}
-		graphics.setFont(font);
-		int headerY = y + padding + contextHeight + metrics.getAscent();
 		for (int column = 0; column < METRIC_HEADERS.length; column++)
 		{
 			graphics.drawString(METRIC_HEADERS[column], columnX[column], headerY);
@@ -720,6 +646,7 @@ public class NpcSnapDebug
 		}
 	}
 
+	@RequiredArgsConstructor(access = lombok.AccessLevel.PRIVATE)
 	public static final class FrameDebugInfo
 	{
 		final int animationId;
@@ -728,14 +655,6 @@ public class NpcSnapDebug
 		final int poseFrame;
 		final int forcedPoseFrame;
 
-		private FrameDebugInfo(int animationId, int animationFrame, int forcedAnimationFrame, int poseFrame, int forcedPoseFrame)
-		{
-			this.animationId = animationId;
-			this.animationFrame = animationFrame;
-			this.forcedAnimationFrame = forcedAnimationFrame;
-			this.poseFrame = poseFrame;
-			this.forcedPoseFrame = forcedPoseFrame;
-		}
 
 		public static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
 		{
@@ -743,6 +662,7 @@ public class NpcSnapDebug
 		}
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	public static final class StateDebugInfo
 	{
 		private final int stateHash;
@@ -753,38 +673,9 @@ public class NpcSnapDebug
 		private final int currentFrame;
 		private final int queuePosition;
 
-		private StateDebugInfo(int stateHash, int pitchDegrees, int yawDegrees, int animationId, int displayedFrame, int currentFrame, int queuePosition)
-		{
-			this.stateHash = stateHash;
-			this.pitchDegrees = pitchDegrees;
-			this.yawDegrees = yawDegrees;
-			this.animationId = animationId;
-			this.displayedFrame = displayedFrame;
-			this.currentFrame = currentFrame;
-			this.queuePosition = queuePosition;
-		}
-
 		static StateDebugInfo of(int stateHash, int pitchDegrees, int yawDegrees, int animationId, int displayedFrame, int currentFrame, int queuePosition)
 		{
 			return new StateDebugInfo(stateHash, pitchDegrees, yawDegrees, animationId, displayedFrame, currentFrame, queuePosition);
-		}
-	}
-
-	private static final class FrameState
-	{
-		private final int animationId;
-		private final int animationFrame;
-		private final int forcedAnimationFrame;
-		private final int poseFrame;
-		private final int forcedPoseFrame;
-
-		private FrameState(int animationId, int animationFrame, int forcedAnimationFrame, int poseFrame, int forcedPoseFrame)
-		{
-			this.animationId = animationId;
-			this.animationFrame = animationFrame;
-			this.forcedAnimationFrame = forcedAnimationFrame;
-			this.poseFrame = poseFrame;
-			this.forcedPoseFrame = forcedPoseFrame;
 		}
 	}
 }

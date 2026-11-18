@@ -5,7 +5,6 @@ import java.util.EnumSet;
 public final class FrameUpdatePlan
 {
 	public final double qualityScale;
-	public final boolean forceHoverInteractionRedraw;
 	public final boolean forceActorResizeRedraw;
 	public final EnumSet<BillboardRedrawReason> redrawReasons = EnumSet.noneOf(BillboardRedrawReason.class);
 	public final BillboardUpdateState updateState;
@@ -22,21 +21,6 @@ public final class FrameUpdatePlan
 
 	public FrameUpdatePlan(
 		double qualityScale,
-		boolean forceHoverInteractionRedraw,
-		BillboardUpdateState updateState,
-		UpdateHeuristicSnapshot snapshot,
-		int gameCycle,
-		int baseRefreshInterval,
-		double fullQualityScale,
-		double minimumAnimatedRedrawInterval)
-	{
-		this(qualityScale, forceHoverInteractionRedraw, false, updateState, snapshot,
-			gameCycle, baseRefreshInterval, fullQualityScale, minimumAnimatedRedrawInterval);
-	}
-
-	public FrameUpdatePlan(
-		double qualityScale,
-		boolean forceHoverInteractionRedraw,
 		boolean forceActorResizeRedraw,
 		BillboardUpdateState updateState,
 		UpdateHeuristicSnapshot snapshot,
@@ -46,12 +30,7 @@ public final class FrameUpdatePlan
 		double minimumAnimatedRedrawInterval)
 	{
 		this.qualityScale = qualityScale;
-		this.forceHoverInteractionRedraw = forceHoverInteractionRedraw;
 		this.forceActorResizeRedraw = forceActorResizeRedraw;
-		if (forceHoverInteractionRedraw)
-		{
-			redrawReasons.add(BillboardRedrawReason.INTERACTION_CHANGE);
-		}
 		if (forceActorResizeRedraw)
 		{
 			redrawReasons.add(BillboardRedrawReason.ACTOR_RESIZE);
@@ -66,7 +45,7 @@ public final class FrameUpdatePlan
 
 	public boolean isForcedRedraw()
 	{
-		return forceHoverInteractionRedraw || forceActorResizeRedraw || forceStateChangeRedraw;
+		return forceActorResizeRedraw || forceStateChangeRedraw;
 	}
 
 	public boolean isCompleted()

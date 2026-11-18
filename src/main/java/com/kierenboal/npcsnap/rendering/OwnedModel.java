@@ -1,12 +1,16 @@
 package com.kierenboal.npcsnap.rendering;
 
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.experimental.Delegate;
-import net.runelite.api.Model;
 import net.runelite.api.AABB;
+import net.runelite.api.Model;
 
 /** Capture-only model. Never submit this adapter to the client or mutate it. */
+@Getter
 public final class OwnedModel implements Model
 {
+    @Getter(AccessLevel.NONE)
     @Delegate(excludes = Captured.class)
     private final Model source;
     private final float[] verticesX;
@@ -38,30 +42,31 @@ public final class OwnedModel implements Model
     private final byte overrideHue;
     private final byte overrideSaturation;
     private final byte overrideLuminance;
+
     public OwnedModel(Model source)
     {
         this.source = source;
-        verticesX = source.getVerticesX() == null ? null : source.getVerticesX().clone();
-        verticesY = source.getVerticesY() == null ? null : source.getVerticesY().clone();
-        verticesZ = source.getVerticesZ() == null ? null : source.getVerticesZ().clone();
-        faceIndices1 = source.getFaceIndices1() == null ? null : source.getFaceIndices1().clone();
-        faceIndices2 = source.getFaceIndices2() == null ? null : source.getFaceIndices2().clone();
-        faceIndices3 = source.getFaceIndices3() == null ? null : source.getFaceIndices3().clone();
-        faceColors1 = source.getFaceColors1() == null ? null : source.getFaceColors1().clone();
-        faceColors2 = source.getFaceColors2() == null ? null : source.getFaceColors2().clone();
-        faceColors3 = source.getFaceColors3() == null ? null : source.getFaceColors3().clone();
-        texIndices1 = source.getTexIndices1() == null ? null : source.getTexIndices1().clone();
-        texIndices2 = source.getTexIndices2() == null ? null : source.getTexIndices2().clone();
-        texIndices3 = source.getTexIndices3() == null ? null : source.getTexIndices3().clone();
-        vertexNormalsX = source.getVertexNormalsX() == null ? null : source.getVertexNormalsX().clone();
-        vertexNormalsY = source.getVertexNormalsY() == null ? null : source.getVertexNormalsY().clone();
-        vertexNormalsZ = source.getVertexNormalsZ() == null ? null : source.getVertexNormalsZ().clone();
-        faceTextures = source.getFaceTextures() == null ? null : source.getFaceTextures().clone();
-        unlitFaceColors = source.getUnlitFaceColors() == null ? null : source.getUnlitFaceColors().clone();
-        faceTransparencies = source.getFaceTransparencies() == null ? null : source.getFaceTransparencies().clone();
-        faceRenderPriorities = source.getFaceRenderPriorities() == null ? null : source.getFaceRenderPriorities().clone();
-        faceBias = source.getFaceBias() == null ? null : source.getFaceBias().clone();
-        textureFaces = source.getTextureFaces() == null ? null : source.getTextureFaces().clone();
+        verticesX = copy(source.getVerticesX());
+        verticesY = copy(source.getVerticesY());
+        verticesZ = copy(source.getVerticesZ());
+        faceIndices1 = copy(source.getFaceIndices1());
+        faceIndices2 = copy(source.getFaceIndices2());
+        faceIndices3 = copy(source.getFaceIndices3());
+        faceColors1 = copy(source.getFaceColors1());
+        faceColors2 = copy(source.getFaceColors2());
+        faceColors3 = copy(source.getFaceColors3());
+        texIndices1 = copy(source.getTexIndices1());
+        texIndices2 = copy(source.getTexIndices2());
+        texIndices3 = copy(source.getTexIndices3());
+        vertexNormalsX = copy(source.getVertexNormalsX());
+        vertexNormalsY = copy(source.getVertexNormalsY());
+        vertexNormalsZ = copy(source.getVertexNormalsZ());
+        faceTextures = copy(source.getFaceTextures());
+        unlitFaceColors = copy(source.getUnlitFaceColors());
+        faceTransparencies = copy(source.getFaceTransparencies());
+        faceRenderPriorities = copy(source.getFaceRenderPriorities());
+        faceBias = copy(source.getFaceBias());
+        textureFaces = copy(source.getTextureFaces());
         verticesCount = source.getVerticesCount();
         faceCount = source.getFaceCount();
         modelHeight = source.getModelHeight();
@@ -71,37 +76,30 @@ public final class OwnedModel implements Model
         overrideSaturation = source.getOverrideSaturation();
         overrideLuminance = source.getOverrideLuminance();
     }
-    public float[] getVerticesX() { return verticesX; }
-    public float[] getVerticesY() { return verticesY; }
-    public float[] getVerticesZ() { return verticesZ; }
-    public int[] getFaceIndices1() { return faceIndices1; }
-    public int[] getFaceIndices2() { return faceIndices2; }
-    public int[] getFaceIndices3() { return faceIndices3; }
-    public int[] getFaceColors1() { return faceColors1; }
-    public int[] getFaceColors2() { return faceColors2; }
-    public int[] getFaceColors3() { return faceColors3; }
-    public int[] getTexIndices1() { return texIndices1; }
-    public int[] getTexIndices2() { return texIndices2; }
-    public int[] getTexIndices3() { return texIndices3; }
-    public int[] getVertexNormalsX() { return vertexNormalsX; }
-    public int[] getVertexNormalsY() { return vertexNormalsY; }
-    public int[] getVertexNormalsZ() { return vertexNormalsZ; }
-    public short[] getFaceTextures() { return faceTextures; }
-    public short[] getUnlitFaceColors() { return unlitFaceColors; }
-    public byte[] getFaceTransparencies() { return faceTransparencies; }
-    public byte[] getFaceRenderPriorities() { return faceRenderPriorities; }
-    public byte[] getFaceBias() { return faceBias; }
-    public byte[] getTextureFaces() { return textureFaces; }
-    public int getVerticesCount() { return verticesCount; }
-    public int getFaceCount() { return faceCount; }
-    public int getModelHeight() { return modelHeight; }
-    public byte getTransparency() { return transparency; }
-    public byte getOverrideAmount() { return overrideAmount; }
-    public byte getOverrideHue() { return overrideHue; }
-    public byte getOverrideSaturation() { return overrideSaturation; }
-    public byte getOverrideLuminance() { return overrideLuminance; }
+
+    private static float[] copy(float[] values)
+    {
+        return values == null ? null : values.clone();
+    }
+
+    private static int[] copy(int[] values)
+    {
+        return values == null ? null : values.clone();
+    }
+
+    private static short[] copy(short[] values)
+    {
+        return values == null ? null : values.clone();
+    }
+
+    private static byte[] copy(byte[] values)
+    {
+        return values == null ? null : values.clone();
+    }
+
     public Model getModel() { return this; }
     public AABB getAABB(int orientation) { return null; }
+
     private interface Captured
     {
         float[] getVerticesX();

@@ -2,12 +2,10 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import net.runelite.api.*;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.hooks.DrawCallbacks;
@@ -58,7 +56,6 @@ public class SailingOcclusionTest
 			fixture.collect();
 			assertTrue(fixture.collector.occluders().isEmpty());
 			assertEquals(reads, fixture.renderableReads.get());
-			assertEquals(Long.valueOf(0), fixture.metrics.counters().get("Faces inspected"));
 		}
 		fixture.objectId.set(ObjectID.SAILING_BOAT_SLOOP_TRIM_SHARK);
 		fixture.collect();
@@ -143,8 +140,6 @@ public class SailingOcclusionTest
 		fixture.collect();
 		assertEquals(0, fixture.collector.occluders().size());
 		assertEquals(reads, fixture.sceneReads.get());
-		assertEquals(Long.valueOf(1), fixture.metrics.counters().get("Boats skipped"));
-		assertEquals(Long.valueOf(0), fixture.metrics.counters().get("Faces inspected"));
 	}
 
 	@Test public void geometryMovesWithTheBoatAndSceneUnloadDropsTheIndex()
@@ -168,12 +163,10 @@ public class SailingOcclusionTest
 		fixture.tiles[0][0][0] = proxy(Tile.class, method("getLocalLocation", new LocalPoint(64, 64, fixture.boat)),
 			method("getSceneTilePaint", proxy(SceneTilePaint.class)));
 		fixture.collect();
-		assertEquals(Long.valueOf(0), fixture.metrics.counters().get("Terrain tris checked"));
 		fixture.tiles[0][0][0] = proxy(Tile.class, method("getLocalLocation", new LocalPoint(64, 64, fixture.boat)),
 			method("getSceneTilePaint", proxy(SceneTilePaint.class, method("getNeColor", 12345678))));
 		fixture.collector.unload(fixture.boat);
 		fixture.collect();
-		assertEquals(Long.valueOf(0), fixture.metrics.counters().get("Terrain tris checked"));
 	}
 
 	private static final class Fixture
@@ -194,8 +187,6 @@ public class SailingOcclusionTest
 		final BillboardSceneVisibility visibility;
 		Projection rendererProjection;
 		Model drawnModel;
-		final AtomicLong clock = new AtomicLong();
-		final BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::get);
 		final Tile[][][] tiles = new Tile[1][1][1];
 		final WorldView boat, top;
 		final Client client;
@@ -227,11 +218,10 @@ public class SailingOcclusionTest
 				@Override public void swapScene(Scene scene) { }
 			});
 			visibility = new BillboardSceneVisibility(callbacks::get, callbacks::set);
-			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, new BillboardDepthCalculator(client), metrics, org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
+			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, new BillboardDepthCalculator(client), org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 		}
 		void collect()
 		{
-			metrics.beginFrame(true);
 			collector.resetFrame();
 			visibility.beginFrame();
 			if (rendererProjection != null || gpuFlags.get() != 0)
@@ -241,9 +231,6 @@ public class SailingOcclusionTest
 				facilityRenderable.get(), drawnModel, 0, 64, -40, 64);
 			collector.addInterest(new Rectangle(300, 100, 200, 220), new Rectangle(0, 0, 800, 600));
 			collector.collectNestedOccluders(top, null, BillboardOcclusionQuality.HIGH, Collections.emptySet(), Collections.emptySet());
-			collector.publishCounts();
-			clock.addAndGet(500_000_000L);
-			metrics.finishFrame();
 		}
 	}
 }

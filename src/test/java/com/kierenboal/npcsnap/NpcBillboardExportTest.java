@@ -53,7 +53,7 @@ public class NpcBillboardExportTest
   };
 		assertFalse(config.applyToObjects());
 		NpcBillboardOverlay overlay = new NpcBillboardOverlay(client, null, config,
-			new NpcSnapDebug(client, config), null);
+			new NpcSnapDebug(config), null);
 		BillboardObjectExportTarget target = new BillboardObjectExportTarget(1234, 2, 3, WorldView.TOPLEVEL, 0);
 		// No beginFrame, scene observation, classification or billboard cache was populated.
 		BillboardExportBatch batch = overlay.captureExport(target);

@@ -2,11 +2,9 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 import net.runelite.api.*;
 import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
@@ -15,11 +13,10 @@ import static org.junit.Assert.*;
 
 public class SceneryFaceCullingTest
 {
-	@Test public void acceleratedStaticFacesMatchFullTraversalWithLessWork()
+	@Test public void acceleratedStaticFacesMatchFullTraversal()
 	{
 		Fixture accelerated = new Fixture(true), reference = new Fixture(false);
 		BillboardOcclusionMask fast = accelerated.collect(), full = reference.collect();
-		assertTrue(accelerated.metrics.counters().get("Faces inspected") < reference.metrics.counters().get("Faces inspected"));
 		assertTrue(accelerated.collector.occluders().size() > 0);
 		assertEquals(reference.collector.occluders().size(), accelerated.collector.occluders().size());
 		for (int y = 220; y < 320; y += 2)
@@ -50,8 +47,6 @@ public class SceneryFaceCullingTest
 
 	private static final class Fixture
 	{
-		final AtomicLong clock = new AtomicLong();
-		final BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::get);
 		final BillboardWorldOcclusionCollector collector;
 		final WorldView view;
 		final Tile tile;
@@ -84,18 +79,14 @@ public class SceneryFaceCullingTest
 			Client client = proxy(Client.class, method("getWorldView", view), method("getTopLevelWorldView", view),
 				method("getLocalPlayer", proxy(Player.class, method("getWorldView", view))), method("getCameraX", 512), method("getCameraFpX", 512f),
 				method("getScale", 512), method("get3dZoom", 512), method("getViewportWidth", 800), method("getViewportHeight", 600));
-			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, new BillboardDepthCalculator(client), metrics, org.slf4j.LoggerFactory.getLogger(getClass()));
+			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, new BillboardDepthCalculator(client), org.slf4j.LoggerFactory.getLogger(getClass()));
 		}
 		BillboardOcclusionMask collect()
 		{
-			metrics.beginFrame(true);
 			collector.resetFrame();
 			Rectangle region = new Rectangle(350, 220, 100, 100);
 			collector.addInterest(region, new Rectangle(0, 0, 800, 600));
 			collector.collectTerrainOccluders(view, List.of(new BillboardWorldOcclusionCollector.TraceTarget(new LocalPoint(512, 1024), 0)), BillboardOcclusionQuality.HIGH);
-			collector.publishCounts();
-			clock.addAndGet(500_000_000L);
-			metrics.finishFrame();
 			BillboardOcclusionMask mask = new BillboardOcclusionMask();
 			mask.prepare(collector.occluders(), BillboardOcclusionQuality.HIGH, 0, 0, 800, 600, region);
 			return mask;

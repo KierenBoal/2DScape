@@ -30,25 +30,21 @@ public final class BillboardHoverInteractionResolver
 
 	public static Renderable hoveredTarget(Client client, Iterable<Map.Entry<TileItem, GroundItemBillboard>> groundItems)
 	{
-		MenuEntry[] menuEntries = client.getMenuEntries();
-		if (menuEntries == null || menuEntries.length == 0)
-		{
-			return null;
-		}
+		return hoveredTarget(hoveredMenuEntry(client), groundItems);
+	}
 
-		MenuEntry hoveredEntry = client.isMenuOpen()
-			? hoveredMenuEntry(client, menuEntries)
-			: menuEntries[menuEntries.length - 1];
+	static Renderable hoveredTarget(MenuEntry hoveredEntry, Iterable<Map.Entry<TileItem, GroundItemBillboard>> groundItems)
+	{
 		if (hoveredEntry == null)
 		{
 			return null;
 		}
 
-		if (isActorHoverAction(hoveredEntry.getType()))
+		if (isActorHoverAction(hoveredEntry.getType()) || hoveredEntry.getType() == MenuAction.EXAMINE_NPC)
 		{
 			return hoveredEntry.getActor();
 		}
-		return isGroundItemAction(hoveredEntry.getType())
+		return isGroundItemAction(hoveredEntry.getType()) || hoveredEntry.getType() == MenuAction.EXAMINE_ITEM_GROUND
 			? groundItem(hoveredEntry, groundItems)
 			: null;
 	}
@@ -171,7 +167,7 @@ public final class BillboardHoverInteractionResolver
 	/** Resolve only the menu's tile, never scan the scene. */
 	public static TileObject tileObject(Client client, MenuEntry entry)
 	{
-		if (entry == null || !isObjectAction(entry.getType())) return null;
+		if (entry == null || (!isObjectAction(entry.getType()) && entry.getType() != MenuAction.EXAMINE_OBJECT)) return null;
 		WorldView view = client.getWorldView(entry.getWorldViewId());
 		if (view == null || view.getScene() == null) return null;
 		int offset = view.isTopLevel()
@@ -187,10 +183,19 @@ public final class BillboardHoverInteractionResolver
 		int id = entry.getIdentifier();
 		if (tile.getGameObjects() != null)
 			for (GameObject object : tile.getGameObjects())
-				if (object != null && object.getId() == id) return object;
-		if (tile.getWallObject() != null && tile.getWallObject().getId() == id) return tile.getWallObject();
-		if (tile.getDecorativeObject() != null && tile.getDecorativeObject().getId() == id) return tile.getDecorativeObject();
-		return tile.getGroundObject() != null && tile.getGroundObject().getId() == id ? tile.getGroundObject() : null;
+				if (object != null && matches(client, object, id)) return object;
+		if (tile.getWallObject() != null && matches(client, tile.getWallObject(), id)) return tile.getWallObject();
+		if (tile.getDecorativeObject() != null && matches(client, tile.getDecorativeObject(), id)) return tile.getDecorativeObject();
+		return tile.getGroundObject() != null && matches(client, tile.getGroundObject(), id) ? tile.getGroundObject() : null;
+	}
+
+	private static boolean matches(Client client, TileObject object, int id)
+	{
+		if (object.getId() == id) return true;
+		var definition = client.getObjectDefinition(object.getId());
+		if (definition == null || definition.getImpostorIds() == null) return false;
+		var transformed = definition.getImpostor();
+		return transformed != null && transformed.getId() == id;
 	}
 
 	private static MenuEntry hoveredMenuEntry(Client client, MenuEntry[] menuEntries)

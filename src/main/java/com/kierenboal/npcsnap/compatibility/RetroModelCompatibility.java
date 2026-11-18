@@ -1,5 +1,6 @@
 package com.kierenboal.npcsnap.compatibility;
 
+import com.kierenboal.npcsnap.IdentitySets;
 import com.kierenboal.npcsnap.rendering.OwnedModel;
 import com.kierenboal.npcsnap.state.BillboardUpdateScheduler;
 import com.kierenboal.npcsnap.targeting.ClassifiedObjectType;
@@ -16,6 +17,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import lombok.experimental.Delegate;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
@@ -47,9 +50,9 @@ public final class RetroModelCompatibility
 	private final Client client;
 	private Scene scene;
 	private boolean seeded;
-	private final Set<TileObject> known = Collections.newSetFromMap(new IdentityHashMap<>());
-	private final Set<TileObject> pending = Collections.newSetFromMap(new IdentityHashMap<>());
-	private final Set<TileObject> replaced = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<TileObject> known = IdentitySets.create();
+	private final Set<TileObject> pending = IdentitySets.create();
+	private final Set<TileObject> replaced = IdentitySets.create();
 	private final Map<TileObject, Map<RuneLiteObjectController, StandInRenderable>> renderables = new IdentityHashMap<>();
 	private final Map<TileObject, SceneryCapture> captures = new IdentityHashMap<>();
 	private volatile Suppression suppressed = Suppression.EMPTY;
@@ -450,6 +453,7 @@ public final class RetroModelCompatibility
 		}
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	private static final class Placement
 	{
 		private final Model carrier;
@@ -457,15 +461,6 @@ public final class RetroModelCompatibility
 		private final LocalPoint location;
 		private final int level;
 		private final int z;
-
-		private Placement(Model carrier, Model drawnModel, LocalPoint location, int level, int z)
-		{
-			this.carrier = carrier;
-			this.drawnModel = drawnModel;
-			this.location = location;
-			this.level = level;
-			this.z = z;
-		}
 	}
 
 	private static final class Suppression

@@ -2,7 +2,6 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.util.Arrays;
 import java.util.Collections;
@@ -151,7 +150,7 @@ public class BillboardRoofOcclusionTest
 			camera = new BillboardDepthCalculator(client);
 			camera.beginRender();
 			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, camera,
-				new BillboardPerformanceMetrics(), org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
+				org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 			roofs[0][44][48] = 42;
 			SceneTileModel model = modelled ? proxy(SceneTileModel.class,
 				method("getVertexX", new int[] {512, 640, 640, 512}),

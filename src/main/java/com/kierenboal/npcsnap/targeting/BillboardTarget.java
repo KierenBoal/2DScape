@@ -3,6 +3,8 @@ package com.kierenboal.npcsnap.targeting;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.rendering.BillboardPaintOrder;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Renderable;
@@ -10,6 +12,7 @@ import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
 import net.runelite.api.coords.LocalPoint;
 
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BillboardTarget
 {
 	public final BillboardTargetType type;
@@ -23,33 +26,6 @@ public final class BillboardTarget
 	public final int renderPriority;
 	public final PriorityTileKey priorityTileKey;
 	public final BillboardTargetKey targetKey;
-
-	private BillboardTarget(
-		BillboardTargetType type,
-		ClassifiedObjectType classifiedType,
-		Renderable renderable,
-		Actor parentActor,
-		TileObject tileObject,
-		ObservedTileObject observedTileObject,
-		GroundItemBillboard groundItem,
-		double depth,
-		int renderPriority,
-		PriorityTileKey priorityTileKey,
-		BillboardTargetKey targetKey
-	)
-	{
-		this.type = type;
-		this.classifiedType = classifiedType;
-		this.renderable = renderable;
-		this.parentActor = parentActor;
-		this.tileObject = tileObject;
-		this.observedTileObject = observedTileObject;
-		this.groundItem = groundItem;
-		this.depth = depth;
-		this.renderPriority = renderPriority;
-		this.priorityTileKey = priorityTileKey;
-		this.targetKey = targetKey;
-	}
 
 	public static BillboardTarget forRenderable(
 		BillboardTargetType type,

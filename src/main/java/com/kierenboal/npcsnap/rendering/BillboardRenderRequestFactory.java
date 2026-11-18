@@ -1,18 +1,14 @@
 package com.kierenboal.npcsnap.rendering;
 
+import lombok.RequiredArgsConstructor;
 import com.kierenboal.npcsnap.features.GroundItemBillboard;
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.NpcSnapDebug;
-import com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility;
-import com.kierenboal.npcsnap.targeting.BillboardInteractionState;
 import com.kierenboal.npcsnap.targeting.BillboardTarget;
 import com.kierenboal.npcsnap.targeting.BillboardTargetType;
-import com.kierenboal.npcsnap.targeting.ClassifiedObjectType;
-import com.kierenboal.npcsnap.targeting.ObjectClassifier;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.WorldViewLocationResolver;
 
-import java.awt.Color;
 import net.runelite.api.Actor;
 import net.runelite.api.ActorSpotAnim;
 import net.runelite.api.Client;
@@ -22,33 +18,17 @@ import net.runelite.api.Model;
 import net.runelite.api.Projectile;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileItem;
-import net.runelite.api.TileObject;
-import net.runelite.api.Player;
 import net.runelite.api.coords.LocalPoint;
 
+@RequiredArgsConstructor
 public final class BillboardRenderRequestFactory
 {
 	public com.kierenboal.npcsnap.compatibility.RetroModelCompatibility compatibility;
-	public InteractHighlightCompatibility interactHighlightCompatibility;
 	private final Client client;
 	private final NpcSnapConfig config;
 	private final NpcSnapDebug debug;
 	private final BillboardOrientationCalculator orientationCalculator;
-	private final BillboardInteractionState interactionState;
 
-	public BillboardRenderRequestFactory(
-		Client client,
-		NpcSnapConfig config,
-		NpcSnapDebug debug,
-		BillboardOrientationCalculator orientationCalculator,
-		BillboardInteractionState interactionState)
-	{
-		this.client = client;
-		this.config = config;
-		this.debug = debug;
-		this.orientationCalculator = orientationCalculator;
-		this.interactionState = interactionState;
-	}
 
 	public BillboardRenderRequest build(BillboardTarget target)
 	{
@@ -94,42 +74,22 @@ public final class BillboardRenderRequestFactory
 			? NpcSnapDebug.FrameDebugInfo.of(animationId, originalFrame, originalFrame)
 			: null;
 		boolean lowProfile = isLowProfile(part.renderable, model);
-		return objectRequest(request(
+		return objectRequest(new BillboardRenderRequest(
 			part.renderable, model, part.localPoint, part.plane, sceneryVerticalOffset(part),
 			// World objects follow the same camera pitch as actors. Low-profile is
 			// still carried on the request for depth/occlusion decisions, but it must
 			// not activate the ground-item minimum pitch here.
 			sceneryYaw(part), orientationCalculator.relativePitch(),
 			animationId, originalFrame, -1, -1, -1,
-			objectHover(target.tileObject), objectInteract(target.tileObject),
-			config.objectHoverOutlineColor(), config.objectInteractionOutlineColor(), lowProfile,
-			VerticalAnchor.BOTTOM, frameDebugInfo), part);
+			VerticalAnchor.BOTTOM, frameDebugInfo, lowProfile), part);
 	}
 
 	public BillboardRenderRequest buildActor(Actor actor)
 	{
 		LocalPoint mainWorldLocation = WorldViewLocationResolver.toMainWorld(client, actor);
 		if (mainWorldLocation == null && !actor.getWorldView().isTopLevel()) return null;
-		boolean player = actor instanceof Player;
-		boolean enabled = player ? config.enablePlayerInteractionOutline() : config.enableNpcInteractionOutline();
-		boolean replacingInteractionHighlight = interactHighlightCompatibility != null
-			&& (player ? interactHighlightCompatibility.replacesPlayerOutlines()
-				: interactHighlightCompatibility.replacesNpcOutlines());
-		boolean showHover = !replacingInteractionHighlight || (player
-			? interactHighlightCompatibility.playerShowHover()
-			: interactHighlightCompatibility.npcShowHover());
-		boolean showInteract = !replacingInteractionHighlight || (player
-			? interactHighlightCompatibility.playerShowInteract()
-			: interactHighlightCompatibility.npcShowInteract());
-		boolean interactionOutline = enabled && showInteract && actor == interactionState.frameInteractionTarget();
-		boolean hoverOutline = !interactionOutline
-			&& enabled
-			&& showHover
-			&& actor == interactionState.frameHoveredTarget();
-		Color hoverColor = player ? config.playerHoverOutlineColor() : config.npcHoverOutlineColor();
-		Color interactionColor = player ? config.playerInteractionOutlineColor() : config.npcInteractionOutlineColor();
 		Model model = compatibility == null ? actor.getModel() : compatibility.model(actor);
-		return actorRequest(request(
+		return actorRequest(new BillboardRenderRequest(
 			actor, model, mainWorldLocation,
 			actor.getWorldView().isTopLevel() ? actor.getWorldView().getPlane() : 0,
 			actor.getAnimationHeightOffset(),
@@ -137,9 +97,8 @@ public final class BillboardRenderRequestFactory
 				WorldViewLocationResolver.toMainWorldOrientation(client.getTopLevelWorldView(), actor), mainWorldLocation),
 			config.enableActorWorldPlaneProjection() ? 0 : orientationCalculator.relativePitch(actor),
 			actor.getAnimation(), actor.getAnimationFrame(), actor.getPoseAnimation(), actor.getPoseAnimationFrame(),
-			BillboardAnimatedTextures.findAnimatedTextureId(actor), hoverOutline, interactionOutline,
-			hoverColor, interactionColor,
-			false, VerticalAnchor.BOTTOM, debug.actorFrameDebugInfo(actor)), actor);
+			BillboardAnimatedTextures.findAnimatedTextureId(actor),
+			VerticalAnchor.BOTTOM, debug.actorFrameDebugInfo(actor), false), actor);
 	}
 
 	public BillboardRenderRequest buildStaticObjectPart(ObjectRenderablePart part)
@@ -155,10 +114,10 @@ public final class BillboardRenderRequestFactory
 			return null;
 		}
 		boolean lowProfile = isLowProfile(part.renderable, model);
-		return objectRequest(request(
+		return objectRequest(new BillboardRenderRequest(
 			part.renderable, model, part.localPoint, part.plane, sceneryVerticalOffset(part),
 			sceneryYaw(part), orientationCalculator.relativePitch(),
-			-1, -1, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM, null), part);
+			-1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, lowProfile), part);
 	}
 
 	public BillboardRenderRequest buildActorSpotAnimation(ActorSpotAnim spotAnimation, Actor actor)
@@ -177,14 +136,14 @@ public final class BillboardRenderRequestFactory
 		int plane = actor.getWorldView() != null && actor.getWorldView().isTopLevel()
 			? actor.getWorldView().getPlane()
 			: 0;
-		return actorRequest(request(
+		return actorRequest(new BillboardRenderRequest(
 			spotAnimation, model, localPoint,
 			plane,
 			BillboardEffectGeometry.actorSpotVerticalOffset(spotAnimation),
 			orientationCalculator.relativeYaw(actor), orientationCalculator.relativePitch(lowProfile),
-			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1, false, false,
-			lowProfile, BillboardEffectGeometry.actorSpotVerticalAnchor(spotAnimation),
-			NpcSnapDebug.FrameDebugInfo.of(spotAnimation.getId(), spotAnimation.getFrame(), spotAnimation.getFrame())), actor);
+			spotAnimation.getId(), spotAnimation.getFrame(), -1, -1, -1,
+			BillboardEffectGeometry.actorSpotVerticalAnchor(spotAnimation),
+			NpcSnapDebug.FrameDebugInfo.of(spotAnimation.getId(), spotAnimation.getFrame(), spotAnimation.getFrame()), lowProfile), actor);
 	}
 
 	public BillboardRenderRequest buildProjectile(Projectile projectile)
@@ -192,12 +151,12 @@ public final class BillboardRenderRequestFactory
 		int capturedFrame = projectile.getAnimationFrame();
 		Model model = projectile.getModel();
 		boolean lowProfile = isLowProfile(projectile, model);
-		return request(
+		return new BillboardRenderRequest(
 			projectile, model, BillboardProjectileGeometry.localPoint(projectile), projectile.getFloor(),
 			BillboardProjectileGeometry.verticalOffset(client, projectile),
 			orientationCalculator.relativeYaw(projectile), orientationCalculator.relativePitch(lowProfile),
-			projectile.getId(), capturedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM,
-			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), capturedFrame));
+			projectile.getId(), capturedFrame, -1, -1, -1, VerticalAnchor.BOTTOM,
+			NpcSnapDebug.FrameDebugInfo.of(projectile.getId(), projectile.getAnimationFrame(), capturedFrame), lowProfile);
 	}
 
 	public BillboardRenderRequest buildGraphicsObject(GraphicsObject graphicsObject)
@@ -205,12 +164,12 @@ public final class BillboardRenderRequestFactory
 		int capturedFrame = graphicsObject.getAnimationFrame();
 		Model model = graphicsObject.getModel();
 		boolean lowProfile = isLowProfile(graphicsObject, model);
-		return request(
+		return new BillboardRenderRequest(
 			graphicsObject, model, graphicsObject.getLocation(), graphicsObject.getLevel(),
 			BillboardEffectGeometry.graphicsVerticalOffset(client, graphicsObject),
 			orientationCalculator.relativeYaw(), orientationCalculator.relativePitch(lowProfile),
-			graphicsObject.getId(), capturedFrame, -1, -1, -1, false, false, lowProfile, VerticalAnchor.BOTTOM,
-			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), capturedFrame));
+			graphicsObject.getId(), capturedFrame, -1, -1, -1, VerticalAnchor.BOTTOM,
+			NpcSnapDebug.FrameDebugInfo.of(graphicsObject.getId(), graphicsObject.getAnimationFrame(), capturedFrame), lowProfile);
 	}
 
 	public BillboardRenderRequest buildGroundItem(TileItem item, GroundItemBillboard groundItem)
@@ -221,90 +180,11 @@ public final class BillboardRenderRequestFactory
 		}
 		Model model = item.getModel();
 		boolean lowProfile = isLowProfile(item, model);
-		return request(
+		return new BillboardRenderRequest(
 			item, model, groundItem.localPoint, groundItem.plane, groundItem.verticalOffset,
 			orientationCalculator.relativeGroundItemYaw(), orientationCalculator.relativeGroundItemPitch(),
 			item.getId(), item.getQuantity(), -1, -1, item.getId(),
-			config.enableGroundItemInteractionOutline()
-				&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesItemOutlines()
-					|| interactHighlightCompatibility.itemShowHover()) && item == interactionState.frameHoveredTarget()
-				&& item != interactionState.frameInteractionTarget(),
-			config.enableGroundItemInteractionOutline()
-				&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesItemOutlines()
-					|| interactHighlightCompatibility.itemShowInteract()) && item == interactionState.frameInteractionTarget(),
-			config.groundItemHoverOutlineColor(), config.groundItemInteractionOutlineColor(),
-			lowProfile, VerticalAnchor.BOTTOM, null);
-	}
-
-	private boolean objectInteract(TileObject object)
-	{
-		// The identity check comes first: this runs for every scenery part, and only one can match.
-		return object == interactionState.clickedObject() && config.enableObjectInteractionOutline()
-			&& ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config)
-			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
-				|| interactHighlightCompatibility.objectShowInteract());
-	}
-
-	private boolean objectHover(TileObject object)
-	{
-		return object == interactionState.hoveredObject() && config.enableObjectInteractionOutline()
-			&& ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config)
-			&& !objectInteract(object)
-			&& (interactHighlightCompatibility == null || !interactHighlightCompatibility.replacesObjectOutlines()
-				|| interactHighlightCompatibility.objectShowHover());
-	}
-
-	private BillboardRenderRequest request(
-		net.runelite.api.Renderable renderable,
-		net.runelite.api.Model model,
-		LocalPoint localPoint,
-		int plane,
-		int verticalOffset,
-		int relativeYaw,
-		int relativePitch,
-		int animationId,
-		int animationFrame,
-		int poseAnimationId,
-		int poseAnimationFrame,
-		int animatedTextureId,
-		boolean hoverOutline,
-		boolean interactionOutline,
-		boolean lowProfile,
-		VerticalAnchor verticalAnchor,
-		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
-	{
-		return request(
-			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
-			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			hoverOutline, interactionOutline, null, null, lowProfile, verticalAnchor, frameDebugInfo);
-	}
-
-	private BillboardRenderRequest request(
-		net.runelite.api.Renderable renderable,
-		net.runelite.api.Model model,
-		LocalPoint localPoint,
-		int plane,
-		int verticalOffset,
-		int relativeYaw,
-		int relativePitch,
-		int animationId,
-		int animationFrame,
-		int poseAnimationId,
-		int poseAnimationFrame,
-		int animatedTextureId,
-		boolean hoverOutline,
-		boolean interactionOutline,
-		Color hoverOutlineColor,
-		Color interactionOutlineColor,
-		boolean lowProfile,
-		VerticalAnchor verticalAnchor,
-		NpcSnapDebug.FrameDebugInfo frameDebugInfo)
-	{
-		return new BillboardRenderRequest(
-			renderable, model, localPoint, plane, verticalOffset, relativeYaw, relativePitch,
-			animationId, animationFrame, poseAnimationId, poseAnimationFrame, animatedTextureId,
-			hoverOutline, interactionOutline, hoverOutlineColor, interactionOutlineColor, verticalAnchor, frameDebugInfo,
-			lowProfile);
+			VerticalAnchor.BOTTOM, null, lowProfile);
 	}
 
 	private int sceneryYaw(ObjectRenderablePart part)

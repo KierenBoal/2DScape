@@ -10,7 +10,6 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Polygon;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
@@ -44,7 +43,7 @@ public class BillboardOcclusionMaskTest
 		for (int y = 0; y < 4; y++) for (int x = 0; x < 32; x++) shadow.setRGB(x, y, 0x80000000);
 		BillboardRenderRequest request = new BillboardRenderRequest(
 			proxy(Renderable.class, method("getModelHeight", 100)), proxy(Model.class), new LocalPoint(0, 0),
-			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		BillboardRenderResult layer = new BillboardRenderResult(geometry, shadow, bounds);
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
 			new BillboardRenderResult(geometry, body, bounds, layer), 1, null, 1);
@@ -57,7 +56,7 @@ public class BillboardOcclusionMaskTest
 			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
 				new Rectangle(0, 0, 16, 4), 100f, "wall")), quality,
 				0, 0, 32, 4, null, null);
-			BillboardFrameBuffer frame = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+			BillboardFrameBuffer frame = new BillboardFrameBuffer(mask,
 				prepared -> BillboardDepthSurface.from(camera, prepared, 0));
 			for (boolean debug : new boolean[] {false, true})
 			{
@@ -85,7 +84,7 @@ public class BillboardOcclusionMaskTest
 		sprite.setRGB(0, 0, 8, 8, pixels, 0, 8);
 		Renderable actor = proxy(Renderable.class, method("getModelHeight", 100));
 		BillboardRenderRequest request = new BillboardRenderRequest(actor, proxy(Model.class), new LocalPoint(0, 0),
-			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
 			new BillboardRenderResult(geometry, sprite, imageBounds), 1);
 		BillboardDepthCalculator camera = new BillboardDepthCalculator(proxy(Client.class));
@@ -100,7 +99,7 @@ public class BillboardOcclusionMaskTest
 			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
 		{
 			BillboardOcclusionMask mask = new BillboardOcclusionMask();
-			BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+			BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,
 				prepared -> BillboardDepthSurface.from(camera, prepared, 0));
 			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(imageBounds,
 				180f, "wall", 128, 0x102030)), quality, 0, 0, 8, 8, null, null);
@@ -133,7 +132,7 @@ public class BillboardOcclusionMaskTest
 			for (int x = 0; x < 8; x++) { sprite.setRGB(x, y, 0xFF804020); }
 		}
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,
 			draw -> BillboardDepthSurface.from(depth, draw, 0));
 		for (BillboardOcclusionQuality quality : new BillboardOcclusionQuality[] {
 			BillboardOcclusionQuality.LOW, BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH})
@@ -142,7 +141,7 @@ public class BillboardOcclusionMaskTest
 			{
 				vertexY[2] = vertexY[3] = -100;
 				BillboardRenderRequest request = new BillboardRenderRequest(actor, shared, new LocalPoint(0, 0),
-					0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+					0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 				PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
 					new BillboardRenderResult(new Rectangle(0, 0, 8, 8), sprite, new Rectangle(-20, -100, 40, 100)), 1);
 				// A later animated entity/scenery lookup overwrites the shared backing arrays.
@@ -183,33 +182,6 @@ public class BillboardOcclusionMaskTest
 			new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 8, 8), 10f, "other")),
 			BillboardOcclusionQuality.HIGH, 0, 0, 8, 8);
 		assertTrue(mask.isOccluded(2, 2, 100d, owner));
-	}
-
-	@Test
-	public void maskStageTimersPreserveTransparencyAndPublishUnderBuildTimer()
-	{
-		java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
-		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(
-			() -> clock.getAndAdd(100_000_000L));
-		BillboardOcclusionMask mask = new BillboardOcclusionMask(metrics);
-		metrics.beginFrame(true);
-		try (BillboardPerformanceMetrics.Timer ignored = metrics.time("Build occlusion mask"))
-		{
-			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(
-				new Rectangle(0, 0, 8, 8), 20f, "canopy", 128)),
-				BillboardOcclusionQuality.HIGH, 0, 0, 8, 8);
-		}
-		metrics.finishFrame();
-		assertEquals(128, mask.transmittanceAt(2, 2, 40d));
-		for (String stage : new String[] {"Initialize mask buffers", "Mark active mask regions", "Index occluder coverage"})
-		{
-			assertTrue(stage, metrics.rows(20).stream().anyMatch(row -> stage.equals(row.name) && row.depth == 2));
-		}
-		metrics.beginFrame(false);
-		mask.prepare(Collections.emptyList(), BillboardOcclusionQuality.OFF, 0, 0, 8, 8);
-		metrics.finishFrame();
-		assertEquals(255, mask.transmittanceAt(2, 2, 40d));
-		assertTrue(metrics.rows(20).isEmpty());
 	}
 
 	@Test
@@ -359,7 +331,7 @@ public class BillboardOcclusionMaskTest
 		BillboardDepthSurface surface = new BillboardDepthSurface(
 			new BillboardDepthCalculator(client),
 			0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4));
-		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(), draw -> surface);
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,  draw -> surface);
 		BufferedImage near = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
 		BufferedImage far = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
 		for (int y = 0; y < 4; y++)
@@ -431,7 +403,7 @@ public class BillboardOcclusionMaskTest
 				0, 0, 0d, 4, new Rectangle(0, -4, 4, 4), new Rectangle(0, 0, 4, 4));
 		BillboardFrameBuffer buffer =
 			new BillboardFrameBuffer(mask,
-				new BillboardPerformanceMetrics(), draw -> surface);
+				 draw -> surface);
 		BufferedImage sprite = new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB);
 		for (int y = 0; y < 4; y++)
 		{

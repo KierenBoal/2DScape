@@ -34,12 +34,12 @@ public class BillboardRedrawReasonTest
 	@Test
 	public void combinesForcedAndCacheReasonsWithoutDuplicatesAndFormatsWithCommas()
 	{
-		FrameUpdatePlan plan = new FrameUpdatePlan(1, true, true, null, null, 10, 1, 1, 1);
+		FrameUpdatePlan plan = new FrameUpdatePlan(1, true, null, null, 10, 1, 1, 1);
 		CachedBillboard displayed = cached(key(1, 5, 2, 6, false, 100, 0, 0));
 		plan.redrawReasons.addAll(BillboardRedrawReason.cacheChanges(displayed,
 			key(3, 6, 2, 6, true, 100, 0, 0), bounds, 20));
-		assertEquals(4, plan.redrawReasons.size());
-		assertEquals("Frame count, Model/hull size change, Animation change, Hover/interaction change",
+		assertEquals(3, plan.redrawReasons.size());
+		assertEquals("Frame count, Model/hull size change, Animation change",
 			BillboardRedrawReason.format(plan.redrawReasons));
 	}
 
@@ -104,7 +104,7 @@ public class BillboardRedrawReasonTest
 		int textureState, int animatedTextureState)
 	{
 		BillboardRenderRequest request = new BillboardRenderRequest(null, proxy(Model.class, method("getVerticesCount", 4)),
-			null, 0, 0, 0, 0, action, frame, pose, poseFrame, -1, hover, false, VerticalAnchor.BOTTOM, null);
+			null, 0, 0, 0, 0, action, frame, pose, poseFrame, -1, VerticalAnchor.BOTTOM, null, false);
 		return BillboardCacheKey.create(request, config, 1, 8, quality, textureState, animatedTextureState);
 	}
 }

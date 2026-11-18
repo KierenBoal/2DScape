@@ -16,7 +16,7 @@ public class BillboardPerformanceMetricsTest
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 
 		metrics.beginFrame(false);
-		metrics.addElapsed("Hidden", 10_000_000L);
+		timed(metrics, clock, "Hidden", 10_000_000L);
 		metrics.finishFrame();
 
 		assertTrue(metrics.rows(10).isEmpty());
@@ -29,8 +29,8 @@ public class BillboardPerformanceMetricsTest
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 
 		metrics.beginFrame(true);
-		metrics.addElapsed("Stage", 10_000_000L);
-		clock.advanceMillis(499);
+		timed(metrics, clock, "Stage", 10_000_000L);
+		clock.advanceMillis(489);
 		metrics.finishFrame();
 
 		assertTrue(metrics.rows(10).isEmpty());
@@ -65,8 +65,7 @@ public class BillboardPerformanceMetricsTest
 		metrics.beginFrame(true);
 		try (BillboardPerformanceMetrics.Timer ignored = metrics.time("Rasterization"))
 		{
-			metrics.addElapsed("Painting triangles", 12_000_000L);
-			clock.advanceMillis(12);
+			timed(metrics, clock, "Painting triangles", 12_000_000L);
 		}
 		clock.advanceMillis(488);
 		metrics.finishFrame();
@@ -84,9 +83,9 @@ public class BillboardPerformanceMetricsTest
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 
 		metrics.beginFrame(true);
-		metrics.addElapsed("Fast", 5_000_000L);
-		metrics.addElapsed("Slow", 10_000_000L);
-		clock.advanceMillis(500);
+		timed(metrics, clock, "Fast", 5_000_000L);
+		timed(metrics, clock, "Slow", 10_000_000L);
+		clock.advanceMillis(485);
 		metrics.finishFrame();
 
 		List<BillboardPerformanceMetrics.MetricRow> rows = metrics.rows(10);
@@ -101,10 +100,10 @@ public class BillboardPerformanceMetricsTest
 		TestClock clock = new TestClock();
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 		metrics.beginFrame(true);
-		metrics.addElapsed("Below", 4_500_000L);
-		metrics.addElapsed("Almost", 4_999_999L);
-		metrics.addElapsed("Exactly", 5_000_000L);
-		clock.advanceMillis(500);
+		timed(metrics, clock, "Below", 4_500_000L);
+		timed(metrics, clock, "Almost", 4_999_999L);
+		timed(metrics, clock, "Exactly", 5_000_000L);
+		clock.advanceNanos(485_500_001L);
 		metrics.finishFrame();
 		assertEquals(2, metrics.rows(2).size());
 		assertEquals("Exactly", metrics.rows(2).get(1).name);
@@ -124,28 +123,31 @@ public class BillboardPerformanceMetricsTest
 	}
 
 	@Test
-	public void exposesMoreThanTwentyRowsAndPublishesCountersWithTheSnapshot()
+	public void exposesMoreThanTwentyTimingRows()
 	{
 		TestClock clock = new TestClock();
 		BillboardPerformanceMetrics metrics = new BillboardPerformanceMetrics(clock::nanos);
 		metrics.beginFrame(true);
-		for (int i = 0; i < 30; i++) metrics.addElapsed("Stage " + i, 5_000_000L);
-		metrics.count("Actors", 82);
-		clock.advanceMillis(500);
+		for (int i = 0; i < 30; i++) timed(metrics, clock, "Stage " + i, 5_000_000L);
+		clock.advanceMillis(350);
 		metrics.finishFrame();
 		assertEquals(31, metrics.rows(Integer.MAX_VALUE).size());
-		assertEquals(Long.valueOf(82), metrics.counters().get("Actors"));
-		metrics.beginFrame(true);
-		metrics.count("Actors", 1);
-		assertEquals(Long.valueOf(82), metrics.counters().get("Actors"));
 	}
 
 	private static void recordFrame(BillboardPerformanceMetrics metrics, TestClock clock, String name, int elapsedMillis, int frameMillis)
 	{
 		metrics.beginFrame(true);
-		metrics.addElapsed(name, elapsedMillis * 1_000_000L);
-		clock.advanceMillis(frameMillis);
+		timed(metrics, clock, name, elapsedMillis * 1_000_000L);
+		clock.advanceMillis(frameMillis - elapsedMillis);
 		metrics.finishFrame();
+	}
+
+	private static void timed(BillboardPerformanceMetrics metrics, TestClock clock, String name, long elapsedNanos)
+	{
+		try (BillboardPerformanceMetrics.Timer ignored = metrics.time(name))
+		{
+			clock.advanceNanos(elapsedNanos);
+		}
 	}
 
 	private static final class TestClock
@@ -159,7 +161,12 @@ public class BillboardPerformanceMetricsTest
 
 		private void advanceMillis(int millis)
 		{
-			nanos += millis * 1_000_000L;
+			advanceNanos(millis * 1_000_000L);
+		}
+
+		private void advanceNanos(long amount)
+		{
+			nanos += amount;
 		}
 	}
 }

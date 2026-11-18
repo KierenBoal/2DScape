@@ -14,7 +14,6 @@ public enum BillboardRedrawReason
 	FRAME_COUNT("Frame count"),
 	ACTOR_RESIZE("Model/hull size change"),
 	ANIMATION_CHANGE("Animation change"),
-	INTERACTION_CHANGE("Hover/interaction change"),
 	VIEW_CHANGE("View angle change"),
 	MODEL_CHANGE("Model change"),
 	TEXTURE_CHANGE("Texture change"),
@@ -57,11 +56,6 @@ public enum BillboardRedrawReason
 		if (previous.animationId != current.animationId || previous.poseAnimationId != current.poseAnimationId)
 		{
 			reasons.add(ANIMATION_CHANGE);
-		}
-		if (previous.hoverOutline != current.hoverOutline || previous.interactOutline != current.interactOutline
-			|| previous.hoverOutlineColor != current.hoverOutlineColor || previous.interactOutlineColor != current.interactOutlineColor)
-		{
-			reasons.add(INTERACTION_CHANGE);
 		}
 		if (previous.relativeYaw != current.relativeYaw || previous.relativePitch != current.relativePitch)
 		{

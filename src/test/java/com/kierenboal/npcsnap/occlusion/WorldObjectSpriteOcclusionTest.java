@@ -7,7 +7,6 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.List;
@@ -53,7 +52,7 @@ public class WorldObjectSpriteOcclusionTest
 			method("getCameraY", -1000), method("getCameraPitch", 2048),
 			method("getScale", 512), method("getViewportHeight", 4)));
 		BillboardOcclusionMask mask = new BillboardOcclusionMask();
-		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,
 			draw -> BillboardDepthSurface.from(calculator, draw, 0));
 		for (int height : new int[] {100, 0, 100, 1, 32, 1000, 0, 100})
 		{
@@ -62,7 +61,7 @@ public class WorldObjectSpriteOcclusionTest
 				method("getVerticesY", new float[] {0, 0, -height}), method("getVerticesZ", new float[3]));
 			BillboardRenderRequest request = new BillboardRenderRequest(
 				proxy(Renderable.class, method("getModelHeight", height)), liveModel, new LocalPoint(0, 0),
-				0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, null, null,
+				0, 0, 0, 0, -1, -1, -1, -1, -1,
 				VerticalAnchor.BOTTOM, null, height <= 32);
 			mask.prepare(List.of(new BillboardOcclusionMask.Occluder(new Rectangle(0, 0, 2, 4), 500, "wall")),
 				quality, 0, 0, 4, 4, bounds);

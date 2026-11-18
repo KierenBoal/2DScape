@@ -9,6 +9,11 @@ import static org.junit.Assert.*;
 
 public class InteractHighlightCompatibilityTest
 {
+	private static final Object[] TARGETS = {
+		com.kierenboal.npcsnap.TestProxies.proxy(net.runelite.api.NPC.class),
+		com.kierenboal.npcsnap.TestProxies.proxy(net.runelite.api.Player.class),
+		com.kierenboal.npcsnap.TestProxies.proxy(net.runelite.api.TileItem.class),
+		com.kierenboal.npcsnap.TestProxies.proxy(net.runelite.api.TileObject.class)};
 	private static final String[] TYPES = {"npc", "player", "item", "object"};
 
 	@Test
@@ -24,8 +29,7 @@ public class InteractHighlightCompatibilityTest
 				assertEquals("false", compatibility.live(TYPES[index] + "ShowHover"));
 				assertEquals(index == selected ? "false" : null, compatibility.live(TYPES[index] + "ShowInteract"));
 			}
-			assertFalse(new boolean[] {compatibility.npcShowHover(), compatibility.playerShowHover(),
-				compatibility.itemShowHover(), compatibility.objectShowHover()}[selected]);
+			assertNull(compatibility.color(TARGETS[selected], false, false, 10));
 			compatibility.synchronize(true, false, false, false, false);
 			for (String type : TYPES)
 			{
@@ -53,8 +57,6 @@ public class InteractHighlightCompatibilityTest
 				compatibility.synchronize(true, true, true, true, true);
 			}
 			assertEquals(original, compatibility.values);
-			assertFalse(compatibility.replacesItemOutlines());
-			assertFalse(compatibility.replacesObjectOutlines());
 		}
 	}
 
@@ -81,7 +83,7 @@ public class InteractHighlightCompatibilityTest
 		compatibility.values = new HashMap<>();
 		compatibility.put("itemShowHover", "false");
 		compatibility.onProfileChanged(true, false, false, true, false);
-		assertFalse(compatibility.itemShowHover());
+		assertNull(compatibility.color(TARGETS[2], false, false, 0));
 		compatibility.restore();
 		assertEquals("false", compatibility.live("itemShowHover"));
 		assertEquals(1, compatibility.values.size());
@@ -112,10 +114,48 @@ public class InteractHighlightCompatibilityTest
 		}
 	}
 
+	@Test
+	public void standaloneAndDualGeometryUseSavedColorsAndClickTiming()
+	{
+		Memory compatibility = new Memory();
+		for (boolean active : new boolean[] {false, true})
+		{
+			compatibility.active = active;
+			compatibility.synchronize(false, true, true, true, true);
+			assertTrue(compatibility.values.isEmpty());
+			var config = compatibility.settings();
+			assertEquals(config.npcAttackHoverHighlightColor(), compatibility.color(TARGETS[0], true, true, 0));
+			assertEquals(java.awt.Color.WHITE, compatibility.color(TARGETS[0], true, true, 5));
+			assertEquals(config.npcAttackHighlightColor(), compatibility.color(TARGETS[0], true, true, 10));
+			assertEquals(config.npcInteractHighlightColor(), compatibility.color(TARGETS[0], true, false, 15));
+		}
+	}
+
+	@Test
+	public void standaloneReflectsLiveVisibilityEditsWithoutTouchingNativeSettings()
+	{
+		Memory compatibility = new Memory();
+		compatibility.active = false;
+		compatibility.synchronize(true, true, true, true, true);
+		assertTrue(compatibility.values.isEmpty());
+		ConfigChanged event = new ConfigChanged();
+		event.setGroup("interacthighlight");
+		event.setKey("itemShowHover");
+		compatibility.put(event.getKey(), "false");
+		compatibility.settingsChanged(event);
+		assertNull(compatibility.color(TARGETS[2], false, false, 0));
+		assertNotNull(compatibility.color(TARGETS[2], true, false, 10));
+		assertEquals(1, compatibility.values.size());
+	}
+
 	private static final class Memory extends InteractHighlightCompatibility
 	{
 		Map<String, String> values = new HashMap<>();
 		boolean active = true;
+		@Override net.runelite.client.plugins.interacthighlight.InteractHighlightConfig settings()
+		{
+			return new net.runelite.client.plugins.interacthighlight.InteractHighlightConfig() {};
+		}
 		void put(String key, String value) { setConfiguration("interacthighlight", key, value); }
 		String live(String key) { return getConfiguration("interacthighlight", key); }
 		@Override String getConfiguration(String group, String key) { return values.get(group + "." + key); }

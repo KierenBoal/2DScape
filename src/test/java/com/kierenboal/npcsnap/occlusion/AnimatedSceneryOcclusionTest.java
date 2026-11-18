@@ -2,7 +2,6 @@ package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.util.Collections;
 import java.util.List;
@@ -182,7 +181,7 @@ public class AnimatedSceneryOcclusionTest
 			});
 			visibility = new BillboardSceneVisibility(callbacks::get, callbacks::set);
 			collector = new BillboardWorldOcclusionCollector(client, new NpcSnapConfig() {}, new BillboardDepthCalculator(client),
-				new BillboardPerformanceMetrics(), org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
+				org.slf4j.LoggerFactory.getLogger(getClass()), visibility);
 		}
 
 		Model setModel(int center, int transparency)

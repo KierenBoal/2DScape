@@ -2,8 +2,6 @@ package com.kierenboal.npcsnap;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static com.kierenboal.npcsnap.TestProxies.proxy;
-
 import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.state.BillboardRedrawReason;
 import java.awt.Color;
@@ -11,7 +9,6 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.EnumSet;
-import net.runelite.api.Client;
 import org.junit.Test;
 
 public class NpcSnapDebugTest
@@ -25,7 +22,7 @@ public class NpcSnapDebugTest
 		};
 		assertEquals(false,new NpcSnapConfig() {}.debugDrawBillboardOutline());
 		assertEquals(false,config.debugDrawBillboardOutline());
-		NpcSnapDebug debug=new NpcSnapDebug(proxy(Client.class),config);
+		NpcSnapDebug debug=new NpcSnapDebug(config);
 		BillboardDrawGeometry geometry=BillboardDrawGeometry.projected(
 			com.kierenboal.npcsnap.rendering.BillboardProjectedQuad.create(
 				new com.kierenboal.npcsnap.rendering.BillboardCanvasPoint(10,20,100,0,0),
@@ -58,55 +55,6 @@ public class NpcSnapDebugTest
 	}
 
 	@Test
-	public void metricsContextHasFourCompactLines()
-	{
-		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), new NpcSnapConfig() {});
-		java.util.List<String> context = debug.performanceContext(java.util.Map.of(
-			"Actors", 7L, "Items", 4L, "Effects", 5L, "Boats", 1L,
-			"Faces available", 32_000L, "Faces inspected", 22_500L, "Faces accepted", 7_000L));
-		assertEquals(4, context.size());
-		assertEquals("Player (unavailable)", context.get(0));
-		assertTrue(context.get(1).startsWith("Camera (X:"));
-		assertTrue(context.get(1).contains("Pitch: 0, Yaw: 0, Zoom: 0"));
-		assertTrue(context.get(2).contains("Actors: 7, Items: 4, Effects: 5, Boats: 1"));
-		assertTrue(context.get(3).contains("Faces: 32.0k, Inspected: 22.5k, Accepted: 7.0k"));
-		assertEquals("999", NpcSnapDebug.compactCount(999));
-		assertEquals("1.2m", NpcSnapDebug.compactCount(1_200_000));
-		assertTrue(NpcSnapDebug.performanceRowCapacityForContextHeight(600, 15, 4 * 12)
-			> NpcSnapDebug.performanceRowCapacityForContextHeight(600, 15, 4 * 15));
-	}
-
-	@Test
-	public void metricsContextAddsSceneryStagesOnlyWhenTheyWerePublished()
-	{
-		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), new NpcSnapConfig() {});
-		java.util.Map<String, Long> counters = new java.util.HashMap<>();
-		counters.put("Scenery GPU", 1L);
-		counters.put("Scenery tracked", 1_500L);
-		counters.put("Scenery seen models", 1_500L);
-		counters.put("Scenery seen baked", 40L);
-		counters.put("Scenery eligible", 300L);
-		counters.put("Scenery active", 90L);
-		counters.put("Scenery drawable", 90L);
-		counters.put("Scenery hidden", 12L);
-		java.util.List<String> context = debug.performanceContext(counters);
-		assertEquals(6, context.size());
-		assertEquals("Scenery (GPU: 1, Tracked: 1.5k, Model/Baked/Other: 1.5k/40/0, Eligible: 300, Active: 90)", context.get(4));
-		assertEquals("Scenery swap (Requests: 0, Plans: 0, Cached: 0, Drawable: 90, Zones: 0, Hide/Show/Untracked: 12/0/0, Replaced: 0)",
-			context.get(5));
-	}
-
-	@Test
-	public void metricsCapacityUsesBothViewportMarginsAndResizesBeyondTwentyRows()
-	{
-		assertEquals(34, NpcSnapDebug.performanceRowCapacityForContextHeight(600, 15, 3 * 15));
-		assertEquals(14, NpcSnapDebug.performanceRowCapacityForContextHeight(300, 15, 3 * 15));
-		assertEquals(0, NpcSnapDebug.performanceRowCapacityForContextHeight(40, 15, 3 * 15));
-		int rows = NpcSnapDebug.performanceRowCapacityForContextHeight(600, 15, 3 * 15);
-		assertTrue(8 + 10 + (rows + 4) * 15 <= 600 - 8);
-	}
-
-	@Test
 	public void metricsDrawingClipsToViewportMarginsIncludingTinyViews()
 	{
 		java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
@@ -115,24 +63,31 @@ public class NpcSnapDebugTest
 		timings.beginFrame(true);
 		clock.set(500_000_000L);
 		timings.finishFrame();
-		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), new NpcSnapConfig() {});
+		NpcSnapDebug debug = new NpcSnapDebug(new NpcSnapConfig() {});
 		for (int height : new int[] {40, 300, 600})
 		{
 			BufferedImage image = new BufferedImage(900, 700, BufferedImage.TYPE_INT_ARGB);
 			Graphics2D graphics = image.createGraphics();
 			Rectangle viewport = new Rectangle(20, 30, 800, height);
-			try { debug.drawPerformanceMetrics(graphics, viewport, timings.rows(100), java.util.Collections.emptyMap()); }
+			try { debug.drawPerformanceMetrics(graphics, viewport, timings.rows(100)); }
 			finally { graphics.dispose(); }
 			Rectangle permitted = new Rectangle(28, 38, 784, height - 16);
 			int painted = 0;
+			boolean hasForeground = false;
 			for (int y = 0; y < image.getHeight(); y++)
 				for (int x = 0; x < image.getWidth(); x++)
-					if ((image.getRGB(x, y) >>> 24) != 0)
+				{
+					int pixel = image.getRGB(x, y);
+					if ((pixel >>> 24) != 0)
 					{
 						assertTrue(permitted.contains(x, y));
 						painted++;
+						hasForeground |= (pixel & 0xFFFFFF) != 0;
 					}
+				}
 			assertTrue(painted > 0);
+			// At 40 pixels tall the clipped table has room for headings only.
+			assertTrue("The timing table should draw visible text at height " + height, hasForeground);
 		}
 	}
 
@@ -143,7 +98,7 @@ public class NpcSnapDebugTest
 		{
 			@Override public boolean debugShowFrameRedraws() { return true; }
 		};
-		NpcSnapDebug debug = new NpcSnapDebug(proxy(Client.class), config);
+		NpcSnapDebug debug = new NpcSnapDebug(config);
 		for (int width : new int[] {0, 1, 2, 3})
 		{
 			BufferedImage image = new BufferedImage(700, 200, BufferedImage.TYPE_INT_ARGB);
@@ -191,7 +146,7 @@ public class NpcSnapDebugTest
 		Graphics2D graphics = image.createGraphics();
 		try
 		{
-			new NpcSnapDebug(proxy(Client.class), config).drawBillboardDebugForeground(graphics,
+			new NpcSnapDebug(config).drawBillboardDebugForeground(graphics,
 				NpcSnapDebug.RenderDebug.forGeometry(
 					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 40, 40)),
 					0, 0, 0, true, Color.MAGENTA, null, EnumSet.noneOf(BillboardRedrawReason.class)));

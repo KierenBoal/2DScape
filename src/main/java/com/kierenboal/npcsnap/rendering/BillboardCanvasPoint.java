@@ -1,5 +1,8 @@
 package com.kierenboal.npcsnap.rendering;
 
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
 public final class BillboardCanvasPoint
 {
 	public final double x;
@@ -9,12 +12,4 @@ public final class BillboardCanvasPoint
 	public final double verticalRight;
 	public final double verticalUp;
 
-	public BillboardCanvasPoint(double x, double y, double depth, double verticalRight, double verticalUp)
-	{
-		this.x = x;
-		this.y = y;
-		this.depth = depth;
-		this.verticalRight = verticalRight;
-		this.verticalUp = verticalUp;
-	}
 }

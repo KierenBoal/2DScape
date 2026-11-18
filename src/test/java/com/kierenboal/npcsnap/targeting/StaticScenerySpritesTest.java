@@ -146,7 +146,7 @@ public class StaticScenerySpritesTest
 	}
 
 	@Test
-	public void diagnosticsCountEachSwapStageSinceTheSceneWasSeeded()
+	public void tracksAndSuppressesOnlyModelBackedStaticScenery()
 	{
 		GameObject model = tree(1);
 		GameObject baked = proxy(GameObject.class, method("getSceneMinLocation", new Point(2, 0)),
@@ -164,23 +164,18 @@ public class StaticScenerySpritesTest
 			@Override public void swapScene(Scene swapped) {}
 		};
 
+		assertTrue(scenery.manages(model));
+		assertFalse(scenery.manages(baked));
+		assertFalse(scenery.manages(animated));
+
 		scenery.update(Set.of(model), renderer);
-		scenery.drawObject(scene, model);
-		scenery.drawObject(scene, baked);
-		StaticScenerySprites.Diagnostics counts = scenery.diagnostics();
-		assertEquals(1, counts.tracked);
-		assertEquals(1, counts.seenModels);
-		assertEquals(1, counts.seenBakedDynamics);
-		assertEquals(1, counts.seenOthers);
-		assertEquals(1, counts.zonesInvalidated);
-		assertEquals(1, counts.drawHidden);
-		assertEquals(0, counts.drawShown);
-		assertEquals(1, counts.drawUntracked);
-		assertEquals(1, counts.replaced);
+		assertEquals(Boolean.FALSE, scenery.drawObject(scene, model));
+		assertTrue(scenery.isReplaced(model));
+		assertNull(scenery.drawObject(scene, baked));
 
 		scenery.useScene(scene(tree(4)));
-		assertEquals(0, scenery.diagnostics().zonesInvalidated);
-		assertEquals(0, scenery.diagnostics().drawHidden);
+		assertFalse(scenery.manages(model));
+		assertNull(scenery.drawObject(scene, model));
 	}
 
 	private static GameObject tree(int x)

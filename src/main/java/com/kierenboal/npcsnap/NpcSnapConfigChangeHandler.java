@@ -33,10 +33,7 @@ final class NpcSnapConfigChangeHandler
 		if ("shadowType".equals(key)
 			|| "enableAnimationFrameSnapping".equals(key)
 			|| "animationFrameCount".equals(key)
-			|| "enableActorWorldPlaneProjection".equals(key)
-			|| "enableObjectInteractionOutline".equals(key)
-			|| "objectHoverOutlineColor".equals(key)
-			|| "objectInteractionOutlineColor".equals(key))
+			|| "enableActorWorldPlaneProjection".equals(key))
 		{
 			clearBillboardCache.run();
 		}

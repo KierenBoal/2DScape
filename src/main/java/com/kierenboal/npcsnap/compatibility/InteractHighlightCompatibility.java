@@ -1,6 +1,12 @@
 package com.kierenboal.npcsnap.compatibility;
 
+import java.awt.Color;
 import java.util.Arrays;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
+import net.runelite.api.TileItem;
+import net.runelite.client.plugins.interacthighlight.InteractHighlightConfig;
+import net.runelite.client.util.ColorUtil;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -45,18 +51,51 @@ public class InteractHighlightCompatibility
 
 	private boolean suppressing;
 	private boolean selfWrite;
-	private boolean npcOutlinesReplaced;
-	private boolean playerOutlinesReplaced;
-	private boolean itemOutlinesReplaced;
-	private boolean objectOutlinesReplaced;
-	private boolean itemHoverEnabled = true;
-	private boolean itemInteractEnabled = true;
-	private boolean objectHoverEnabled = true;
-	private boolean objectInteractEnabled = true;
-	private boolean npcHoverEnabled = true;
-	private boolean npcInteractEnabled = true;
-	private boolean playerHoverEnabled = true;
-	private boolean playerInteractEnabled = true;
+	private final boolean[] enabled = new boolean[KEYS.length];
+	private final Color[] colors = new Color[KEYS.length];
+	private Color attackHover, attackInteract;
+	private int width, feather;
+
+	public int width() { return width; }
+	public int feather() { return feather; }
+
+	public void settingsChanged(ConfigChanged event)
+	{
+		if (!selfWrite && GROUP.equals(event.getGroup())) onClientThread(this::refresh);
+	}
+
+	InteractHighlightConfig settings() { return configManager.getConfig(InteractHighlightConfig.class); }
+
+	private void refresh()
+	{
+		InteractHighlightConfig config = settings();
+		for (int i = 0; i < KEYS.length; i++) enabled[i] = wanted(KEYS[i]);
+		colors[0] = config.npcHoverHighlightColor();
+		colors[1] = config.npcInteractHighlightColor();
+		colors[2] = config.playerHoverHighlightColor();
+		colors[3] = config.playerInteractHighlightColor();
+		colors[4] = config.itemHoverHighlightColor();
+		colors[5] = config.itemInteractHighlightColor();
+		colors[6] = config.objectHoverHighlightColor();
+		colors[7] = config.objectInteractHighlightColor();
+		attackHover = config.npcAttackHoverHighlightColor();
+		attackInteract = config.npcAttackHighlightColor();
+		width = Math.max(0, Math.min(50, config.borderWidth()));
+		feather = Math.max(0, Math.min(4, config.outlineFeather()));
+	}
+
+	public Color color(Object target, boolean interacting, boolean attack, int age)
+	{
+		if (target == null) return null;
+		int index = target instanceof NPC ? 0 : target instanceof Player ? 2 : target instanceof TileItem ? 4 : 6;
+		if (!enabled[interacting ? index + 1 : index]) return null;
+		Color start = index == 0 && attack ? attackHover : colors[index];
+		if (!interacting) return start;
+		Color end = index == 0 && attack ? attackInteract : colors[index + 1];
+		if (age < 0 || age >= 10) return end;
+		return age < 5 ? ColorUtil.colorLerp(start, Color.WHITE, age / 5f)
+			: ColorUtil.colorLerp(Color.WHITE, end, (age - 5) / 5f);
+	}
 
 	public boolean isInteractHighlightPlugin(Plugin plugin)
 	{
@@ -80,7 +119,6 @@ public class InteractHighlightCompatibility
 		onClientThread(() ->
 		{
 			suppressing = false;
-			clearCachedReplacementState();
 			restoreStaleStashOnClient();
 			synchronizeOnClient(requested, replaceNpcs, replacePlayers, replaceItems, replaceObjects);
 		});
@@ -96,43 +134,6 @@ public class InteractHighlightCompatibility
 			&& "true".equalsIgnoreCase(event.getNewValue());
 	}
 
-	public boolean replacesNpcOutlines()
-	{
-		return npcOutlinesReplaced;
-	}
-
-	public boolean replacesPlayerOutlines()
-	{
-		return playerOutlinesReplaced;
-	}
-
-	public boolean npcShowHover()
-	{
-		return npcHoverEnabled;
-	}
-
-	public boolean npcShowInteract()
-	{
-		return npcInteractEnabled;
-	}
-
-	public boolean playerShowHover()
-	{
-		return playerHoverEnabled;
-	}
-
-	public boolean playerShowInteract()
-	{
-		return playerInteractEnabled;
-	}
-
-	public boolean replacesItemOutlines() { return itemOutlinesReplaced; }
-	public boolean replacesObjectOutlines() { return objectOutlinesReplaced; }
-	public boolean itemShowHover() { return itemHoverEnabled; }
-	public boolean itemShowInteract() { return itemInteractEnabled; }
-	public boolean objectShowHover() { return objectHoverEnabled; }
-	public boolean objectShowInteract() { return objectInteractEnabled; }
-
 	/** Keep the setting the user just enabled and restore the other suppressed settings. */
 	public void optOut(String changedKey)
 	{
@@ -147,7 +148,6 @@ public class InteractHighlightCompatibility
 					unstash(key);
 				}
 			}
-			clearCachedReplacementState();
 		});
 	}
 
@@ -159,49 +159,20 @@ public class InteractHighlightCompatibility
 	private void synchronizeOnClient(boolean requested, boolean replaceNpcs, boolean replacePlayers, boolean replaceItems, boolean replaceObjects)
 	{
 		boolean takeoverActive = requested && isInteractHighlightActive();
-		boolean replaceNpcOutlines = takeoverActive && replaceNpcs;
-		boolean replacePlayerOutlines = takeoverActive && replacePlayers;
-		boolean replaceItemOutlines = takeoverActive && replaceItems;
-		boolean replaceObjectOutlines = takeoverActive && replaceObjects;
-		boolean anyReplacement = replaceNpcOutlines || replacePlayerOutlines || replaceItemOutlines || replaceObjectOutlines;
-		suppressing = anyReplacement;
-
-		for (String key : KEYS)
+		boolean[] replace = {replaceNpcs, replacePlayers, replaceItems, replaceObjects};
+		suppressing = false;
+		for (int i = 0; i < KEYS.length; i++)
 		{
-			boolean replaceKey = key.startsWith("npc") ? replaceNpcOutlines
-				: key.startsWith("player") ? replacePlayerOutlines
-				: key.startsWith("item") ? replaceItemOutlines : replaceObjectOutlines;
-			if (isStashed(key) && !replaceKey)
+			String key = KEYS[i];
+			if (takeoverActive && replace[i / 2])
 			{
-				unstash(key);
-			}
-		}
-		for (String key : KEYS)
-		{
-			boolean replaceKey = key.startsWith("npc") ? replaceNpcOutlines
-				: key.startsWith("player") ? replacePlayerOutlines
-				: key.startsWith("item") ? replaceItemOutlines : replaceObjectOutlines;
-			if (replaceKey)
-			{
-				if (!isStashed(key))
-				{
-					stash(key);
-				}
+				suppressing = true;
+				if (!isStashed(key)) stash(key);
 				write(key, "false");
 			}
+			else unstash(key);
 		}
-		npcOutlinesReplaced = replaceNpcOutlines;
-		playerOutlinesReplaced = replacePlayerOutlines;
-		itemOutlinesReplaced = replaceItemOutlines;
-		objectOutlinesReplaced = replaceObjectOutlines;
-		itemHoverEnabled = !replaceItemOutlines || wanted(ITEM_HOVER);
-		itemInteractEnabled = !replaceItemOutlines || wanted(ITEM_INTERACT);
-		objectHoverEnabled = !replaceObjectOutlines || wanted(OBJECT_HOVER);
-		objectInteractEnabled = !replaceObjectOutlines || wanted(OBJECT_INTERACT);
-		npcHoverEnabled = !replaceNpcOutlines || wanted(NPC_HOVER);
-		npcInteractEnabled = !replaceNpcOutlines || wanted(NPC_INTERACT);
-		playerHoverEnabled = !replacePlayerOutlines || wanted(PLAYER_HOVER);
-		playerInteractEnabled = !replacePlayerOutlines || wanted(PLAYER_INTERACT);
+		refresh();
 	}
 
 	private void restoreOnClient()
@@ -212,7 +183,6 @@ public class InteractHighlightCompatibility
 		}
 
 		suppressing = false;
-		clearCachedReplacementState();
 		for (String key : KEYS)
 		{
 			unstash(key);
@@ -264,22 +234,6 @@ public class InteractHighlightCompatibility
 
 		String live = getConfiguration(GROUP, key);
 		return live == null || Boolean.parseBoolean(live);
-	}
-
-	private void clearCachedReplacementState()
-	{
-		npcOutlinesReplaced = false;
-		playerOutlinesReplaced = false;
-		itemOutlinesReplaced = false;
-		objectOutlinesReplaced = false;
-		itemHoverEnabled = true;
-		itemInteractEnabled = true;
-		objectHoverEnabled = true;
-		objectInteractEnabled = true;
-		npcHoverEnabled = true;
-		npcInteractEnabled = true;
-		playerHoverEnabled = true;
-		playerInteractEnabled = true;
 	}
 
 	private void stash(String key)

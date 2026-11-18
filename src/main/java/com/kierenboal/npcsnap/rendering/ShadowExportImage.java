@@ -29,32 +29,28 @@ public final class ShadowExportImage
 		ShadowLightVector light, double pitch, BillboardCanvasPoint groundOrigin)
 	{
 		BufferedImage sprite = capture.image;
-		Rectangle original = new Rectangle(0, 0, sprite.getWidth(), sprite.getHeight());
+		Rectangle bounds = new Rectangle(0, 0, sprite.getWidth(), sprite.getHeight());
 		SpriteShadowMask mask = capture.shadow;
-		boolean oblique = mask != null && mask.type != SpriteShadowType.LEGACY
-			&& lighting != ShadowLighting.DIRECTIONAL_DOWN;
-		SpriteShadowMask[] layers = mask == null || color.getAlpha() == 0 ? new SpriteShadowMask[0]
-			: oblique ? new SpriteShadowMask[] {mask.directionalCaster()}
-			: new SpriteShadowMask[] {mask};
-		BillboardDrawGeometry[] geometries = new BillboardDrawGeometry[layers.length];
-		Rectangle bounds = new Rectangle(original);
-		for (int i = 0; i < layers.length; i++)
+		BillboardDrawGeometry geometry = null;
+		if (mask != null && color.getAlpha() != 0)
 		{
-			SpriteShadowMask layer = layers[i];
-			if (layer == null) continue;
-			BillboardDrawGeometry geometry = oblique
-				? obliqueGeometry(layer, light, pitch,groundOrigin)
-				: groundOrigin==null ? ShadowProjection.downward(layer,BillboardDrawGeometry.rectangular(original),lighting)
-					: ShadowProjection.downward(layer,BillboardDrawGeometry.rectangular(original),lighting,groundOrigin);
-			geometries[i] = geometry;
+			if (mask.type != SpriteShadowType.LEGACY && lighting != ShadowLighting.DIRECTIONAL_DOWN)
+			{
+				mask = mask.directionalCaster();
+				geometry = obliqueGeometry(mask, light, pitch, groundOrigin);
+			}
+			else
+			{
+				BillboardDrawGeometry spriteGeometry = BillboardDrawGeometry.rectangular(bounds);
+				geometry = groundOrigin == null ? ShadowProjection.downward(mask, spriteGeometry, lighting)
+					: ShadowProjection.downward(mask, spriteGeometry, lighting, groundOrigin);
+			}
 			if (geometry != null) bounds = bounds.union(geometry.bounds);
 		}
 		BufferedImage out = new BufferedImage(bounds.width, bounds.height, BufferedImage.TYPE_INT_ARGB);
-		for (int i = 0; i < layers.length; i++)
+		if (geometry != null)
 		{
-			BillboardDrawGeometry geometry = geometries[i];
-			if (geometry == null) continue;
-			BufferedImage shadow = layers[i].tinted(color);
+			BufferedImage shadow = mask.tinted(color);
 			BillboardProjectedQuad.Sample sample = new BillboardProjectedQuad.Sample();
 			for (int y = geometry.bounds.y; y < geometry.bounds.getMaxY(); y++)
 			{

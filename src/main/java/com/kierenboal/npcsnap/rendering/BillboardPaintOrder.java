@@ -4,6 +4,8 @@ import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 
 public final class BillboardPaintOrder
 {
@@ -146,6 +148,7 @@ public final class BillboardPaintOrder
 		}
 	}
 
+	@RequiredArgsConstructor
 	public static final class Entry<T>
 	{
 		private final T value;
@@ -162,33 +165,15 @@ public final class BillboardPaintOrder
 			this(value, bounds, renderPriority, priorityGroup, screenBottomY, depth, false, stableOrder);
 		}
 
-		public Entry(T value, Rectangle bounds, int renderPriority, long priorityGroup, int screenBottomY, double depth, boolean depthFirst, long stableOrder)
-		{
-			this.value = value;
-			this.bounds = bounds;
-			this.renderPriority = renderPriority;
-			this.priorityGroup = priorityGroup;
-			this.screenBottomY = screenBottomY;
-			this.depth = depth;
-			this.depthFirst = depthFirst;
-			this.stableOrder = stableOrder;
-		}
 	}
 
+	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 	private static final class Group<T>
 	{
 		private final List<Entry<T>> entries;
 		private final double depth;
 		private final int topY;
 		private final long stableOrder;
-
-		private Group(List<Entry<T>> entries, double depth, int topY, long stableOrder)
-		{
-			this.entries = entries;
-			this.depth = depth;
-			this.topY = topY;
-			this.stableOrder = stableOrder;
-		}
 
 		private static <T> Group<T> of(List<Entry<T>> entries)
 		{

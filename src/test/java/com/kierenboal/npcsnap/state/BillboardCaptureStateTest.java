@@ -25,7 +25,7 @@ public class BillboardCaptureStateTest
 	{
 		BillboardUpdateState state = new BillboardUpdateState(1);
 		state.advance(0, 1, 1, snapshot(1, 1, 100), 12.5);
-		FrameUpdatePlan forced = new FrameUpdatePlan(1, false, true, state, snapshot(1, 2, 160), 3, 1, 1, 12.5);
+		FrameUpdatePlan forced = new FrameUpdatePlan(1, true, state, snapshot(1, 2, 160), 3, 1, 1, 12.5);
 		forced.markRedrawSucceeded();
 		assertFalse(state.isReady(15, true));
 		assertTrue(state.isReady(16, true));

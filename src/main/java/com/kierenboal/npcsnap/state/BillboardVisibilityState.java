@@ -1,16 +1,16 @@
 package com.kierenboal.npcsnap.state;
 
+import com.kierenboal.npcsnap.IdentitySets;
 import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.Set;
 import net.runelite.api.Renderable;
 import net.runelite.api.TileObject;
 
 public final class BillboardVisibilityState
 {
-	public final Set<Renderable> activeBillboards = identitySet();
-	public final Set<Renderable> suppressedRenderables = identitySet();
-	public final Set<TileObject> activeTileObjects = identitySet();
+	public final Set<Renderable> activeBillboards = IdentitySets.create();
+	public final Set<Renderable> suppressedRenderables = IdentitySets.create();
+	public final Set<TileObject> activeTileObjects = IdentitySets.create();
 
 	private volatile Set<Renderable> activeBillboardSnapshot = Collections.emptySet();
 	private volatile Set<Renderable> suppressedRenderableSnapshot = Collections.emptySet();
@@ -58,7 +58,7 @@ public final class BillboardVisibilityState
 
 	public void publishDrawableActor2d(Set<Renderable> renderables)
 	{
-		drawableActor2dSnapshot = copy(renderables);
+		drawableActor2dSnapshot = IdentitySets.copyOf(renderables);
 	}
 
 	public boolean hasActiveTileObject(TileObject tileObject, boolean clientThread)
@@ -72,22 +72,10 @@ public final class BillboardVisibilityState
 		activeTileObjectSnapshot = Collections.emptySet();
 	}
 
-	private static <T> Set<T> copy(Set<T> source)
-	{
-		Set<T> copy = identitySet();
-		copy.addAll(source);
-		return copy;
-	}
-
 	private static <T> Set<T> updatedSnapshot(Set<T> source, Set<T> currentSnapshot)
 	{
 		return source.size() == currentSnapshot.size() && currentSnapshot.containsAll(source)
 			? currentSnapshot
-			: copy(source);
-	}
-
-	private static <T> Set<T> identitySet()
-	{
-		return Collections.newSetFromMap(new IdentityHashMap<>());
+			: IdentitySets.copyOf(source);
 	}
 }

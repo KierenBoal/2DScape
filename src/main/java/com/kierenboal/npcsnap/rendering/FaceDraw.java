@@ -1,7 +1,9 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Color;
+import lombok.RequiredArgsConstructor;
 
+@RequiredArgsConstructor
 public final class FaceDraw
 {
 	public final int x0;
@@ -14,30 +16,6 @@ public final class FaceDraw
 	private final double depth;
 	private final TextureSample textureSample;
 	private final TextureUvs textureUvs;
-
-	public FaceDraw(
-		int x0,
-		int y0,
-		int x1,
-		int y1,
-		int x2,
-		int y2,
-		Color color,
-		double depth,
-		TextureSample textureSample,
-		TextureUvs textureUvs)
-	{
-		this.x0 = x0;
-		this.y0 = y0;
-		this.x1 = x1;
-		this.y1 = y1;
-		this.x2 = x2;
-		this.y2 = y2;
-		this.color = color;
-		this.depth = depth;
-		this.textureSample = textureSample;
-		this.textureUvs = textureUvs;
-	}
 
 	public Color getColor()
 	{

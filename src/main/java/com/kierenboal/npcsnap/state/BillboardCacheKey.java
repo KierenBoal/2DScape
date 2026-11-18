@@ -7,6 +7,7 @@ import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import lombok.EqualsAndHashCode;
 
+@lombok.RequiredArgsConstructor
 @EqualsAndHashCode
 public final class BillboardCacheKey
 {
@@ -22,16 +23,11 @@ public final class BillboardCacheKey
 	public final boolean highlightOutline;
 	public final boolean shadowOutline;
 	public final boolean solidOutline;
-	public final boolean spriteShadow;
 	public final SpriteShadowType shadowType;
 	public final boolean highlightInline;
 	public final boolean shadowInline;
 	public final boolean solidInline;
 	public final int outlineColor;
-	public final boolean hoverOutline;
-	public final boolean interactOutline;
-	public final int hoverOutlineColor;
-	public final int interactOutlineColor;
 	public final int renderQuality;
 	public final int modelStateHash;
 	public final int textureStateHash;
@@ -79,10 +75,6 @@ public final class BillboardCacheKey
 			config.enableBillboardShadowInline(),
 			config.enableBillboardSpriteInline(),
 			config.billboardSpriteOutlineColor().getRGB(),
-			request.shouldHoverOutline,
-			request.shouldInteractOutline,
-			request.hoverOutlineColor != null ? request.hoverOutlineColor.getRGB() : 0,
-			request.interactionOutlineColor != null ? request.interactionOutlineColor.getRGB() : 0,
 			renderQuality,
 			BillboardModelStateHash.hash(request.model),
 			textureStateHash,
@@ -121,78 +113,14 @@ public final class BillboardCacheKey
 			&& highlightOutline == preview.highlightOutline
 			&& shadowOutline == preview.shadowOutline
 			&& solidOutline == preview.solidOutline
-			&& spriteShadow == preview.spriteShadow
 			&& shadowType == preview.shadowType
 			&& highlightInline == preview.highlightInline
 			&& shadowInline == preview.shadowInline
 			&& solidInline == preview.solidInline
 			&& outlineColor == preview.outlineColor
-			&& hoverOutline == preview.hoverOutline
-			&& interactOutline == preview.interactOutline
-			&& hoverOutlineColor == preview.hoverOutlineColor
-			&& interactOutlineColor == preview.interactOutlineColor
 			&& renderQuality == preview.renderQuality
 			&& modelStateHash == preview.modelStateHash
 			&& animatedTextureOffsetStateHash == preview.animatedTextureOffsetStateHash;
 	}
 
-	public BillboardCacheKey(
-		int animationId,
-		int animationFrame,
-		int poseAnimationId,
-		int poseAnimationFrame,
-		int relativeYaw,
-		int relativePitch,
-		int colorBands,
-		int lightBoost,
-		int outlinePadding,
-		boolean highlightOutline,
-		boolean shadowOutline,
-		boolean solidOutline,
-		SpriteShadowType shadowType,
-		boolean highlightInline,
-		boolean shadowInline,
-		boolean solidInline,
-		int outlineColor,
-		boolean hoverOutline,
-		boolean interactOutline,
-		int hoverOutlineColor,
-		int interactOutlineColor,
-		int renderQuality,
-		int modelStateHash,
-		int textureStateHash,
-		int animatedTextureOffsetStateHash)
-	{
-		this.animationId = animationId;
-		this.animationFrame = animationFrame;
-		this.poseAnimationId = poseAnimationId;
-		this.poseAnimationFrame = poseAnimationFrame;
-		this.relativeYaw = relativeYaw;
-		this.relativePitch = relativePitch;
-		this.colorBands = colorBands;
-		this.lightBoost = lightBoost;
-		this.outlinePadding = outlinePadding;
-		this.highlightOutline = highlightOutline;
-		this.shadowOutline = shadowOutline;
-		this.solidOutline = solidOutline;
-		this.spriteShadow = shadowType != SpriteShadowType.OFF;
-		this.shadowType = shadowType;
-		this.highlightInline = highlightInline;
-		this.shadowInline = shadowInline;
-		this.solidInline = solidInline;
-		this.outlineColor = outlineColor;
-		this.hoverOutline = hoverOutline;
-		this.interactOutline = interactOutline;
-		this.hoverOutlineColor = hoverOutlineColor;
-		this.interactOutlineColor = interactOutlineColor;
-		this.renderQuality = renderQuality;
-		this.modelStateHash = modelStateHash;
-		this.textureStateHash = textureStateHash;
-		this.animatedTextureOffsetStateHash = animatedTextureOffsetStateHash;
-	}
-
-
-
-
 }
-

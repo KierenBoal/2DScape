@@ -7,7 +7,6 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
 import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 import com.kierenboal.npcsnap.rendering.VerticalAnchor;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
@@ -82,7 +81,7 @@ public class GroundItemOcclusionTest
 			}
 		}
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request, new BillboardRenderResult(BOUNDS, image, BOUNDS), 1);
-		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask, new BillboardPerformanceMetrics(),
+		BillboardFrameBuffer buffer = new BillboardFrameBuffer(mask,
 			d -> BillboardDepthSurface.from(calculator(), d.request, d.sourceBounds, d.bounds, 0));
 		buffer.begin(4, 4);
 		buffer.blit(draw, 0, 0, 4, 4, false);
@@ -96,7 +95,7 @@ public class GroundItemOcclusionTest
 	private static BillboardRenderRequest request(int height, boolean lowProfile, Model model, LocalPoint point)
 	{
 		return new BillboardRenderRequest(proxy(TileItem.class, method("getModelHeight", height)), model,
-			point, 0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, null, null,
+			point, 0, 0, 0, 0, -1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, lowProfile);
 	}
 

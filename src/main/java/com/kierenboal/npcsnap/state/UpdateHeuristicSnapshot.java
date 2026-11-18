@@ -5,6 +5,7 @@ import com.kierenboal.npcsnap.rendering.BillboardRenderRequest;
 
 import com.kierenboal.npcsnap.rendering.BillboardModelBounds;
 import com.kierenboal.npcsnap.rendering.OwnedModel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.TileItem;
@@ -15,6 +16,7 @@ import net.runelite.api.Model;
 import java.util.Arrays;
 import net.runelite.api.coords.LocalPoint;
 
+@RequiredArgsConstructor
 public final class UpdateHeuristicSnapshot
 {
 	public final double depth;
@@ -39,22 +41,6 @@ public final class UpdateHeuristicSnapshot
 	{
 		this(depth, positionKey, animationHash, modelStateHash, textureStateHash, viewHash,
 			animated, animationHash, modelStateHash, null);
-	}
-
-	public UpdateHeuristicSnapshot(double depth, long positionKey, int animationHash, int modelStateHash,
-		int textureStateHash, int viewHash, boolean animated, int animationIdentityHash,
-		int appearanceHash, BillboardModelBounds geometry)
-	{
-		this.depth = depth;
-		this.positionKey = positionKey;
-		this.animationHash = animationHash;
-		this.modelStateHash = modelStateHash;
-		this.textureStateHash = textureStateHash;
-		this.viewHash = viewHash;
-		this.animated = animated;
-		this.animationIdentityHash = animationIdentityHash;
-		this.appearanceHash = appearanceHash;
-		this.geometry = geometry;
 	}
 
 	public static UpdateHeuristicSnapshot empty()

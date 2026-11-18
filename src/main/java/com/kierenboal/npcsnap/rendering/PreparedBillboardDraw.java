@@ -8,6 +8,8 @@ import net.runelite.api.TileObject;
 public final class PreparedBillboardDraw
 {
 	public final BillboardRenderRequest request;
+	public java.awt.Color highlight;
+	public int highlightWidth, highlightFeather;
 	public final BillboardRenderResult result;
 	public final int paintOrder;
 	public final BufferedImage image;
@@ -39,6 +41,7 @@ public final class PreparedBillboardDraw
 	public Rectangle visualBounds()
 	{
 		Rectangle visual=new Rectangle(bounds);
+		visual.grow(highlightWidth, highlightWidth);
 		for(BillboardRenderResult layer=result==null ? null : result.shadow; layer!=null; layer=layer.shadow)
 			if(layer.bounds!=null) visual=visual.union(layer.bounds);
 		return visual;

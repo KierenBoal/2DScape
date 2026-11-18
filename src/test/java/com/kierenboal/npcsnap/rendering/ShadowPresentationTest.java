@@ -3,7 +3,6 @@ package com.kierenboal.npcsnap.rendering;
 import com.kierenboal.npcsnap.ShadowLighting;
 import com.kierenboal.npcsnap.SpriteShadowType;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
-import com.kierenboal.npcsnap.state.BillboardPerformanceMetrics;
 import java.awt.Color;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -150,8 +149,7 @@ public class ShadowPresentationTest
 	}
 	@Test public void separateShadowCompositesBehindSpriteAndExpandsInterest()
 	{
-		BillboardPerformanceMetrics metrics=new BillboardPerformanceMetrics();
-		BillboardFrameBuffer frame=new BillboardFrameBuffer(new BillboardOcclusionMask(metrics),metrics,ignored->BillboardDepthSurface.invalid());
+		BillboardFrameBuffer frame=new BillboardFrameBuffer(new BillboardOcclusionMask(),ignored->BillboardDepthSurface.invalid());
 		BufferedImage sprite=new BufferedImage(1,1,BufferedImage.TYPE_INT_ARGB); sprite.setRGB(0,0,0xffff0000);
 		BufferedImage shadow=new BufferedImage(3,1,BufferedImage.TYPE_INT_ARGB);
 		for(int x=0;x<3;x++) shadow.setRGB(x,0,0x80000000);

@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.state;
 
-import java.util.Collections;
-import java.util.IdentityHashMap;
+import com.kierenboal.npcsnap.IdentitySets;
 import java.util.Set;
 
 /**
@@ -14,8 +13,8 @@ import java.util.Set;
 public final class FrameRenderableTracker<T>
 {
 	private final Object lock = new Object();
-	private Set<T> current = identitySet();
-	private Set<T> previous = identitySet();
+	private Set<T> current = IdentitySets.create();
+	private Set<T> previous = IdentitySets.create();
 
 	public void record(T renderable)
 	{
@@ -71,14 +70,7 @@ public final class FrameRenderableTracker<T>
 	{
 		synchronized (lock)
 		{
-			Set<T> snapshot = identitySet();
-			snapshot.addAll(previous);
-			return snapshot;
+			return IdentitySets.copyOf(previous);
 		}
-	}
-
-	private static <T> Set<T> identitySet()
-	{
-		return Collections.newSetFromMap(new IdentityHashMap<>());
 	}
 }

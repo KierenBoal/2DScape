@@ -1,9 +1,12 @@
 package com.kierenboal.npcsnap.rendering;
 
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
 import net.runelite.api.AABB;
 import net.runelite.api.Model;
 
 /** Model-unit dimensions: camera movement and perspective cannot trigger a resize. */
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class BillboardModelBounds
 {
 	public final double width;
@@ -15,15 +18,6 @@ public final class BillboardModelBounds
 	public BillboardModelBounds(double width, double height)
 	{
 		this(width, height, width, height, 0);
-	}
-
-	private BillboardModelBounds(double width, double height, double hullWidth, double hullHeight, double hullDepth)
-	{
-		this.width = width;
-		this.height = height;
-		this.hullWidth = hullWidth;
-		this.hullHeight = hullHeight;
-		this.hullDepth = hullDepth;
 	}
 
 	public boolean exceeds(BillboardModelBounds previous, int percent)

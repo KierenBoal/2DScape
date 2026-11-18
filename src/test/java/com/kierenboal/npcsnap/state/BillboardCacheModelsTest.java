@@ -27,10 +27,10 @@ public class BillboardCacheModelsTest
    NpcSnapConfig config = new NpcSnapConfig() {
     @Override public com.kierenboal.npcsnap.SpriteShadowType shadowType() { return type; }
    };
-   BillboardCacheKey key = BillboardCacheKey.create(request(false,false),config,1,config.billboardColorBands(),50,7,9);
+   BillboardCacheKey key = BillboardCacheKey.create(request(),config,1,config.billboardColorBands(),50,7,9);
    assertTrue(keys.add(key));
    CachedBillboard cached = new CachedBillboard(key,new Rectangle(0,0,1,1),new BufferedImage(1,1,BufferedImage.TYPE_INT_ARGB),0);
-   assertTrue(cached.matchesPreviewKey(BillboardCacheKey.preview(request(false,false),config,1,50,9)));
+   assertTrue(cached.matchesPreviewKey(BillboardCacheKey.preview(request(),config,1,50,9)));
   }
  }
 
@@ -38,7 +38,7 @@ public class BillboardCacheModelsTest
 	public void fullAndPreviewFactoriesStayInSync()
 	{
 		NpcSnapConfig config = config();
-		BillboardRenderRequest request = request(true, false);
+		BillboardRenderRequest request = request();
 		BillboardCacheKey key = BillboardCacheKey.create(request, config, 2, 12, 75, 99, 101);
 		BillboardCacheKey preview = BillboardCacheKey.preview(request, config, 2, 75, 101);
 		CachedBillboard cached = new CachedBillboard(
@@ -51,20 +51,20 @@ public class BillboardCacheModelsTest
 	public void previewRejectsChangedRequestOrAnimatedTextureState()
 	{
 		NpcSnapConfig config = config();
-		BillboardCacheKey key = BillboardCacheKey.create(request(true, false), config, 2, 12, 75, 99, 101);
+		BillboardCacheKey key = BillboardCacheKey.create(request(), config, 2, 12, 75, 99, 101);
 		CachedBillboard cached = new CachedBillboard(
 			key, new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
 
 		assertFalse(cached.matchesPreviewKey(null));
-		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request(false, false), config, 2, 75, 101)));
-		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request(true, false), config, 2, 75, 102)));
+		assertTrue(cached.matchesPreviewKey(BillboardCacheKey.preview(request(), config, 2, 75, 101)));
+		assertFalse(cached.matchesPreviewKey(BillboardCacheKey.preview(request(), config, 2, 75, 102)));
 	}
 
 	@Test
 	public void brightnessChangeInvalidatesPreview()
 	{
 		NpcSnapConfig config = config();
-		BillboardRenderRequest request = request(false, false);
+		BillboardRenderRequest request = request();
 		BillboardCacheKey key = BillboardCacheKey.create(request, config, 2, 12, 75, 99, 101, 180);
 		CachedBillboard cached = new CachedBillboard(key,
 			new Rectangle(1, 2, 3, 4), new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB), 10L);
@@ -77,7 +77,7 @@ public class BillboardCacheModelsTest
 	public void fullKeyEqualityIncludesTextureAndColorInputs()
 	{
 		NpcSnapConfig config = config();
-		BillboardRenderRequest request = request(false, true);
+		BillboardRenderRequest request = request();
 		BillboardCacheKey base = BillboardCacheKey.create(request, config, 1, 8, 50, 7, 9);
 		BillboardCacheKey same = BillboardCacheKey.create(request, config, 1, 8, 50, 7, 9);
 		BillboardCacheKey otherBands = BillboardCacheKey.create(request, config, 1, 9, 50, 7, 9);
@@ -95,9 +95,9 @@ public class BillboardCacheModelsTest
 	{
 		Model vanilla = model();
 		UpdateHeuristicSnapshot ordinary = UpdateHeuristicSnapshot.forCapture(
-			request(false, false, vanilla), 0, 0, 0, true, false);
+			request(vanilla), 0, 0, 0, true, false);
 		UpdateHeuristicSnapshot retro = UpdateHeuristicSnapshot.forCapture(
-			request(false, false, new OwnedModel(vanilla)), 0, 0, 0, true, false);
+			request(new OwnedModel(vanilla)), 0, 0, 0, true, false);
 		assertNotEquals(ordinary.appearanceHash, retro.appearanceHash);
 	}
 
@@ -107,8 +107,8 @@ public class BillboardCacheModelsTest
 		NpcSnapConfig baseline = config(180, 64);
 		NpcSnapConfig generalChanged = config(120, 64);
 		NpcSnapConfig retroChanged = config(180, 80);
-		BillboardRenderRequest ordinary = request(false, false);
-		BillboardRenderRequest retro = request(false, false, new OwnedModel(model()));
+		BillboardRenderRequest ordinary = request();
+		BillboardRenderRequest retro = request(new OwnedModel(model()));
 
 		BillboardCacheKey ordinaryBase = key(ordinary, baseline);
 		BillboardCacheKey retroBase = key(retro, baseline);
@@ -137,9 +137,9 @@ public class BillboardCacheModelsTest
 	public void previewKeysUseTheSameSourceSpecificBrightness()
 	{
 		NpcSnapConfig config = config(180, 64);
-		BillboardCacheKey ordinary = BillboardCacheKey.preview(request(false, false), config, 1, 50, 0);
+		BillboardCacheKey ordinary = BillboardCacheKey.preview(request(), config, 1, 50, 0);
 		BillboardCacheKey retro = BillboardCacheKey.preview(
-			request(false, false, new OwnedModel(model())), config, 1, 50, 0);
+			request(new OwnedModel(model())), config, 1, 50, 0);
 
 		assertEquals(180, ordinary.lightBoost);
 		assertEquals(64, retro.lightBoost);
@@ -151,7 +151,7 @@ public class BillboardCacheModelsTest
 		Rectangle sourceBounds = new Rectangle(1, 2, 3, 4);
 		Rectangle contentBounds = new Rectangle(2, 3, 1, 2);
 		CachedBillboard cached = new CachedBillboard(
-			BillboardCacheKey.create(request(false, false), config(), 1, 8, 50, 0, 0),
+			BillboardCacheKey.create(request(), config(), 1, 8, 50, 0, 0),
 			sourceBounds,
 			contentBounds,
 			new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB),
@@ -197,16 +197,15 @@ public class BillboardCacheModelsTest
 			TestProxies.method("billboardInteractionOutlineColor", Color.RED));
 	}
 
-	private static BillboardRenderRequest request(boolean hover, boolean interact)
+	private static BillboardRenderRequest request()
 	{
-		return request(hover, interact, model());
+		return request(model());
 	}
 
-	private static BillboardRenderRequest request(boolean hover, boolean interact, Model model)
+	private static BillboardRenderRequest request(Model model)
 	{
 		return new BillboardRenderRequest(
-			null, model, null, 0, 0, 10, 20, 30, 40, 50, 60, -1,
-			hover, interact, VerticalAnchor.BOTTOM, null);
+			null, model, null, 0, 0, 10, 20, 30, 40, 50, 60, -1, VerticalAnchor.BOTTOM, null, false);
 	}
 
 	private static Model model()

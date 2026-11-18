@@ -272,7 +272,7 @@ public class ActorOverheadRendererTest
 		type.set(HitsplatID.HEAL);
 		amount.set(99);
 		BillboardRenderRequest request = new BillboardRenderRequest(actor, null, null, 0, 0, 0, 0,
-			-1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			-1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		Rectangle bounds = new Rectangle(90, 20, 20, 90);
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
 			new BillboardRenderResult(bounds, null, bounds), 0);

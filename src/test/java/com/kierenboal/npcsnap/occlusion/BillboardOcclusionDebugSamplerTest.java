@@ -33,7 +33,7 @@ public class BillboardOcclusionDebugSamplerTest
 		BillboardDepthCalculator depth = new BillboardDepthCalculator(client);
 		BillboardRenderRequest request = new BillboardRenderRequest(
 			proxy(Renderable.class, method("getModelHeight", 100)), null, new LocalPoint(0, 0),
-			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		PreparedBillboardDraw image = draw(0xFFFFFFFF);
 		PreparedBillboardDraw bypass = new PreparedBillboardDraw(request, image.result, 1);
 		BillboardOcclusionDebugSampler sampler = new BillboardOcclusionDebugSampler(mask,

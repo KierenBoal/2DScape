@@ -1,8 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
 import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.Arrays;
@@ -21,38 +19,6 @@ public final class BillboardOutlineRenderer
 
 	private BillboardOutlineRenderer()
 	{
-	}
-
-	public static void applyOutline(
-		BufferedImage image,
-		boolean highlightOutline,
-		boolean shadowOutline,
-		boolean solidOutline,
-		boolean spriteShadow,
-		boolean highlightInline,
-		boolean shadowInline,
-		boolean solidInline,
-		Color solidOutlineColor)
-	{
-		applyOutline(image, new Scratch(), highlightOutline, shadowOutline, solidOutline, spriteShadow, highlightInline, shadowInline, solidInline, solidOutlineColor);
-	}
-
-	public static void applyOutline(
-		BufferedImage image,
-		Scratch scratch,
-		boolean highlightOutline,
-		boolean shadowOutline,
-		boolean solidOutline,
-		boolean spriteShadow,
-		boolean highlightInline,
-		boolean shadowInline,
-		boolean solidInline,
-		Color solidOutlineColor)
-	{
-		applyOutline(
-			image, scratch, highlightOutline, shadowOutline, solidOutline, spriteShadow,
-			highlightInline, shadowInline, solidInline, solidOutlineColor,
-			DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
 	}
 
 	public static void applyOutline(
@@ -94,12 +60,10 @@ public final class BillboardOutlineRenderer
 			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio, scratch);
 		}
 
-		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, false, solidInline, solidOutlineColor);
-		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, false, shadowInline, false, solidOutlineColor);
-		applyInteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary, highlightInline, false, false, solidOutlineColor);
-		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, false, solidOutline, solidOutlineColor);
-		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, false, shadowOutline, false, solidOutlineColor);
-		applyExteriorBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary, highlightOutline, false, false, solidOutlineColor);
+		applyBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary,
+			highlightInline, shadowInline, solidInline, solidOutlineColor);
+		applyBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary,
+			highlightOutline, shadowOutline, solidOutline, solidOutlineColor);
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
 	}
 
@@ -111,83 +75,6 @@ public final class BillboardOutlineRenderer
 		System.arraycopy(pixels, 0, scratch.resultPixels, 0, pixels.length);
 		applySpriteShadow(pixels, scratch.resultPixels, image.getWidth(), image.getHeight(), ratio, scratch);
 		System.arraycopy(scratch.resultPixels, 0, pixels, 0, pixels.length);
-	}
-
-	public static int[] captureExteriorBoundaryIndices(BufferedImage image, Scratch scratch)
-	{
-		if (image == null)
-		{
-			return new int[0];
-		}
-
-		int width = image.getWidth();
-		int height = image.getHeight();
-		if (width <= 0 || height <= 0)
-		{
-			return new int[0];
-		}
-
-		if (!(image.getRaster().getDataBuffer() instanceof DataBufferInt))
-		{
-			return new int[0];
-		}
-
-		int[] sourcePixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-		int pixelCount = width * height;
-		scratch.ensureCapacity(pixelCount);
-		populateBoundaryMasks(sourcePixels, width, height, scratch);
-		int count = 0;
-		for (int index = 0; index < pixelCount; index++)
-		{
-			if (scratch.exteriorTransparentBoundary[index])
-			{
-				count++;
-			}
-		}
-
-		int[] indices = new int[count];
-		int next = 0;
-		for (int index = 0; index < pixelCount; index++)
-		{
-			if (scratch.exteriorTransparentBoundary[index])
-			{
-				indices[next++] = index;
-			}
-		}
-
-		return indices;
-	}
-
-	public static void drawDynamicOutline(Graphics2D graphics, BufferedImage image, Rectangle drawRect, int[] exteriorBoundaryIndices, Color outlineColor)
-	{
-		if (graphics == null || image == null || drawRect == null || outlineColor == null || outlineColor.getAlpha() == 0 || exteriorBoundaryIndices == null || exteriorBoundaryIndices.length == 0)
-		{
-			return;
-		}
-
-		int width = image.getWidth();
-		int height = image.getHeight();
-		if (width <= 0 || height <= 0 || drawRect.width <= 0 || drawRect.height <= 0)
-		{
-			return;
-		}
-
-		graphics.setColor(outlineColor);
-		for (int index : exteriorBoundaryIndices)
-		{
-			int x = index % width;
-			int y = index / width;
-			int minX = drawRect.x + (int) Math.floor((x * (double) drawRect.width) / width);
-			int maxX = drawRect.x + (int) Math.ceil(((x + 1) * (double) drawRect.width) / width);
-			int minY = drawRect.y + (int) Math.floor((y * (double) drawRect.height) / height);
-			int maxY = drawRect.y + (int) Math.ceil(((y + 1) * (double) drawRect.height) / height);
-			if (maxX <= minX || maxY <= minY)
-			{
-				continue;
-			}
-
-			graphics.fillRect(minX, minY, maxX - minX, maxY - minY);
-		}
 	}
 
 	public static final class Scratch
@@ -237,66 +124,39 @@ public final class BillboardOutlineRenderer
 		}
 	}
 
-	private static void applyExteriorBoundary(
+	private static void applyBoundary(
 		int[] sourcePixels,
 		int[] resultPixels,
 		int width,
 		int height,
-		boolean[] exteriorTransparentBoundary,
-		boolean highlightOutline,
-		boolean shadowOutline,
-		boolean solidOutline,
-		Color solidOutlineColor)
+		boolean[] boundary,
+		boolean highlight,
+		boolean shadow,
+		boolean solid,
+		Color solidColor)
 	{
-		for (int index = 0; index < exteriorTransparentBoundary.length; index++)
+		if (!highlight && !shadow && !solid)
 		{
-			if (!exteriorTransparentBoundary[index])
-			{
-				continue;
-			}
-
-			int x = index % width;
-			int y = index / width;
-			int outlineArgb = highlightOutline
-				? highlightOutlineColor(sourcePixels, width, height, x, y)
-				: shadowOutline
-					? shadowOutlineColor(sourcePixels, width, height, x, y)
-					: solidOutline ? solidOutlineColor.getRGB() : 0;
-			if (outlineArgb != 0)
-			{
-				resultPixels[index] = outlineArgb;
-			}
+			return;
 		}
-	}
-
-	private static void applyInteriorBoundary(
-		int[] sourcePixels,
-		int[] resultPixels,
-		int width,
-		int height,
-		boolean[] exteriorOpaqueBoundary,
-		boolean highlightInline,
-		boolean shadowInline,
-		boolean solidInline,
-		Color solidOutlineColor)
-	{
-		for (int index = 0; index < exteriorOpaqueBoundary.length; index++)
+		double factor = highlight ? HIGHLIGHT_BRIGHTEN_FACTOR : SHADOW_DARKEN_FACTOR;
+		for (int index = 0; index < boundary.length; index++)
 		{
-			if (!exteriorOpaqueBoundary[index])
+			if (!boundary[index])
 			{
 				continue;
 			}
 
-			int x = index % width;
-			int y = index / width;
-			int inlineArgb = highlightInline
-				? highlightInlineColor(sourcePixels, width, height, x, y)
-				: shadowInline
-					? shadowInlineColor(sourcePixels, width, height, x, y)
-					: solidInline ? solidOutlineColor.getRGB() : 0;
-			if (inlineArgb != 0)
+			int color = highlight || shadow
+				? shadeNeighbors(sourcePixels, width, height, index % width, index / width, factor)
+				: 0;
+			if (color == 0 && solid)
 			{
-				resultPixels[index] = inlineArgb;
+				color = solidColor.getRGB();
+			}
+			if (color != 0)
+			{
+				resultPixels[index] = color;
 			}
 		}
 	}
@@ -441,27 +301,7 @@ public final class BillboardOutlineRenderer
 		scratch.enqueue(index);
 	}
 
-	private static int shadowOutlineColor(int[] pixels, int width, int height, int x, int y)
-	{
-		return darkenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
-	}
-
-	private static int highlightOutlineColor(int[] pixels, int width, int height, int x, int y)
-	{
-		return brightenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
-	}
-
-	private static int shadowInlineColor(int[] pixels, int width, int height, int x, int y)
-	{
-		return darkenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
-	}
-
-	private static int highlightInlineColor(int[] pixels, int width, int height, int x, int y)
-	{
-		return brightenedAverageOpaqueNeighborColor(pixels, width, height, x, y);
-	}
-
-	private static int darkenedAverageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
+	private static int shadeNeighbors(int[] pixels, int width, int height, int x, int y, double factor)
 	{
 		int color = averageOpaqueNeighborColor(pixels, width, height, x, y);
 		if (color == 0)
@@ -470,24 +310,9 @@ public final class BillboardOutlineRenderer
 		}
 
 		int alpha = (color >>> 24) & 0xFF;
-		int avgRed = darken((color >>> 16) & 0xFF);
-		int avgGreen = darken((color >>> 8) & 0xFF);
-		int avgBlue = darken(color & 0xFF);
-		return (alpha << 24) | (avgRed << 16) | (avgGreen << 8) | avgBlue;
-	}
-
-	private static int brightenedAverageOpaqueNeighborColor(int[] pixels, int width, int height, int x, int y)
-	{
-		int color = averageOpaqueNeighborColor(pixels, width, height, x, y);
-		if (color == 0)
-		{
-			return 0;
-		}
-
-		int alpha = (color >>> 24) & 0xFF;
-		int avgRed = brighten((color >>> 16) & 0xFF);
-		int avgGreen = brighten((color >>> 8) & 0xFF);
-		int avgBlue = brighten(color & 0xFF);
+		int avgRed = scaleChannel((color >>> 16) & 0xFF, factor);
+		int avgGreen = scaleChannel((color >>> 8) & 0xFF, factor);
+		int avgBlue = scaleChannel(color & 0xFF, factor);
 		return (alpha << 24) | (avgRed << 16) | (avgGreen << 8) | avgBlue;
 	}
 
@@ -571,14 +396,9 @@ public final class BillboardOutlineRenderer
 		}
 	}
 
-	private static int darken(double color)
+	private static int scaleChannel(int color, double factor)
 	{
-		return clampToByte((int) Math.round(color * SHADOW_DARKEN_FACTOR));
-	}
-
-	private static int brighten(double color)
-	{
-		return clampToByte((int) Math.round(color * HIGHLIGHT_BRIGHTEN_FACTOR));
+		return clampToByte((int) Math.round(color * factor));
 	}
 
 	private static int clampToByte(int value)

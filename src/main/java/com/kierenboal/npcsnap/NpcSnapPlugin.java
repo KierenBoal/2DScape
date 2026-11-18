@@ -53,8 +53,8 @@ import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldChanged;
-import net.runelite.client.callback.Hooks;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -74,7 +74,7 @@ import net.runelite.client.util.ColorUtil;
 	internalName = "2dscape"
 )
 public class NpcSnapPlugin extends Plugin
-	implements Hooks.RenderableDrawListener
+	implements RenderCallback
 {
 	private static final String CONFIG_GROUP = "npc-snap";
 	private static final String RETRO_OVERHEADS_KEY = "useRetroOverheads";
@@ -446,7 +446,7 @@ public class NpcSnapPlugin extends Plugin
 			client.addChatMessage(net.runelite.api.ChatMessageType.GAMEMESSAGE, "2DScape",
 				"ERROR: Enable RuneLite's GPU plugin or 117 HD. 2DScape needs a GPU renderer to hide the original 3D models.", null);
 		}
-		billboardOverlay.clearStaleInteraction(client.getLocalPlayer(), client.getTickCount());
+		billboardOverlay.clearStaleInteraction();
 		if (!pendingSkillXpSeed || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
@@ -510,11 +510,11 @@ public class NpcSnapPlugin extends Plugin
 		migrateSpriteShadows();
 		changelog.requestCheck();
 		interactHighlightCompatibility.onProfileChanged(
-			active && config.overrideInteractHighlightOutlines(),
-			config.applyToNpcs() && config.enableNpcInteractionOutline(),
-			config.applyToPlayers() && config.enablePlayerInteractionOutline(),
-			config.applyToGroundItems() && config.enableGroundItemInteractionOutline(),
-			config.applyToObjects() && config.enableObjectInteractionOutline());
+			active && config.useInteractionHighlight() && config.overrideInteractHighlightOutlines(),
+			config.applyToNpcs(),
+			config.applyToPlayers(),
+			config.applyToGroundItems(),
+			config.applyToObjects());
 		reconcileSafetyState();
 	}
 
@@ -563,7 +563,7 @@ public class NpcSnapPlugin extends Plugin
 		BillboardObjectExportTarget objectTarget = source.getActor() == null
 			&& !BillboardHoverInteractionResolver.isGroundItemAction(source.getType())
 			? BillboardObjectExportTarget.snapshot(client, source) : null;
-		client.createMenuEntry(-1)
+		client.getMenu().createMenuEntry(-1)
 			.setOption("Export sprite")
 			.setTarget(source.getTarget())
 			.setType(MenuAction.RUNELITE)
@@ -580,7 +580,7 @@ public class NpcSnapPlugin extends Plugin
 		String target = ColorUtil.wrapWithColorTag(
 			BillboardExportPaths.sanitizeName(player.getName(), "Player").replace('_', ' '),
 			Color.WHITE);
-		client.createMenuEntry(-1)
+		client.getMenu().createMenuEntry(-1)
 			.setOption("Export sprite")
 			.setTarget(target)
 			.setType(MenuAction.RUNELITE)
@@ -655,30 +655,14 @@ public class NpcSnapPlugin extends Plugin
 	{
 		if (!active) return;
 		MenuEntry entry = menuOptionClicked.getMenuEntry();
-		if (BillboardHoverInteractionResolver.isActorInteractionAction(menuOptionClicked.getMenuAction()))
-		{
-			billboardOverlay.noteActorInteraction(entry.getActor(), client.getTickCount());
-			return;
-		}
-		if (BillboardHoverInteractionResolver.isGroundItemAction(menuOptionClicked.getMenuAction()))
-		{
-			billboardOverlay.noteGroundItemInteraction(entry);
-			return;
-		}
-
-		if (BillboardHoverInteractionResolver.isObjectAction(menuOptionClicked.getMenuAction()))
-		{
-			billboardOverlay.noteObjectInteraction(entry);
-			return;
-		}
-		billboardOverlay.clearInteractionState();
+		billboardOverlay.noteInteraction(entry, menuOptionClicked.isItemOp());
 	}
 
 	@Subscribe
 	public void onMenuOpened(MenuOpened menuOpened)
 	{
 		if (!active) return;
-		client.setMenuEntries(java.util.Arrays.stream(menuOpened.getMenuEntries())
+		client.getMenu().setMenuEntries(java.util.Arrays.stream(menuOpened.getMenuEntries())
 			.filter(entry -> !"Copy to clipboard".equals(entry.getOption())
 				|| !"2DScape".equals(BillboardExportPaths.stripTags(entry.getTarget())))
 			.toArray(MenuEntry[]::new));
@@ -693,6 +677,24 @@ public class NpcSnapPlugin extends Plugin
 		}
 
 		billboardOverlay.onLocalPlayerInteractionChanged(interactingChanged.getTarget(), client.getTickCount());
+	}
+
+	@Subscribe
+	public void onNpcSpawned(net.runelite.api.events.NpcSpawned event)
+	{
+		onActorSpawned(event.getNpc());
+	}
+
+	@Subscribe
+	public void onPlayerSpawned(net.runelite.api.events.PlayerSpawned event)
+	{
+		onActorSpawned(event.getPlayer());
+	}
+
+	private void onActorSpawned(net.runelite.api.Actor actor)
+	{
+		if (active && client.getLocalPlayer() != null && client.getLocalPlayer().getInteracting() == actor)
+			billboardOverlay.onLocalPlayerInteractionChanged(actor, client.getTickCount());
 	}
 
 	@Subscribe
@@ -799,16 +801,14 @@ public class NpcSnapPlugin extends Plugin
 			}
 			return;
 		}
+		interactHighlightCompatibility.settingsChanged(configChanged);
 		if (CONFIG_GROUP.equals(configChanged.getGroup())
 			&& (OVERRIDE_INTERACT_HIGHLIGHT_KEY.equals(configChanged.getKey())
 				|| "applyToNpcs".equals(configChanged.getKey())
 				|| "applyToPlayers".equals(configChanged.getKey())
-				|| "enableNpcInteractionOutline".equals(configChanged.getKey())
-				|| "enablePlayerInteractionOutline".equals(configChanged.getKey())
 				|| "applyToGroundItems".equals(configChanged.getKey())
 				|| "applyToObjects".equals(configChanged.getKey())
-				|| "enableGroundItemInteractionOutline".equals(configChanged.getKey())
-				|| "enableObjectInteractionOutline".equals(configChanged.getKey())))
+				|| "useInteractionHighlight".equals(configChanged.getKey())))
 		{
 			syncInteractHighlightOverride();
 		}
@@ -847,11 +847,11 @@ public class NpcSnapPlugin extends Plugin
 	private void syncInteractHighlightOverride()
 	{
 		interactHighlightCompatibility.synchronize(
-			active && config.overrideInteractHighlightOutlines(),
-			config.applyToNpcs() && config.enableNpcInteractionOutline(),
-			config.applyToPlayers() && config.enablePlayerInteractionOutline(),
-			config.applyToGroundItems() && config.enableGroundItemInteractionOutline(),
-			config.applyToObjects() && config.enableObjectInteractionOutline());
+			active && config.useInteractionHighlight() && config.overrideInteractHighlightOutlines(),
+			config.applyToNpcs(),
+			config.applyToPlayers(),
+			config.applyToGroundItems(),
+			config.applyToObjects());
 	}
 
 	private NpcSnapConfigChangeHandler ensureConfigChangeHandler()
@@ -881,17 +881,6 @@ public class NpcSnapPlugin extends Plugin
 	{
 		if (!active) return;
 		billboardOverlay.recordHitsplat(hitsplatApplied.getActor(), hitsplatApplied.getHitsplat());
-	}
-
-	@Override
-	public boolean draw(Renderable renderable, boolean drawingUi)
-	{
-		if (!active)
-		{
-			return true;
-		}
-
-		return ensureSceneDrawCallbacks().draw(renderable, drawingUi);
 	}
 
 	@Override

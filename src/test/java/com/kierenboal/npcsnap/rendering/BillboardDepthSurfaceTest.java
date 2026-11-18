@@ -103,11 +103,11 @@ public class BillboardDepthSurfaceTest
 			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
 		BillboardRenderRequest forwardRequest = new BillboardRenderRequest(
 			renderable, model, new LocalPoint(0, 0), 0, 0, 0, 0,
-			-1, -1, -1, -1, -1, false, false, null, null,
+			-1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, false);
 		BillboardRenderRequest turnedRequest = new BillboardRenderRequest(
 			renderable, model, new LocalPoint(0, 0), 0, 0, 4096, 4096,
-			-1, -1, -1, -1, -1, false, false, null, null,
+			-1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, false);
 		BillboardDepthSurface forwardSprite = BillboardDepthSurface.from(
 			calculator, forwardRequest, new Rectangle(-10, -100, 20, 100), new Rectangle(0, 0, 20, 100), 0.0d);
@@ -150,7 +150,7 @@ public class BillboardDepthSurfaceTest
 			method("getVerticesZ", new float[] {-20, -20, 20, 20}));
 		BillboardRenderRequest request = new BillboardRenderRequest(
 			renderable, model, new LocalPoint(0, 0), 0, 40, 0, 0,
-			-1, -1, -1, -1, -1, false, false, null, null,
+			-1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, false);
 
 		BillboardDepthSurface surface = BillboardDepthSurface.from(
@@ -189,7 +189,7 @@ public class BillboardDepthSurfaceTest
 		Renderable renderable = proxy(Renderable.class,
 			com.kierenboal.npcsnap.TestProxies.methodSupplier("getModelHeight", height::get));
 		BillboardRenderRequest request = new BillboardRenderRequest(renderable, model, new LocalPoint(0, 0),
-			0, 0, 0, 0, -1, -1, -1, -1, -1, false, false, VerticalAnchor.BOTTOM, null);
+			0, 0, 0, 0, -1, -1, -1, -1, -1, VerticalAnchor.BOTTOM, null, false);
 		Rectangle bounds = new Rectangle(0, 0, 10, 10);
 		PreparedBillboardDraw draw = new PreparedBillboardDraw(request,
 			new BillboardRenderResult(bounds, null, bounds), 1);
@@ -220,11 +220,11 @@ public class BillboardDepthSurfaceTest
 
 		BillboardRenderRequest lowProfileRequest = new BillboardRenderRequest(
 			renderable, flat, new LocalPoint(0, 0), 0, 0, 0, 0,
-			-1, -1, -1, -1, -1, false, false, null, null,
+			-1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, true);
 		BillboardRenderRequest uprightRequest = new BillboardRenderRequest(
 			renderable, upright, new LocalPoint(0, 0), 0, 0, 0, 0,
-			-1, -1, -1, -1, -1, false, false, null, null,
+			-1, -1, -1, -1, -1,
 			VerticalAnchor.BOTTOM, null, false);
 
 		assertFalse(BillboardDepthSurface.from(

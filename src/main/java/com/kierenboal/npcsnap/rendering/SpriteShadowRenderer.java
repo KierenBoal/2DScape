@@ -3,6 +3,7 @@ package com.kierenboal.npcsnap.rendering;
 import com.kierenboal.npcsnap.SpriteShadowType;
 import java.awt.AlphaComposite;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 
@@ -18,13 +19,18 @@ public final class SpriteShadowRenderer
 
 	public static BufferedImage render(BufferedImage sprite, SpriteShadowType type, Scratch scratch)
 	{
-		int w = sprite.getWidth(), h = sprite.getHeight(), pad = horizontalPadding(w,type), ow = w + 2*pad, oh = h + (type == SpriteShadowType.BLOB ? Math.max(10,(int)Math.ceil(w*0.125)+2) : 10);
+		return render(new SourceAlpha(sprite), type, scratch);
+	}
+
+	private static BufferedImage render(SourceAlpha source, SpriteShadowType type, Scratch scratch)
+	{
+		int w = source.width, h = source.height, pad = horizontalPadding(w,type);
+		int ow = w + 2*pad, oh = h + (type == SpriteShadowType.BLOB ? Math.max(10,(int)Math.ceil(w*0.125)+2) : 10);
 		BufferedImage out = new BufferedImage(ow, oh, BufferedImage.TYPE_INT_ARGB);
-		int[] pixels = sprite.getRGB(0, 0, w, h, null, 0, w);
-		int top = h, feet = -1;
-		for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
-			if ((pixels[y*w+x] >>> 24) != 0) { top = Math.min(top, y); feet = y; }
-		if (feet < 0 || !type.projected()) return out;
+		Rectangle bounds = source.bounds;
+		if (bounds.isEmpty() || !type.projected()) return out;
+		int[] pixels = source.pixels;
+		int top = bounds.y, feet = top + bounds.height - 1;
 		scratch.ensure(ow*oh);
 		float[] mask = scratch.mask;
 		Arrays.fill(mask,0);
@@ -56,9 +62,7 @@ public final class SpriteShadowRenderer
 			{
 				int[] bytes = blur(mask, ow, oh, scratch);
 				for (int i=0; i<mask.length; i++)
-					mask[i] = type == SpriteShadowType.HARD
-						? 0.80f * (float)Math.pow(bytes[i]/255f, 0.70)
-						: (float)Math.floor(bytes[i]/255f*7f+0.75f)/7f*0.56f;
+					mask[i] = shadowOpacity(type, bytes[i]/255f);
 			}
 			else for (int i=0; i<mask.length; i++) mask[i] = mask[i]>0.31f ? 0.49f : 0;
 			for (int x=0; x<w; x++)
@@ -66,15 +70,11 @@ public final class SpriteShadowRenderer
 					if ((pixels[y*w+x] >>> 24)!=0)
 						mask[(feet+1)*ow+x+3] = Math.max(mask[(feet+1)*ow+x+3],type == SpriteShadowType.HARD ? 0.55f : soft ? 0.32f : 0.51f);
 		}
-		if (type == SpriteShadowType.BLOB)
+		else
 		{
-			Arrays.fill(mask,0);
-			int left = w, right = -1;
-			for (int y=top; y<=feet; y++) for(int x=0; x<w; x++)
-				if ((pixels[y*w+x] >>> 24)!=0) { left = Math.min(left,x); right = Math.max(right,x); }
-			double occupiedWidth = right-left+1;
+			double occupiedWidth = bounds.width;
 			double width = occupiedWidth*1.2, height = Math.max(3,occupiedWidth*0.9*0.25);
-			double cx = (left+right)/2.0+pad, cy = feet+1;
+			double cx = bounds.x + (occupiedWidth - 1)/2 + pad, cy = feet+1;
 			for (int y=0; y<oh; y++) for(int x=0; x<ow; x++)
 			{
 				double dx = (x-cx)/Math.max(0.5,width/2), dy = (y-cy)/(height/2);
@@ -86,6 +86,13 @@ public final class SpriteShadowRenderer
 		for (int y=0; y<oh; y++) for (int x=0; x<ow; x++)
 			out.setRGB(x,y,((int)(mask[y*ow+x]*255)<<24) | 0x1a181b);
 		return out;
+	}
+
+	private static float shadowOpacity(SpriteShadowType type, float density)
+	{
+		return type == SpriteShadowType.FLAT ? density * 0.49f
+			: type == SpriteShadowType.HARD ? 0.80f * (float) Math.pow(density, 0.70)
+			: (float) Math.floor(density * 7f + 0.75f) / 7f * 0.56f;
 	}
 
 	private static int[] blur(float[] mask, int width, int height, Scratch scratch)
@@ -118,17 +125,17 @@ public final class SpriteShadowRenderer
 	}
 
 	/** Unlike the short footprint, this texture retains every captured silhouette row. */
-	private static SpriteShadowMask fullSilhouette(BufferedImage sprite, SpriteShadowType type, Scratch scratch)
+	private static SpriteShadowMask fullSilhouette(SourceAlpha source, SpriteShadowType type, Scratch scratch)
 	{
 		// Three radius-two box passes need six transparent pixels on every side.
 		// Blur the padded image, including below the feet, before cropping its alpha.
-		int pad=6, w=sprite.getWidth(), h=sprite.getHeight(), width=w+2*pad, height=h+2*pad;
+		int pad=6, w=source.width, h=source.height, width=w+2*pad, height=h+2*pad;
 		scratch.ensure(width*height);
 		float[] alpha=scratch.mask;
 		Arrays.fill(alpha,0);
 		for(int y=0;y<h;y++) for(int x=0;x<w;x++)
 		{
-			int a=sprite.getRGB(x,y)>>>24;
+			int a=source.pixels[y*w+x]>>>24;
 			alpha[(y+pad)*width+x+pad]=a/255f;
 		}
 		BufferedImage out=new BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB);
@@ -137,12 +144,10 @@ public final class SpriteShadowRenderer
 		{
 			int i=y*width+x;
 			float density=blurred==null ? alpha[i] : blurred[i]/255f;
-			float value=type==SpriteShadowType.FLAT ? density*0.49f
-				: type==SpriteShadowType.HARD ? 0.8f*(float)Math.pow(density,0.7)
-				: (float)Math.floor(density*7+0.75f)/7*0.56f;
+			float value=shadowOpacity(type,density);
 			out.setRGB(x,y,((int)(value*255)<<24)|0x1a181b);
 		}
-		return new SpriteShadowMask(sprite,out,type,true,-pad,-pad);
+		return new SpriteShadowMask(source,out,type,true,-pad,-pad);
 	}
 
 	/** A one-pixel blur for full-size casts; downward reference masks retain radius two. */
@@ -172,22 +177,59 @@ public final class SpriteShadowRenderer
 		BillboardOutlineRenderer.Scratch outlineScratch, double legacyRatio)
 	{
 		if (type == SpriteShadowType.OFF) return null;
+		SourceAlpha source = new SourceAlpha(sprite);
 		BufferedImage mask;
+		int pad = horizontalPadding(source.width, type);
 		if (type == SpriteShadowType.LEGACY)
 		{
-			BufferedImage copy = new BufferedImage(sprite.getWidth(),sprite.getHeight(),BufferedImage.TYPE_INT_ARGB);
-			copy.setRGB(0,0,sprite.getWidth(),sprite.getHeight(),sprite.getRGB(0,0,sprite.getWidth(),sprite.getHeight(),null,0,sprite.getWidth()),0,sprite.getWidth());
+			int w = source.width, h = source.height;
+			BufferedImage copy = new BufferedImage(w,h,BufferedImage.TYPE_INT_ARGB);
+			copy.setRGB(0,0,w,h,source.pixels,0,w);
 			BillboardOutlineRenderer.applyShadow(copy,outlineScratch,legacyRatio);
-			mask = new BufferedImage(sprite.getWidth()+6,sprite.getHeight()+10,BufferedImage.TYPE_INT_ARGB);
-			for(int y=0;y<sprite.getHeight();y++) for(int x=0;x<sprite.getWidth();x++)
-				if((sprite.getRGB(x,y)>>>24)==0) mask.setRGB(x+3,y,copy.getRGB(x,y));
+			mask = new BufferedImage(w+2*pad,h+10,BufferedImage.TYPE_INT_ARGB);
+			for(int y=0;y<h;y++) for(int x=0;x<w;x++)
+				if((source.pixels[y*w+x]>>>24)==0) mask.setRGB(x+pad,y,copy.getRGB(x,y));
 			copy.flush();
 		}
-		else mask = render(sprite,type,scratch);
-		SpriteShadowMask result=new SpriteShadowMask(sprite,mask,type);
+		else mask = render(source,type,scratch);
+		SpriteShadowMask result=new SpriteShadowMask(source,mask,type,false,-pad,0);
 		if(type==SpriteShadowType.FLAT || type==SpriteShadowType.HARD || type==SpriteShadowType.RADIAL)
-			result.setDirectionalCaster(fullSilhouette(sprite,type,scratch));
+			result.setDirectionalCaster(fullSilhouette(source,type,scratch));
 		return result;
+	}
+
+	static Rectangle alphaBounds(int[] pixels, int width, int height)
+	{
+		int left = width, top = height, right = -1, bottom = -1;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				if ((pixels[y * width + x] >>> 24) != 0)
+				{
+					left = Math.min(left, x);
+					right = Math.max(right, x);
+					top = Math.min(top, y);
+					bottom = y;
+				}
+			}
+		}
+		return right < left ? new Rectangle() : BillboardGeometryUtils.inclusivePixelBounds(left, top, right, bottom);
+	}
+
+	static final class SourceAlpha
+	{
+		final int width, height;
+		final int[] pixels;
+		final Rectangle bounds;
+
+		SourceAlpha(BufferedImage sprite)
+		{
+			width = sprite.getWidth();
+			height = sprite.getHeight();
+			pixels = sprite.getRGB(0, 0, width, height, null, 0, width);
+			bounds = alphaBounds(pixels, width, height);
+		}
 	}
 
 	public static final class Scratch

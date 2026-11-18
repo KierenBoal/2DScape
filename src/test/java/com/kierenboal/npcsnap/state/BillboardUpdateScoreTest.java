@@ -7,50 +7,33 @@ import static org.junit.Assert.assertTrue;
 public class BillboardUpdateScoreTest
 {
 	@Test
-	public void resizePrioritySitsBetweenInteractionAndOrdinaryStateChanges()
+	public void resizeOutranksOrdinaryStateChanges()
 	{
 		BillboardUpdateState state = new BillboardUpdateState(1d);
 		UpdateHeuristicSnapshot initial = snapshot(100d);
 		state.observe(initial);
 		state.advance(1, 1, 1d, initial, 1);
 		UpdateHeuristicSnapshot changed = new UpdateHeuristicSnapshot(100d, 2, 2, 99, 2, 2, true);
-		double ordinary = BillboardUpdateScore.compute(false, false, false, true, true, true, true, true,
+		double ordinary = BillboardUpdateScore.compute(false, false, true, true, true,
 			state, changed, 100, 0);
-		double resize = BillboardUpdateScore.compute(true, false, true, false, false, false, false, false,
-			state, initial, 2, 100);
-		double changedResize = BillboardUpdateScore.compute(false, false, true, true, true, true, true, true,
-			state, changed, 100, 0);
-		double interaction = BillboardUpdateScore.compute(true, true, false, false, false, false, false, false,
+		double resize = BillboardUpdateScore.compute(true, true, false, false, false,
 			state, initial, 2, 100);
 		assertTrue(resize > ordinary);
-		assertTrue(interaction > changedResize);
 	}
 	@Test
-	public void uncachedAndInteractionTargetsOutrankOrdinaryCachedTargets()
+	public void uncachedTargetsOutrankOrdinaryCachedTargets()
 	{
-		double cached = score(true, false, false, false, false, false, false, 0);
-		double uncached = score(false, false, false, false, false, false, false, 0);
-		double interaction = score(true, true, true, false, false, false, false, 0);
-
+		double cached = score(true, false, false, false, 0);
+		double uncached = score(false, false, false, false, 0);
 		assertTrue(uncached > cached);
-		assertTrue(interaction > uncached);
-	}
-
-	@Test
-	public void priorityActorBeatsLocalPlayerFallbackDuringForcedRedraw()
-	{
-		double priority = score(true, true, true, false, false, false, false, 0);
-		double local = score(true, true, false, true, false, false, false, 0);
-
-		assertTrue(priority > local);
 	}
 
 	@Test
 	public void ownerAndSpotAnimationBonusesAreAdditive()
 	{
-		double ordinary = score(true, false, false, false, false, false, false, 0);
-		double owned = score(true, false, false, false, true, true, false, 0);
-		double ownedSpotAnimation = score(true, false, false, false, true, true, true, 0);
+		double ordinary = score(true, false, false, false, 0);
+		double owned = score(true, true, true, false, 0);
+		double ownedSpotAnimation = score(true, true, true, true, 0);
 
 		assertTrue(owned > ordinary);
 		assertTrue(ownedSpotAnimation > owned);
@@ -60,11 +43,11 @@ public class BillboardUpdateScoreTest
 	public void nearerAndEarlierQueueEntriesWinOtherwiseEqualTies()
 	{
 		BillboardUpdateState state = new BillboardUpdateState(1d);
-		double near = BillboardUpdateScore.compute(true, false, false, false, false, false, false,
+		double near = BillboardUpdateScore.compute(true, false, false, false, false,
 			state, snapshot(100d), 10, 0);
-		double far = BillboardUpdateScore.compute(true, false, false, false, false, false, false,
+		double far = BillboardUpdateScore.compute(true, false, false, false, false,
 			state, snapshot(10_000d), 10, 0);
-		double later = BillboardUpdateScore.compute(true, false, false, false, false, false, false,
+		double later = BillboardUpdateScore.compute(true, false, false, false, false,
 			state, snapshot(100d), 10, 10);
 
 		assertTrue(near > far);
@@ -80,10 +63,10 @@ public class BillboardUpdateScoreTest
 		unchangedState.observe(initial);
 		changedState.observe(initial);
 
-		double unchanged = BillboardUpdateScore.compute(true, false, false, false, false, false, false,
+		double unchanged = BillboardUpdateScore.compute(true, false, false, false, false,
 			unchangedState, initial, 10, 0);
 		UpdateHeuristicSnapshot changed = new UpdateHeuristicSnapshot(100d, 1, 1, 99, 1, 1, false);
-		double modelChanged = BillboardUpdateScore.compute(true, false, false, false, false, false, false,
+		double modelChanged = BillboardUpdateScore.compute(true, false, false, false, false,
 			changedState, changed, 10, 0);
 
 		assertTrue(modelChanged > unchanged);
@@ -91,16 +74,13 @@ public class BillboardUpdateScoreTest
 
 	private static double score(
 		boolean cached,
-		boolean force,
-		boolean targetPriority,
-		boolean targetLocal,
 		boolean ownerLocal,
 		boolean ownerPriority,
 		boolean spotAnimation,
 		int queueIndex)
 	{
 		return BillboardUpdateScore.compute(
-			cached, force, targetPriority, targetLocal, ownerLocal, ownerPriority, spotAnimation,
+			cached, false, ownerLocal, ownerPriority, spotAnimation,
 			new BillboardUpdateState(1d), snapshot(100d), 10, queueIndex);
 	}
 
