@@ -1,11 +1,11 @@
 package com.kierenboal.npcsnap.occlusion;
 
 import com.kierenboal.npcsnap.rendering.BillboardGeometryUtils;
+import com.kierenboal.npcsnap.rendering.TextureSample;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Path2D;
 import net.runelite.api.geometry.SimplePolygon;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -38,7 +38,8 @@ public final class BillboardOcclusionMask
 	private boolean[] fullRegion = new boolean[0];
 	private boolean[] rowCoverage = new boolean[0];
 	private List<Occluder> occluders = Collections.emptyList();
-	private List<Rectangle> regions = Collections.emptyList();
+	private final BillboardOcclusionRegions fallbackRegions = new BillboardOcclusionRegions();
+	private BillboardOcclusionRegions regions;
 	private Rectangle bounds;
 	private int width;
 	private int height;
@@ -48,6 +49,7 @@ public final class BillboardOcclusionMask
 	private long uniformDecisions;
 	private long refinedPixels;
 	private long candidateTests;
+	private int cutoutTexelTests;
 	private int[] compatibilityTransmittance = new int[0];
 
 	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
@@ -65,34 +67,47 @@ public final class BillboardOcclusionMask
 	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
 		int x, int y, int w, int h, Rectangle interest, Collection<Rectangle> activeRegions)
 	{
-		step = BillboardOcclusionQuality.normalize(quality).sampleStep();
-		bounds = new Rectangle(x, y, Math.max(0, w), Math.max(0, h));
-		if (interest != null)
+		Rectangle clip = new Rectangle(x, y, Math.max(0, w), Math.max(0, h));
+		if (interest != null) clip = clip.intersection(interest);
+		fallbackRegions.clear();
+		if (activeRegions == null || activeRegions.isEmpty())
 		{
-			bounds = bounds.intersection(interest);
+			fallbackRegions.add(clip, clip);
 		}
-		references = coveredCellCount = coverageRowCount = 0;
+		else
+		{
+			for (Rectangle region : activeRegions)
+			{
+				if (region != null) fallbackRegions.add(region, clip);
+			}
+		}
+		prepare(occluders, quality, clip, fallbackRegions, false);
+	}
+
+	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality, BillboardOcclusionRegions interest)
+	{
+		prepare(occluders, quality, interest, false);
+	}
+
+	public void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality,
+		BillboardOcclusionRegions interest, boolean debug)
+	{
+		prepare(occluders, quality, interest.bounds() == null ? new Rectangle() : interest.bounds(), interest, debug);
+	}
+
+	private void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality, Rectangle clip,
+		BillboardOcclusionRegions interest, boolean debug)
+	{
+		step = BillboardOcclusionQuality.normalize(quality).sampleStep();
+		bounds = clip;
+		regions = interest;
+		references = coveredCellCount = coverageRowCount = cutoutTexelTests = 0;
 		this.occluders = occluders == null ? Collections.emptyList() : occluders;
 		if (step == 0 || bounds.isEmpty())
 		{
 			step = width = height = 0;
 			this.occluders = Collections.emptyList();
 			return;
-		}
-		regions = new ArrayList<>();
-		if (activeRegions == null || activeRegions.isEmpty())
-		{
-			regions.add(bounds);
-		}
-		else
-		{
-			for (Rectangle region : activeRegions)
-			{
-				if (region != null && region.intersects(bounds))
-				{
-					regions.add(bounds.intersection(region));
-				}
-			}
 		}
 		width = (bounds.width + step - 1) / step;
 		height = (bounds.height + step - 1) / step;
@@ -116,22 +131,23 @@ public final class BillboardOcclusionMask
 		Arrays.fill(fullRegion, 0, size, false);
 		Arrays.fill(rowCoverage, 0, height, false);
 		// Mark each rectangle's cell span directly, rather than visiting every region per cell.
-		for (Rectangle region : regions)
+		for (Rectangle region : regions.rectangles())
 		{
 			int left = (region.x - bounds.x) / step;
 			int right = (region.x + region.width - 1 - bounds.x) / step;
 			int top = (region.y - bounds.y) / step;
 			int bottom = (region.y + region.height - 1 - bounds.y) / step;
+			int firstFull = (region.x - bounds.x + step - 1) / step;
+			int end = region.x + region.width - bounds.x;
+			int afterFull = end == bounds.width ? width : end / step;
 			for (int cy = top; cy <= bottom; cy++)
 			{
 				int py = bounds.y + cy * step;
 				int ch = Math.min(step, bounds.y + bounds.height - py);
 				Arrays.fill(active, cy * width + left, cy * width + right + 1, true);
-				for (int cx = left; cx <= right; cx++)
+				if (firstFull < afterFull && py >= region.y && py + ch <= region.y + region.height)
 				{
-					int px = bounds.x + cx * step;
-					int cw = Math.min(step, bounds.x + bounds.width - px);
-					fullRegion[cy * width + cx] |= region.contains(px, py, cw, ch);
+					Arrays.fill(fullRegion, cy * width + firstFull, cy * width + afterFull, true);
 				}
 			}
 		}
@@ -176,11 +192,6 @@ public final class BillboardOcclusionMask
 						candidateTransmittance = Arrays.copyOf(candidateTransmittance, capacity);
 						candidateTintRgb = Arrays.copyOf(candidateTintRgb, capacity);
 					}
-					if (heads[cell] == -1)
-					{
-						coveredCellCount++;
-						rowCoverage[cy] = true;
-					}
 					// Coverage bits retain crisp edges without repeating triangle membership
 					// calculations for each overlapping billboard.
 					if (coverage == 2)
@@ -197,10 +208,44 @@ public final class BillboardOcclusionMask
 								Math.max(requiredRows, Math.max(256, coverageRows.length * 2)));
 						}
 						coverageOffsets[references] = coverageRowCount;
+						int any = 0;
+						int all = (1 << cw) - 1;
+						int startX = Math.max(0, o.bounds.x - px);
+						int endX = Math.min(cw, o.bounds.x + o.bounds.width - px);
+						int faceColumns = ((1 << endX) - 1) & (-1 << startX);
 						for (int row = 0; row < ch; row++)
 						{
-							coverageRows[coverageRowCount++] = o.coverageRow(px, py + row, cw);
+							int y = py + row;
+							int pixels = 0;
+							if (y >= o.bounds.y && y < o.bounds.y + o.bounds.height)
+							{
+								pixels = faceColumns;
+								if (!fullRegion[cell])
+								{
+									pixels = regions.rowBits(px + startX, y, endX - startX) << startX;
+								}
+							}
+							int bits = o.coverageRow(px, y, pixels, debug ? this : null);
+							coverageRows[coverageRowCount++] = bits;
+							any |= bits;
+							all &= bits;
 						}
+						if (any == 0)
+						{
+							coverageRowCount -= ch;
+							continue;
+						}
+						if (all == (1 << cw) - 1)
+						{
+							coverageRowCount -= ch;
+							coverageOffsets[references] = -all;
+							coverage = 2;
+						}
+					}
+					if (heads[cell] == -1)
+					{
+						coveredCellCount++;
+						rowCoverage[cy] = true;
 					}
 					int reference = references++;
 					candidateFar[reference] = far;
@@ -227,19 +272,7 @@ public final class BillboardOcclusionMask
 			return -1;
 		}
 		int cell = ((y - bounds.y) / step) * width + (x - bounds.x) / step;
-		if (!fullRegion[cell])
-		{
-			boolean inside = false;
-			for (Rectangle region : regions)
-			{
-				inside |= region.contains(x, y);
-			}
-			if (!inside)
-			{
-				return -1;
-			}
-		}
-		return cell;
+		return fullRegion[cell] || regions.contains(x, y) ? cell : -1;
 	}
 
 	public CellResult classifySample(int sampleX, int y, double depth)
@@ -286,6 +319,11 @@ public final class BillboardOcclusionMask
 	{
 		int offset = coverageOffsets[ref];
 		return offset < 0 ? -offset : coverageRows[offset + row];
+	}
+
+	private boolean coversPixel(int reference, int x, int y)
+	{
+		return (coverageBits(reference, (y - bounds.y) % step) & (1 << ((x - bounds.x) % step))) != 0;
 	}
 
 	private boolean cellContainsExclusion(int cell, TileObject ignoredTileObject, SupportingFootprint supportingGround)
@@ -524,42 +562,28 @@ public final class BillboardOcclusionMask
 		int cell = ((y - bounds.y) / step) * width + sampleX;
 		int localY = (y - bounds.y) % step;
 		int x = bounds.x + sampleX * step;
-		for (int ref = heads[cell]; ref != -1; ref = next[ref])
+		int rowWidth = Math.min(step, bounds.x + bounds.width - x);
+		int unblocked = fullRegion[cell] ? (1 << rowWidth) - 1 : regions.rowBits(x, y, rowWidth);
+		float bias = depthBias();
+		for (int ref = heads[cell]; ref != -1 && unblocked != 0; ref = next[ref])
 		{
 			candidateTests++;
-			if (occluders.get(candidates[ref]).excludedBy(ignoredTileObject, supportingGround))
-			{
-				continue;
-			}
-			int covered = coverageBits(ref, localY);
+			int covered = coverageBits(ref, localY) & unblocked;
+			if (covered == 0) continue;
 			Occluder o = occluders.get(candidates[ref]);
-			while (covered != 0)
+			if (o.excludedBy(ignoredTileObject, supportingGround)) continue;
+			boolean inFront = candidateFar[ref] + bias < depth;
+			for (; covered != 0; covered &= covered - 1)
 			{
 				int offset = Integer.numberOfTrailingZeros(covered);
 				refinedPixels++;
-				if (candidateFar[ref] + depthBias() < depth)
-				{
-					output[offset] = multiplyTransmittance(output[offset], candidateTransmittance[ref]);
-				}
-				else
+				if (!inFront)
 				{
 					float value = o.depthAt(x + offset, y);
-					if (Float.isFinite(value) && value + depthBias() < depth)
-					{
-						output[offset] = multiplyTransmittance(output[offset], candidateTransmittance[ref]);
-					}
+					if (!Float.isFinite(value) || value + bias >= depth) continue;
 				}
-				covered &= covered - 1;
-			}
-		}
-		if (!fullRegion[cell])
-		{
-			for (int offset = 0; offset < step; offset++)
-			{
-				if (index(x + offset, y) < 0)
-				{
-					output[offset] = 255;
-				}
+				output[offset] = multiplyTransmittance(output[offset], candidateTransmittance[ref]);
+				if (output[offset] == 0) unblocked &= ~(1 << offset);
 			}
 		}
 	}
@@ -594,6 +618,7 @@ public final class BillboardOcclusionMask
 		float value = Float.POSITIVE_INFINITY;
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
+			if (!coversPixel(ref, x, y)) continue;
 			Occluder occluder = occluders.get(candidates[ref]);
 			if (occluder.excludedBy(ignoredTileObject, supportingGround))
 			{
@@ -630,6 +655,7 @@ public final class BillboardOcclusionMask
 		int winner = Integer.MAX_VALUE;
 		for (int ref = heads[cell]; ref != -1; ref = next[ref])
 		{
+			if (!coversPixel(ref, x, y)) continue;
 			int id = candidates[ref];
 			Occluder o = occluders.get(id);
 			if (o.excludedBy(ignoredTileObject, supportingGround))
@@ -656,6 +682,7 @@ public final class BillboardOcclusionMask
 		boolean excluded=false;
 		for(int ref=heads[cell];ref!=-1;ref=next[ref])
 		{
+			if (!coversPixel(ref, x, y)) continue;
 			Occluder o=occluders.get(candidates[ref]);
 			float depth=o.depthAt(x,y);
 			if(!Float.isFinite(depth)) continue;
@@ -698,7 +725,7 @@ public final class BillboardOcclusionMask
 	public String drainDebugStats()
 	{
 		String result = "candidates=" + references + " uniform=" + uniformDecisions
-			+ " refinedPixels=" + refinedPixels + " candidateTests=" + candidateTests;
+			+ " refinedPixels=" + refinedPixels + " candidateTests=" + candidateTests + " cutoutTexelTests=" + cutoutTexelTests;
 		uniformDecisions = refinedPixels = candidateTests = 0;
 		return result;
 	}
@@ -718,6 +745,24 @@ public final class BillboardOcclusionMask
 		}
 		float depthOffset;
 		boolean excludeThirdWeightZero;
+		private TextureSample texture;
+		private double[] uvOverDepth;
+		private boolean clampTextureU;
+
+		void cutout(TextureSample sample, double[] a, double[] b, double[] c, boolean clampU)
+		{
+			texture = sample;
+			clampTextureU = clampU;
+			uvOverDepth = new double[] {a[0] / depth0, a[1] / depth0,
+				b[0] / depth1, b[1] / depth1, c[0] / depth2, c[1] / depth2};
+		}
+
+		private boolean coversTexture(double a, double b, double c)
+		{
+			double inverseDepth = a / depth0 + b / depth1 + c / depth2;
+			return texture.pixel((a * uvOverDepth[0] + b * uvOverDepth[2] + c * uvOverDepth[4]) / inverseDepth,
+				(a * uvOverDepth[1] + b * uvOverDepth[3] + c * uvOverDepth[5]) / inverseDepth, clampTextureU) != 0;
+		}
 		private final Shape shape;
 		private final float depth;
 		private final boolean triangle;
@@ -920,20 +965,29 @@ public final class BillboardOcclusionMask
 			int ea = edgeCoverage(a, ax * (w - 1), ay * (h - 1));
 			int eb = edgeCoverage(b, bx * (w - 1), by * (h - 1));
 			int ec = edgeCoverage(1d - a - b, (-ax - bx) * (w - 1), (-ay - by) * (h - 1));
-			return ea == 0 || eb == 0 || ec == 0 ? 0 : excludeThirdWeightZero ? 1 : Math.min(ea, Math.min(eb, ec));
+			return ea == 0 || eb == 0 || ec == 0 ? 0
+				: excludeThirdWeightZero || texture != null ? 1 : Math.min(ea, Math.min(eb, ec));
 		}
 
-		private int coverageRow(int x, int y, int w)
+		private int coverageRow(int x, int y, int pixels, BillboardOcclusionMask debug)
 		{
 			int bits = 0;
-			for (int dx = 0; dx < w; dx++)
+			for (int remaining = pixels; remaining != 0; remaining &= remaining - 1)
 			{
+				int dx = Integer.numberOfTrailingZeros(remaining);
 				if (triangle)
 				{
 					double a = ax * (x + dx - x2) + ay * (y - y2);
 					double b = bx * (x + dx - x2) + by * (y - y2);
-					if (a >= -1.0e-6d && b >= -1.0e-6d && (excludeThirdWeightZero ? 1d - a - b > 1.0e-6d : 1d - a - b >= -1.0e-6d))
+					double c = 1d - a - b;
+					if (a >= -1.0e-6d && b >= -1.0e-6d
+						&& (excludeThirdWeightZero ? c > 1.0e-6d : c >= -1.0e-6d))
 					{
+						if (texture != null)
+						{
+							if (debug != null) debug.cutoutTexelTests++;
+							if (!coversTexture(a, b, c)) continue;
+						}
 						bits |= 1 << dx;
 					}
 				}

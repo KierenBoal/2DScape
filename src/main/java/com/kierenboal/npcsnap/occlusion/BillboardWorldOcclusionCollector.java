@@ -6,6 +6,9 @@ import com.kierenboal.npcsnap.NpcSnapConfig;
 import com.kierenboal.npcsnap.rendering.BillboardColorUtils;
 import com.kierenboal.npcsnap.rendering.BillboardDepthCalculator;
 import com.kierenboal.npcsnap.rendering.BillboardGeometryUtils;
+import com.kierenboal.npcsnap.rendering.BillboardTextureResolver;
+import com.kierenboal.npcsnap.rendering.TextureSample;
+import com.kierenboal.npcsnap.rendering.TextureUvs;
 import com.kierenboal.npcsnap.targeting.ObjectRenderablePart;
 import com.kierenboal.npcsnap.targeting.ObservedTileObject;
 import com.kierenboal.npcsnap.targeting.ObservedTileObjectBuilder;
@@ -15,8 +18,10 @@ import java.awt.Shape;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +45,7 @@ import net.runelite.api.WorldView;
 import net.runelite.api.WorldEntity;
 import com.kierenboal.npcsnap.targeting.BillboardWorldViewVisibility;
 import net.runelite.api.coords.LocalPoint;
+import net.runelite.client.plugins.gpu.GpuPlugin;
 import org.slf4j.Logger;
 
 public final class BillboardWorldOcclusionCollector
@@ -60,11 +66,12 @@ public final class BillboardWorldOcclusionCollector
 	private final BillboardDepthCalculator depthCalculator;
 	private final Logger log;
 	private final BillboardSceneVisibility sceneVisibility;
+	private final BillboardTextureResolver textureResolver;
+	private final Map<Integer, TextureSample> frameTextures = new HashMap<>();
 	private final SceneryFaceColors sceneryFaceColors = new SceneryFaceColors();
 	private final List<BillboardOcclusionMask.Occluder> worldOccluders = new ArrayList<>();
-	private final List<Rectangle> interestRegions = new ArrayList<>();
+	private final BillboardOcclusionRegions interest = new BillboardOcclusionRegions();
 	private final BillboardTileVisits tileVisits = new BillboardTileVisits();
-	private final Set<Tile> visitedTiles = IdentitySets.create();
 	private final Set<TileObject> visitedObjects = IdentitySets.create();
 	private final IdentityHashMap<Tile, TileCandidate> tileCandidatesByTile = new IdentityHashMap<>();
 	private final List<TileCandidate> tileCandidates = new ArrayList<>();
@@ -135,7 +142,7 @@ public final class BillboardWorldOcclusionCollector
 	public void collectNestedOccluders(WorldView top, BillboardWorldViewVisibility visibility,
 		BillboardOcclusionQuality quality, Set<Renderable> rendered, Set<TileObject> billboarded)
 	{
-		if (quality == BillboardOcclusionQuality.OFF || interestBounds == null || top == null || top.worldEntities() == null) return;
+		if (quality == BillboardOcclusionQuality.OFF || interest.bounds() == null || top == null || top.worldEntities() == null) return;
 		try
 		{
 			for (WorldEntity boat : top.worldEntities())
@@ -213,11 +220,19 @@ public final class BillboardWorldOcclusionCollector
 	}
 	private String collectedVisibility = "not-collected";
 	private CameraProjectionState fallbackShapeCameraState;
-	private Rectangle interestBounds;
 	// Reused per renderable part: shared vertices are projected only once.
 	private double[][] cameraModelVertices = new double[0][3];
 	private final double[][] triangleInput = new double[3][];
-	private final double[][] clipVertices = new double[4][3];
+	private final double[] clipVertex = new double[3];
+	private final Point[] triangleScreen = new Point[4];
+	private final double[] triangleDepth = new double[4];
+	private final int[] edgeFrom = new int[4], edgeTo = new int[4];
+	private final double[] edgeFraction = new double[4];
+	private final double[][] triangleUvs = new double[4][2];
+	private final double[] faceUvs = new double[6];
+	private int triangleCount;
+	private Point[] modelScreenVertices = new Point[0];
+	private int projectedVertices, cutoutUvFaces;
 	private final double[][] terrainCamera = new double[3][3];
 	private boolean[] modelVertexProjected = new boolean[0];
 	private boolean[] visibleModelFaces = new boolean[0];
@@ -225,34 +240,13 @@ public final class BillboardWorldOcclusionCollector
 	private final IdentityHashMap<Renderable, Model> frameModels = new IdentityHashMap<>();
 	private int debugTerrainTilesConsidered;
 	private int debugRoofSurfacesHidden;
-	private int debugBridgeTerrainTilesSkipped;
-	private int debugBridgeTilesIncluded;
-	private int debugVerticalFallbackOccludersAccepted;
-	private int debugFlatFallbackOccludersAccepted;
-	private int debugBridgeFallbacksSuppressed;
-	private int debugBridgeSceneryWithoutRenderEvidence;
-	private int debugOccludersRejectedBehindCamera;
 	private int debugSceneObjectsConsidered;
-	private int debugSceneObjectsRejectedByFilter;
-	private int debugSceneObjectsSkippedOutsideInterest;
-	private int debugSceneObjectsWithoutParts;
 	private int debugSceneObjectsAccepted;
 	private int debugTerrainTilesRejectedByBroadPhase;
 	private int debugSceneObjectsRejectedByBroadPhase;
-	private int debugDirectModels;
-	private int debugUnavailableModels;
-	private int debugModelGeometryCacheHits;
-	private int debugModelGeometryCacheMisses;
-	private int debugFallbackShapeQueries;
-	private int debugUpperPlaneTilesConsidered;
-	private int debugUpperPlaneSceneryAccepted;
-	private int debugUpperPlaneSceneryRejectedRoof;
-	private int debugUpperPlaneSceneryRejectedUnknown;
-	private int debugUpperPlaneSceneryRejectedNotRendered;
 	private int debugLastLoggedCycle = Integer.MIN_VALUE;
 	private final List<String> debugAcceptedScenerySamples = new ArrayList<>();
 	private final List<String> debugRejectedScenerySamples = new ArrayList<>();
-	private final List<String> debugBridgeTileSamples = new ArrayList<>();
 
 	public BillboardWorldOcclusionCollector(Client client, NpcSnapConfig config,
 		BillboardDepthCalculator depthCalculator, Logger log)
@@ -263,11 +257,18 @@ public final class BillboardWorldOcclusionCollector
 	public BillboardWorldOcclusionCollector(Client client, NpcSnapConfig config,
 		BillboardDepthCalculator depthCalculator, Logger log, BillboardSceneVisibility sceneVisibility)
 	{
+		this(client, config, depthCalculator, log, sceneVisibility, new BillboardTextureResolver(client));
+	}
+
+	public BillboardWorldOcclusionCollector(Client client, NpcSnapConfig config, BillboardDepthCalculator depthCalculator,
+		Logger log, BillboardSceneVisibility sceneVisibility, BillboardTextureResolver textureResolver)
+	{
 		this.client = client;
 		this.config = config;
 		this.depthCalculator = depthCalculator;
 		this.log = log;
 		this.sceneVisibility = sceneVisibility;
+		this.textureResolver = textureResolver;
 	}
 
 	public void resetFrame()
@@ -276,6 +277,7 @@ public final class BillboardWorldOcclusionCollector
 		lastProjectedPoint = null;
 		frameModels.clear();
 		frameScenery.clear();
+		frameTextures.clear();
 		collectedVisibility = "not-collected";
 		worldOccluders.clear();
 		clearInterest();
@@ -284,23 +286,18 @@ public final class BillboardWorldOcclusionCollector
 
 	public void clearInterest()
 	{
-		interestBounds = null;
-		interestRegions.clear();
+		interest.clear();
 	}
 
-	public void addInterest(Rectangle previewBounds, Rectangle viewportBounds)
+	public BillboardOcclusionRegions interest()
 	{
-		if (previewBounds == null || viewportBounds == null)
-		{
-			return;
-		}
+		return interest;
+	}
 
-		Rectangle clipped = viewportBounds.intersection(BillboardOcclusionRegions.expanded(previewBounds, occlusionInterestMargin()));
-		if (!clipped.isEmpty())
-		{
-			interestRegions.add(clipped);
-			interestBounds = interestBounds == null ? clipped : interestBounds.union(clipped);
-		}
+	public boolean addInterest(Rectangle previewBounds, Rectangle viewportBounds)
+	{
+		return previewBounds != null && viewportBounds != null
+			&& interest.add(BillboardOcclusionRegions.expanded(previewBounds, occlusionInterestMargin()), viewportBounds);
 	}
 
 	public void collectTerrainOccluders(WorldView worldView, List<TraceTarget> traceTargets, BillboardOcclusionQuality quality)
@@ -318,7 +315,7 @@ public final class BillboardWorldOcclusionCollector
 	{
 		collectionView = worldView;
 		collectionProjection = null;
-		if (quality == BillboardOcclusionQuality.OFF || interestBounds == null || worldView == null || traceTargets == null || traceTargets.isEmpty())
+		if (quality == BillboardOcclusionQuality.OFF || interest.bounds() == null || worldView == null || traceTargets == null || traceTargets.isEmpty())
 		{
 			return;
 		}
@@ -345,7 +342,6 @@ public final class BillboardWorldOcclusionCollector
 		refreshFallbackShapeCacheCameraState();
 
 		tileVisits.reset(tiles, terrainCorridorRadiusTiles(quality));
-		visitedTiles.clear();
 		visitedObjects.clear();
 		tileCandidatesByTile.clear();
 		tileCandidates.clear();
@@ -360,7 +356,7 @@ public final class BillboardWorldOcclusionCollector
 				continue;
 			}
 
-			collectTerrainCorridorTiles(tiles, traceTarget, currentPlane, quality, candidatePlanes, cameraX, cameraY, visitedTiles, tileCandidatesByTile, tileCandidates);
+			collectTerrainCorridorTiles(tiles, traceTarget, currentPlane, quality, candidatePlanes, cameraX, cameraY);
 		}
 		for (TileCandidate candidate : tileCandidates)
 		{
@@ -400,7 +396,7 @@ public final class BillboardWorldOcclusionCollector
 		return worldOccluders;
 	}
 
-	public void logDebugStats(BillboardOcclusionMask occlusionMask, Rectangle maskInterestBounds, List<String> depthSamples)
+	public void logDebugStats(BillboardOcclusionMask occlusionMask, List<String> depthSamples)
 	{
 		if (!config.debugLogBillboardOcclusion())
 		{
@@ -415,92 +411,26 @@ public final class BillboardWorldOcclusionCollector
 
 		debugLastLoggedCycle = gameCycle;
 		log.debug("Billboard adaptive occlusion {}", occlusionMask.drainDebugStats());
-		log.debug("Billboard renderer visibility at collection {}", collectedVisibility);
-		log.debug("Billboard roof surfaces hidden={}", debugRoofSurfacesHidden);
-		log.debug("Billboard projection snapshot {} rasterizerZoom={}", depthCalculator.projectionDebugState(), client.get3dZoom());
-		WorldView worldView = client.getTopLevelWorldView();
-		if (worldView != null)
-		{
-			log.debug("Billboard occlusion scene base=({},{}) plane={} worldView={} instance={}",
-				worldView.getBaseX(), worldView.getBaseY(), worldView.getPlane(), worldView.getId(), worldView.isInstance());
-		}
-		log.debug("Billboard scenery model inputs directModels={} unavailableModels={}",
-			debugDirectModels, debugUnavailableModels);
-		log.debug(
-			"Billboard occlusion quality={} gpu={} cameraYaw={} cameraPitch={} cameraYawIndex={} cameraPitchIndex={} cameraFp=({},{},{}) sources=terrain,scenery sceneryCandidates={} sceneryAccepted={} sceneryRejectedByFilter={} sceneryBroadPhaseRejected={} sceneryOutsideInterest={} sceneryWithoutParts={} modelCacheHits={} modelCacheMisses={} fallbackShapeQueries={} upperPlaneTiles={} upperPlaneAccepted={} upperPlaneRoofRejected={} upperPlaneUnknownRejected={} rendererHiddenRejected={} terrainTiles={} terrainBroadPhaseRejected={} bridgeTerrainTilesSkipped={} bridgeTiles={} bridgeTileSamples={} verticalFallbackOccluders={} flatFallbackOccluders={} bridgeFallbacksSuppressed={} bridgeSceneryWithoutRenderEvidence={} behindCameraRejected={} cells={} activeRegions={} acceptedScenery={} rejectedScenery={} preInterest={} maskInterest={} depthSamples={}",
-			BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()),
-			client.isGpu(),
-			client.getCameraYaw(),
-			client.getCameraPitch(),
-			depthCalculator.cameraYawIndex(),
-			depthCalculator.cameraPitchIndex(),
-			client.getCameraFpX(),
-			client.getCameraFpY(),
-			client.getCameraFpZ(),
-			debugSceneObjectsConsidered,
-			debugSceneObjectsAccepted,
-			debugSceneObjectsRejectedByFilter,
-			debugSceneObjectsRejectedByBroadPhase,
-			debugSceneObjectsSkippedOutsideInterest,
-			debugSceneObjectsWithoutParts,
-			debugModelGeometryCacheHits,
-			debugModelGeometryCacheMisses,
-			debugFallbackShapeQueries,
-			debugUpperPlaneTilesConsidered,
-			debugUpperPlaneSceneryAccepted,
-			debugUpperPlaneSceneryRejectedRoof,
-			debugUpperPlaneSceneryRejectedUnknown,
-			debugUpperPlaneSceneryRejectedNotRendered,
-			debugTerrainTilesConsidered,
-			debugTerrainTilesRejectedByBroadPhase,
-			debugBridgeTerrainTilesSkipped,
-			debugBridgeTilesIncluded,
-			debugBridgeTileSamples,
-			debugVerticalFallbackOccludersAccepted,
-			debugFlatFallbackOccludersAccepted,
-			debugBridgeFallbacksSuppressed,
-			debugBridgeSceneryWithoutRenderEvidence,
-			debugOccludersRejectedBehindCamera,
-			occlusionMask.coveredCellCount(),
-			interestRegions.size(),
-			debugAcceptedScenerySamples,
-			debugRejectedScenerySamples,
-			interestBounds,
-			maskInterestBounds,
-			depthSamples
-		);
+		log.debug("Billboard renderer visibility {} roofSurfacesHidden={}", collectedVisibility, debugRoofSurfacesHidden);
+		log.debug("Billboard projection {}", depthCalculator.projectionDebugState());
+		log.debug("Billboard occlusion quality={} terrainTiles={} terrainBroadPhaseRejected={} sceneryCandidates={} sceneryAccepted={} sceneryBroadPhaseRejected={} cells={} activeRegions={} projectedVertices={} cutoutUvFaces={} acceptedScenery={} rejectedScenery={} depthSamples={}",
+			BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality()), debugTerrainTilesConsidered,
+			debugTerrainTilesRejectedByBroadPhase, debugSceneObjectsConsidered, debugSceneObjectsAccepted,
+			debugSceneObjectsRejectedByBroadPhase, occlusionMask.coveredCellCount(), interest.rectangles().size(),
+			projectedVertices, cutoutUvFaces, debugAcceptedScenerySamples, debugRejectedScenerySamples, depthSamples);
 	}
 
 	private void clearDebugStats()
 	{
+		projectedVertices = cutoutUvFaces = 0;
 		debugTerrainTilesConsidered = 0;
 		debugRoofSurfacesHidden = 0;
-		debugBridgeTerrainTilesSkipped = 0;
-		debugBridgeTilesIncluded = 0;
-		debugVerticalFallbackOccludersAccepted = 0;
-		debugFlatFallbackOccludersAccepted = 0;
-		debugBridgeFallbacksSuppressed = 0;
-		debugBridgeSceneryWithoutRenderEvidence = 0;
-		debugOccludersRejectedBehindCamera = 0;
 		debugSceneObjectsConsidered = 0;
-		debugSceneObjectsRejectedByFilter = 0;
-		debugSceneObjectsSkippedOutsideInterest = 0;
-		debugSceneObjectsWithoutParts = 0;
 		debugSceneObjectsAccepted = 0;
 		debugTerrainTilesRejectedByBroadPhase = 0;
 		debugSceneObjectsRejectedByBroadPhase = 0;
-		debugDirectModels = debugUnavailableModels = 0;
-		debugModelGeometryCacheHits = 0;
-		debugModelGeometryCacheMisses = 0;
-		debugFallbackShapeQueries = 0;
-		debugUpperPlaneTilesConsidered = 0;
-		debugUpperPlaneSceneryAccepted = 0;
-		debugUpperPlaneSceneryRejectedRoof = 0;
-		debugUpperPlaneSceneryRejectedUnknown = 0;
-		debugUpperPlaneSceneryRejectedNotRendered = 0;
 		debugAcceptedScenerySamples.clear();
 		debugRejectedScenerySamples.clear();
-		debugBridgeTileSamples.clear();
 	}
 
 	private void collectTerrainCorridorTiles(
@@ -510,10 +440,7 @@ public final class BillboardWorldOcclusionCollector
 		BillboardOcclusionQuality quality,
 		int[] candidatePlanes,
 		int cameraX,
-		int cameraY,
-		Set<Tile> visitedTiles,
-		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
-		List<TileCandidate> candidates)
+		int cameraY)
 	{
 		int tileSize = BillboardConstants.LOCAL_TILE_SIZE;
 		int targetX = target.localPoint.getX();
@@ -541,17 +468,12 @@ public final class BillboardWorldOcclusionCollector
 			{
 				for (int offsetY = -radiusTiles; offsetY <= radiusTiles; offsetY++)
 				{
+					int tileX = centerTileX + offsetX;
+					int tileY = centerTileY + offsetY;
+					if (!tileVisits.addCoordinate(tileX, tileY)) continue;
 					for (int plane : candidatePlanes)
 					{
-						collectTerrainTile(
-							tiles,
-							plane,
-							currentPlane,
-							centerTileX + offsetX,
-							centerTileY + offsetY,
-							visitedTiles,
-							candidatesByTile,
-							candidates);
+						collectTerrainTile(tiles, plane, currentPlane, tileX, tileY);
 					}
 				}
 			}
@@ -577,10 +499,7 @@ public final class BillboardWorldOcclusionCollector
 		int plane,
 		int currentPlane,
 		int tileX,
-		int tileY,
-		Set<Tile> visitedTiles,
-		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
-		List<TileCandidate> candidates)
+		int tileY)
 	{
 		if (plane < 0 || plane >= tiles.length || tiles[plane] == null || tileX < 0 || tileX >= tiles[plane].length)
 		{
@@ -593,31 +512,27 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 
-		if (!tileVisits.addCoordinate(plane, tileX, tileY))
-		{
-			return;
-		}
-
 		Tile tile = row[tileY];
-		if (tile != null)
+		if (tile == null) return;
+		TileCandidate existing = tileCandidatesByTile.get(tile);
+		if (existing == null)
 		{
-			if (plane > currentPlane)
-			{
-				debugUpperPlaneTilesConsidered++;
-			}
-			int bridgeTilesAdded = addTileAndBridgeCandidates(
-				tile,
-				plane,
-				plane == currentPlane,
-				visitedTiles,
-				candidatesByTile,
-				candidates);
-			if (bridgeTilesAdded > 0)
-			{
-				debugBridgeTilesIncluded += bridgeTilesAdded;
-				addDebugBridgeTileSample(tile.getBridge());
-			}
+			addCandidate(TileCandidate.direct(tile, plane, plane == currentPlane));
 		}
+		else
+		{
+			existing.markDirect(plane, plane == currentPlane);
+		}
+		for (Tile bridge = tile.getBridge(); bridge != null && !tileCandidatesByTile.containsKey(bridge); bridge = bridge.getBridge())
+		{
+			addCandidate(TileCandidate.bridge(bridge, plane));
+		}
+	}
+
+	private void addCandidate(TileCandidate candidate)
+	{
+		tileCandidatesByTile.put(candidate.tile, candidate);
+		tileCandidates.add(candidate);
 	}
 
 	public static int addTileAndBridgeTiles(Tile tile, Set<Tile> visitedTiles, List<Tile> terrainTiles)
@@ -646,17 +561,6 @@ public final class BillboardWorldOcclusionCollector
 			bridge = bridge.getBridge();
 		}
 		return bridgeTilesAdded;
-	}
-
-	private void addDebugBridgeTileSample(Tile tile)
-	{
-		if (!config.debugLogBillboardOcclusion() || tile == null || debugBridgeTileSamples.size() >= DEBUG_OCCLUSION_SAMPLE_LIMIT)
-		{
-			return;
-		}
-
-		LocalPoint localPoint = tile.getLocalLocation();
-		debugBridgeTileSamples.add("plane=" + tile.getPlane() + " local=" + (localPoint == null ? "-" : localPoint.getX() + "," + localPoint.getY()));
 	}
 
 	private void collectTerrainTileOccluder(
@@ -699,10 +603,6 @@ public final class BillboardWorldOcclusionCollector
 				}
 			}
 		}
-		else
-		{
-			debugBridgeTerrainTilesSkipped++;
-		}
 	}
 
 	static int[] directCandidatePlanes(int currentPlane, int planeCount)
@@ -720,77 +620,6 @@ public final class BillboardWorldOcclusionCollector
 			planes[i] = firstPlane + i;
 		}
 		return planes;
-	}
-
-	private int addTileAndBridgeCandidates(
-		Tile tile,
-		int sourcePlane,
-		boolean terrainEligible,
-		Set<Tile> visitedTiles,
-		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
-		List<TileCandidate> candidates)
-	{
-		if (tile == null)
-		{
-			return 0;
-		}
-
-		addDirectCandidate(tile, sourcePlane, terrainEligible, visitedTiles, candidatesByTile, candidates);
-		int bridgeTilesAdded = 0;
-		Tile bridge = tile.getBridge();
-		while (bridge != null)
-		{
-			if (addBridgeCandidate(bridge, sourcePlane, visitedTiles, candidatesByTile, candidates))
-			{
-				bridgeTilesAdded++;
-			}
-			else if (visitedTiles.contains(bridge))
-			{
-				break;
-			}
-			bridge = bridge.getBridge();
-		}
-		return bridgeTilesAdded;
-	}
-
-	private void addDirectCandidate(
-		Tile tile,
-		int sourcePlane,
-		boolean terrainEligible,
-		Set<Tile> visitedTiles,
-		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
-		List<TileCandidate> candidates)
-	{
-		TileCandidate existing = candidatesByTile.get(tile);
-		if (existing != null)
-		{
-			existing.markDirect(sourcePlane, terrainEligible);
-			return;
-		}
-
-		visitedTiles.add(tile);
-		TileCandidate candidate = TileCandidate.direct(tile, sourcePlane, terrainEligible);
-		candidatesByTile.put(tile, candidate);
-		candidates.add(candidate);
-	}
-
-	private boolean addBridgeCandidate(
-		Tile tile,
-		int sourcePlane,
-		Set<Tile> visitedTiles,
-		IdentityHashMap<Tile, TileCandidate> candidatesByTile,
-		List<TileCandidate> candidates)
-	{
-		if (tile == null || candidatesByTile.containsKey(tile))
-		{
-			return false;
-		}
-
-		visitedTiles.add(tile);
-		TileCandidate candidate = TileCandidate.bridge(tile, sourcePlane);
-		candidatesByTile.put(tile, candidate);
-		candidates.add(candidate);
-		return true;
 	}
 
 	private void collectSceneTileObjectOccluders(
@@ -850,8 +679,7 @@ public final class BillboardWorldOcclusionCollector
 			: BillboardSceneryOcclusionFilter.isOccluder(tileObject);
 		if (!isOccluder)
 		{
-			debugSceneObjectsRejectedByFilter++;
-			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, null, false, "filter");
+			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, "filter");
 			return;
 		}
 
@@ -860,38 +688,25 @@ public final class BillboardWorldOcclusionCollector
             if (observed == null) observed = ObservedTileObjectBuilder.build(tileObject);
 		if (observed == null || observed.parts.isEmpty())
 		{
-			debugSceneObjectsWithoutParts++;
-			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, null, false, "without-parts");
+			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, "without-parts");
 			return;
 		}
 		boolean hasRenderEvidence;
 		hasRenderEvidence = hasRenderedPart(observed, renderedSceneRenderables);
-		if (candidate.bridgeLinked && !hasRenderEvidence)
-		{
-			// GPU scene uploads do not report static bridge layers every frame. A
-			// bridge tile is explicit scene geometry, so keep it as an occluder even
-			// without callback evidence; roof-removal filtering applies only to direct
-			// upper-plane scenery below.
-			debugBridgeSceneryWithoutRenderEvidence++;
-		}
 
 		UpperPlaneVisibility visibility = upperPlaneVisibility(scene, candidate, currentPlane, hasRenderEvidence);
 		if (!visibility.accepted)
 		{
-			countUpperPlaneVisibilityRejection(visibility);
-			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, visibility, hasRenderEvidence, visibility.reason);
+
+			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, visibility.reason);
 			return;
-		}
-		if (candidate.isUpperDirectPlane(currentPlane))
-		{
-			debugUpperPlaneSceneryAccepted++;
 		}
 		boolean intersects;
 		intersects = sceneryBroadPhaseIntersectsInterest(observed);
 		if (!intersects)
 		{
 			debugSceneObjectsRejectedByBroadPhase++;
-			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, visibility, hasRenderEvidence, "broad-phase");
+			addDebugScenerySample(debugRejectedScenerySamples, tileObject, candidate, "broad-phase");
 			return;
 		}
 
@@ -913,7 +728,7 @@ public final class BillboardWorldOcclusionCollector
 		if (acceptedModelOccluder || acceptedFallback)
 		{
 			debugSceneObjectsAccepted++;
-			addDebugScenerySample(debugAcceptedScenerySamples, tileObject, candidate, visibility, hasRenderEvidence, "accepted");
+			addDebugScenerySample(debugAcceptedScenerySamples, tileObject, candidate, "accepted");
 		}
 	}
 
@@ -934,34 +749,12 @@ public final class BillboardWorldOcclusionCollector
 		return false;
 	}
 
-	private void countUpperPlaneVisibilityRejection(UpperPlaneVisibility visibility)
-	{
-		if (visibility == null)
-		{
-			return;
-		}
-
-		switch (visibility.kind)
-		{
-			case ROOF_NOT_RENDERED:
-				debugUpperPlaneSceneryRejectedRoof++;
-				break;
-			case NOT_RENDERED:
-				debugUpperPlaneSceneryRejectedNotRendered++;
-				break;
-			case UNKNOWN_METADATA:
-				debugUpperPlaneSceneryRejectedUnknown++;
-				break;
-			default:
-				break;
-		}
-	}
 
 	UpperPlaneVisibility upperPlaneVisibility(Scene scene, TileCandidate candidate, int currentPlane, boolean hasRenderEvidence)
 	{
 		if (candidate == null || candidate.tile == null)
 		{
-			return UpperPlaneVisibility.unknown();
+			return UpperPlaneVisibility.UNKNOWN_METADATA;
 		}
 		// Linked tiles inherit the roof group and draw level of their containing
 		// scene slot. Their tile.getPlane() may be 3 even when that slot is on 0.
@@ -972,37 +765,36 @@ public final class BillboardWorldOcclusionCollector
 			int drawLevel = roof.visibleBelow ? 0 : candidate.sourcePlane;
 			if (!snapshot.visible(drawLevel, roof.roofId))
 			{
-				return new UpperPlaneVisibility(UpperPlaneVisibilityKind.NOT_RENDERED, false, "renderer-hidden-floor-or-roof", roof);
+				return UpperPlaneVisibility.RENDERER_HIDDEN;
 			}
-			return candidate.bridgeLinked ? UpperPlaneVisibility.bridge()
-				: roof.kind == RoofClassificationKind.ROOF ? UpperPlaneVisibility.renderedRoof(roof) : UpperPlaneVisibility.nonRoof(roof);
+			return candidate.bridgeLinked ? UpperPlaneVisibility.BRIDGE
+				: roof.kind == RoofClassificationKind.ROOF ? UpperPlaneVisibility.RENDERED_ROOF : UpperPlaneVisibility.NON_ROOF;
 		}
 		if (candidate.bridgeLinked)
 		{
-			return UpperPlaneVisibility.bridge();
+			return UpperPlaneVisibility.BRIDGE;
 		}
 		if (!candidate.isUpperDirectPlane(currentPlane))
 		{
-			return UpperPlaneVisibility.currentPlane();
+			return UpperPlaneVisibility.CURRENT_PLANE;
 		}
 		if (roof.kind == RoofClassificationKind.NON_ROOF)
 		{
-			return UpperPlaneVisibility.nonRoof(roof);
+			return UpperPlaneVisibility.NON_ROOF;
 		}
 		if (roof.kind == RoofClassificationKind.UNKNOWN)
 		{
-			return UpperPlaneVisibility.unknown(roof);
+			return UpperPlaneVisibility.UNKNOWN_METADATA;
 		}
 		boolean gpuRenderer = client.isGpu();
 		if (gpuRenderer)
 		{
 			// Missing GPU callbacks do not establish that an object was hidden.
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.ROOF_VISIBILITY_UNKNOWN, true,
-				"upper-roof-visibility-unavailable", roof);
+			return UpperPlaneVisibility.UNKNOWN_RENDERER_VISIBILITY;
 		}
 		return canUseRenderedRoofEvidence(gpuRenderer, hasRenderEvidence)
-			? UpperPlaneVisibility.renderedRoof(roof)
-			: UpperPlaneVisibility.unrenderedRoof(roof);
+			? UpperPlaneVisibility.RENDERED_ROOF
+			: UpperPlaneVisibility.UNRENDERED_ROOF;
 	}
 
 	static boolean canUseRenderedRoofEvidence(boolean gpuRenderer, boolean hasRenderEvidence)
@@ -1088,67 +880,13 @@ public final class BillboardWorldOcclusionCollector
 			&& y >= 0 && y < roofs[plane][x].length;
 	}
 
-	private void addDebugScenerySample(
-		List<String> samples,
-		TileObject tileObject,
-		TileCandidate candidate,
-		UpperPlaneVisibility visibility,
-		boolean hasRenderEvidence,
-		String reason)
+	private void addDebugScenerySample(List<String> samples, TileObject object, TileCandidate candidate, String reason)
 	{
-		if (!config.debugLogBillboardOcclusion() || samples == null || samples.size() >= DEBUG_OCCLUSION_SAMPLE_LIMIT || tileObject == null)
+		if (config.debugLogBillboardOcclusion() && samples.size() < DEBUG_OCCLUSION_SAMPLE_LIMIT)
 		{
-			return;
+			samples.add(object.getId() + " plane=" + candidate.sourcePlane + " scene=" + candidate.tile.getSceneLocation()
+				+ " bridge=" + candidate.bridgeLinked + " reason=" + reason);
 		}
-
-		Tile tile = candidate == null ? null : candidate.tile;
-		Point sceneLocation = tile == null ? null : tile.getSceneLocation();
-		String roof = visibility == null ? "-" : visibility.debugSummary();
-		Renderable gameRenderable = tileObject instanceof GameObject ? ((GameObject) tileObject).getRenderable() : null;
-		samples.add(
-			tileObject.getId() + ":" + debugObjectName(tileObject)
-				+ " kind=" + debugObjectKind(tileObject)
-				+ " sourcePlane=" + (candidate == null ? "-" : candidate.sourcePlane)
-				+ " tilePlane=" + (tile == null ? "-" : tile.getPlane())
-				+ " objectHeight=" + tileObject.getZ()
-				+ " cachedModelHeight=" + (gameRenderable == null ? "-" : gameRenderable.getModelHeight())
-				+ " animated=" + (gameRenderable instanceof DynamicObject)
-				+ " renderLevel=" + (tile == null ? "-" : tile.getRenderLevel())
-				+ " scene=" + (sceneLocation == null ? "-" : sceneLocation.getX() + "," + sceneLocation.getY())
-				+ " bridge=" + (candidate != null && candidate.bridgeLinked)
-				+ " rendered=" + hasRenderEvidence
-				+ " roof=" + roof
-				+ " reason=" + reason);
-	}
-
-	private static String debugObjectKind(TileObject tileObject)
-	{
-		if (tileObject instanceof WallObject)
-		{
-			return "wall";
-		}
-		if (tileObject instanceof GameObject)
-		{
-			return "game";
-		}
-		return tileObject == null ? "-" : tileObject.getClass().getSimpleName();
-	}
-
-	private String debugObjectName(TileObject tileObject)
-	{
-		if (tileObject == null || !client.isClientThread())
-		{
-			return "-";
-		}
-
-		net.runelite.api.ObjectComposition objectDefinition = client.getObjectDefinition(tileObject.getId());
-		if (objectDefinition == null)
-		{
-			return "-";
-		}
-
-		String name = objectDefinition.getName();
-		return name != null && !name.trim().isEmpty() ? name : "-";
 	}
 
 	private boolean collectSceneObjectFallbackOccluder(TileObject tileObject, ObservedTileObject observed, BillboardOcclusionQuality quality)
@@ -1166,7 +904,6 @@ public final class BillboardWorldOcclusionCollector
 			return shapeResult.added;
 		}
 
-		debugFallbackShapeQueries++;
 		Shape clickbox;
 		clickbox = tileObject.getClickbox();
 		return addFallbackWorldOccluder(clickbox, firstPart(observed), depths.fallbackDepth, debugOccluderSource(tileObject, "fallback-clickbox"), tileObject);
@@ -1225,12 +962,10 @@ public final class BillboardWorldOcclusionCollector
 		Shape second = null;
 		if (tileObject instanceof GameObject)
 		{
-			debugFallbackShapeQueries++;
 			first = ((GameObject) tileObject).getConvexHull();
 		}
 		else if (tileObject instanceof WallObject)
 		{
-			debugFallbackShapeQueries += 2;
 			WallObject wallObject = (WallObject) tileObject;
 			first = wallObject.getConvexHull();
 			second = wallObject.getConvexHull2();
@@ -1301,7 +1036,6 @@ public final class BillboardWorldOcclusionCollector
 			: null;
 	}
 
-
 	private boolean addWorldOccluder(Shape shape, double depth, String source, TileObject owner)
 	{
 		if (shape == null || shape.getBounds().isEmpty())
@@ -1310,17 +1044,15 @@ public final class BillboardWorldOcclusionCollector
 		}
 		if (!Double.isFinite(depth) || depth < depthCalculator.sceneNearDepth())
 		{
-			debugOccludersRejectedBehindCamera++;
 			return false;
 		}
 
-		if (interestBounds != null && !intersectsInterest(shape.getBounds()))
+		if (interest.bounds() != null && !interest.intersects(shape.getBounds()))
 		{
 			return false;
 		}
 
 		worldOccluders.add(new BillboardOcclusionMask.Occluder(shape, (float) depth, source, 0, 0xFFFFFF, owner));
-		debugFlatFallbackOccludersAccepted++;
 		return true;
 	}
 
@@ -1346,9 +1078,7 @@ public final class BillboardWorldOcclusionCollector
 				continue;
 			}
 
-			sceneryModel(part.renderable);
-			ModelGeometry geometry;
-			geometry = sceneryGeometry(part.renderable);
+			ModelGeometry geometry = sceneryGeometry(part.renderable);
 			if (geometry == null || !geometry.hasBounds)
 			{
 				continue;
@@ -1399,7 +1129,7 @@ public final class BillboardWorldOcclusionCollector
 				}
 			}
 		}
-		return intersectsInterest(BillboardGeometryUtils.inclusivePixelBounds(minScreenX, minScreenY, maxScreenX, maxScreenY));
+		return interest.intersects(BillboardGeometryUtils.inclusivePixelBounds(minScreenX, minScreenY, maxScreenX, maxScreenY));
 	}
 
 	private boolean projectedModelBoundsIntersectsInterest(ObjectRenderablePart part, ModelGeometry geometry)
@@ -1441,7 +1171,7 @@ public final class BillboardWorldOcclusionCollector
 			}
 		}
 
-		return minScreenX == Integer.MAX_VALUE || intersectsInterest(
+		return minScreenX == Integer.MAX_VALUE || interest.intersects(
 			BillboardGeometryUtils.inclusivePixelBounds(minScreenX, minScreenY, maxScreenX, maxScreenY));
 	}
 
@@ -1449,34 +1179,6 @@ public final class BillboardWorldOcclusionCollector
 	{
 		// A box crossing the near plane can project beyond its corner bounds.
 		return isForwardOccluderDepth(worldDepth(localX, localY, height)) ? worldCanvas(localX, localY, height) : null;
-	}
-
-	private boolean intersectsInterest(Shape shape)
-	{
-		return shape != null && intersectsInterest(shape.getBounds());
-	}
-
-	private boolean intersectsInterest(Rectangle bounds)
-	{
-		if (bounds == null || bounds.isEmpty() || interestBounds == null || !bounds.intersects(interestBounds))
-		{
-			return false;
-		}
-
-		if (interestRegions.isEmpty())
-		{
-			return interestBounds != null && bounds.intersects(interestBounds);
-		}
-
-		for (Rectangle region : interestRegions)
-		{
-			if (region != null && bounds.intersects(region))
-			{
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	static Model occlusionModel(Renderable renderable)
@@ -1528,7 +1230,6 @@ public final class BillboardWorldOcclusionCollector
 		}
 
 		Model model;
-		debugDirectModels += part.renderable instanceof Model ? 1 : 0;
 		model = sceneryModel(part.renderable);
 		// An absent ZBUF scene model is authoritative: querying the normal model or
 		// falling back to its hull can resurrect an invisible construction hotspot.
@@ -1538,17 +1239,10 @@ public final class BillboardWorldOcclusionCollector
 		SceneryModelSnapshot captured = frameScenery.get(part.renderable);
 		byte modelTransparency = captured != null ? captured.transparency : model != null ? model.getTransparency() : 0;
 		if (model != null && modelTransparency == (byte) 255) return true;
-		if (model != null && config.debugLogBillboardOcclusion())
-		{
-			String input = snapshot != null && snapshot.drawnModels.containsKey(part.renderable) ? "drawn"
-				: snapshot != null && snapshot.zbufRenderer && part.renderable instanceof DynamicObject ? "recorded" : "normal";
-			source += " modelInput=" + input + " modelTransparency=" + (modelTransparency & 255);
-		}
 		ModelGeometry geometry;
 		geometry = sceneryGeometry(part.renderable);
 		if (geometry == null || geometry.vertexCount <= 0 || geometry.faceCount <= 0)
 		{
-			debugUnavailableModels++;
 			return false;
 		}
 		if (visibleModelFaces.length < geometry.faceCount) visibleModelFaces = new boolean[geometry.faceCount];
@@ -1566,6 +1260,7 @@ public final class BillboardWorldOcclusionCollector
 		{
 			cameraModelVertices = new double[geometry.vertexCount][3];
 			modelVertexProjected = new boolean[geometry.vertexCount];
+			modelScreenVertices = new Point[geometry.vertexCount];
 		}
 		Arrays.fill(modelVertexProjected, 0, geometry.vertexCount, false);
 		// Animated colors/alpha must belong to the same capture as the vertices.
@@ -1582,15 +1277,12 @@ public final class BillboardWorldOcclusionCollector
 		int overrideLuminance = captured != null ? captured.overrideLuminance : model.getOverrideLuminance();
 		int overrideAmount = captured != null ? captured.overrideAmount : model.getOverrideAmount();
 		int baseHeight = partBaseHeight(part);
+		double near = depthCalculator.sceneNearDepth();
 		// Skipping arbitrary faces creates holes; quality controls the mask/corridor instead.
 		for (int face = 0; face < geometry.faceCount; face++)
 		{
 			if (!visibleModelFaces[face]) continue;
 			int transmittance = faceTransmittance(face, transparencies, modelTransparency);
-			boolean textured = textures != null && face < textures.length && textures[face] != -1;
-			int tintRgb = transmittance > 0 && transmittance < 255
-				? sceneryFaceColors.faceTintRgb(face, colors1, colors2, colors3, unlitColors,
-					overrideHue, overrideSaturation, overrideLuminance, textured ? 0 : overrideAmount) : 0xFFFFFF;
 			if (transmittance == 255 || isInvisibleFace(face, colors3, transparencies))
 			{
 				continue;
@@ -1605,7 +1297,25 @@ public final class BillboardWorldOcclusionCollector
 			projectModelVertex(part, geometry, a, baseHeight);
 			projectModelVertex(part, geometry, b, baseHeight);
 			projectModelVertex(part, geometry, c, baseHeight);
-			addSceneObjectTriangleOccluder(a, b, c, source, transmittance, tintRgb, owner);
+			int visible = prepareTriangle(cameraModelVertices[a], cameraModelVertices[b], cameraModelVertices[c],
+				modelScreenVertices[a], modelScreenVertices[b], modelScreenVertices[c], near);
+			if (visible == 0) continue;
+			boolean textured = textures != null && face < textures.length && textures[face] != -1;
+			int tintRgb = transmittance > 0 && transmittance < 255
+				? sceneryFaceColors.faceTintRgb(face, colors1, colors2, colors3, unlitColors,
+					overrideHue, overrideSaturation, overrideLuminance, textured ? 0 : overrideAmount) : 0xFFFFFF;
+			TextureSample sample = textured ? frameTextures.computeIfAbsent(Short.toUnsignedInt(textures[face]),
+				id -> textureResolver.resolveTextureSample(id, System.currentTimeMillis(), BillboardTextureResolver.SCENE_TEXTURES)) : null;
+			TextureUvs uv = null;
+			if (sample != null && sample.entry.hasCutouts())
+			{
+				cutoutUvFaces++;
+				uv = captured == null ? textureResolver.computeTextureUvs(model, face)
+					: textureResolver.computeTextureUvs(face, geometry.verticesX, geometry.verticesY, geometry.verticesZ,
+						geometry.faceIndices1, geometry.faceIndices2, geometry.faceIndices3, captured.textureFaces,
+						captured.texIndices1, captured.texIndices2, captured.texIndices3);
+			}
+			emitTriangles(visible, source, transmittance, tintRgb, owner, 0f, null, sample, uv);
 		}
 		return true;
 	}
@@ -1643,7 +1353,8 @@ public final class BillboardWorldOcclusionCollector
 			return;
 		}
 		modelVertexProjected[vertex] = true;
-		Arrays.fill(cameraModelVertices[vertex], Double.NaN);
+		cameraModelVertices[vertex][2] = Double.NaN;
+		modelScreenVertices[vertex] = null;
 		float x = geometry.verticesX[vertex];
 		float y = geometry.verticesY[vertex];
 		float z = geometry.verticesZ[vertex];
@@ -1655,6 +1366,8 @@ public final class BillboardWorldOcclusionCollector
 		int localY = part.localPoint.getY() + Math.round(SceneryModelRotation.z(part.modelOrientation, x, z));
 		int height = modelWorldHeight(baseHeight, y);
 		worldCamera(localX, localY, height, cameraModelVertices[vertex]);
+		modelScreenVertices[vertex] = depthCalculator.projectCameraSpace(cameraModelVertices[vertex]);
+		projectedVertices++;
 	}
 	private ModelGeometry modelGeometry(Model model)
 	{
@@ -1665,11 +1378,9 @@ public final class BillboardWorldOcclusionCollector
 		ModelGeometry cached = modelGeometryCache.get(model);
 		if (cached != null && cached.matches(model))
 		{
-			debugModelGeometryCacheHits++;
 			return cached;
 		}
 
-		debugModelGeometryCacheMisses++;
 		ModelGeometry geometry = ModelGeometry.from(model);
 		if (modelGeometryCache.size() >= MAX_MODEL_GEOMETRY_CACHE_SIZE)
 		{
@@ -1677,12 +1388,6 @@ public final class BillboardWorldOcclusionCollector
 		}
 		modelGeometryCache.put(model, geometry);
 		return geometry;
-	}
-
-	private void addSceneObjectTriangleOccluder(int a, int b, int c, String source, int transmittance, int tintRgb, TileObject owner)
-	{
-		addMeshTriangle(cameraModelVertices[a], cameraModelVertices[b], cameraModelVertices[c],
-			source, transmittance, tintRgb, owner, 0f, null);
 	}
 
 	private void worldCamera(int x, int y, int height, double[] out)
@@ -1696,45 +1401,115 @@ public final class BillboardWorldOcclusionCollector
 	void addMeshTriangle(double[] a, double[] b, double[] c, String source,
 		int transmittance, int tint, TileObject owner, float bias)
 	{
-		addMeshTriangle(a, b, c, source, transmittance, tint, owner, bias, null);
+		addMeshTriangle(a, b, c, source, transmittance, tint, owner, bias, null, null, null);
 	}
 
-	private void addMeshTriangle(double[] a, double[] b, double[] c, String source,
-		int transmittance, int tint, TileObject owner, float bias, TerrainSurface surface)
+	void addMeshTriangle(double[] a, double[] b, double[] c, String source, int transmittance, int tint,
+		TileObject owner, float bias, TerrainSurface surface, TextureSample texture, TextureUvs uv)
 	{
-		double near = depthCalculator.sceneNearDepth();
-		double[][] input = triangleInput;
-		input[0] = a; input[1] = b; input[2] = c;
-		for (double[] v : input) for (double value : v)
-			if (!Double.isFinite(value)) return;
-		int count = 0;
-		for (int i = 0; i < 3; i++)
+		int visible = prepareTriangle(a, b, c, null, null, null, depthCalculator.sceneNearDepth());
+		emitTriangles(visible, source, transmittance, tint, owner, bias, surface, texture, uv);
+	}
+
+	private int prepareTriangle(double[] a, double[] b, double[] c, Point pa, Point pb, Point pc, double near)
+	{
+		triangleCount = 0;
+		if (!finiteVertex(a) || !finiteVertex(b) || !finiteVertex(c)) return 0;
+		triangleInput[0] = a;
+		triangleInput[1] = b;
+		triangleInput[2] = c;
+		if (a[2] >= near && b[2] >= near && c[2] >= near)
 		{
-			double[] previous = input[(i + 2) % 3], current = input[i];
-			boolean prevInside = previous[2] >= near, inside = current[2] >= near;
-			if (prevInside != inside)
-			{
-				double t = (near - previous[2]) / (current[2] - previous[2]);
-				for (int axis = 0; axis < 2; axis++) clipVertices[count][axis] = previous[axis] + t * (current[axis] - previous[axis]);
-				clipVertices[count++][2] = near;
-			}
-			if (inside) System.arraycopy(current, 0, clipVertices[count++], 0, 3);
+			addTriangleVertex(a, pa, 0, 0, 0);
+			addTriangleVertex(b, pb, 1, 1, 0);
+			addTriangleVertex(c, pc, 2, 2, 0);
 		}
-		if (count < 3) return;
-		for (int i = 1; i < count - 1; i++)
+		else
 		{
-			Point p0 = depthCalculator.projectCameraSpace(clipVertices[0]);
-			Point p1 = depthCalculator.projectCameraSpace(clipVertices[i]);
-			Point p2 = depthCalculator.projectCameraSpace(clipVertices[i + 1]);
-			if (isBackFace(p0, p1, p2)) continue;
-			if (!intersectsInterest(triangleBounds(p0, p1, p2))) continue;
+			if (a[2] < near && b[2] < near && c[2] < near) return 0;
+			for (int i = 0; i < 3; i++)
+			{
+				int previousIndex = (i + 2) % 3;
+				double[] previous = triangleInput[previousIndex], current = triangleInput[i];
+				boolean previousInside = previous[2] >= near, inside = current[2] >= near;
+				if (previousInside != inside)
+				{
+					double fraction = (near - previous[2]) / (current[2] - previous[2]);
+					for (int axis = 0; axis < 2; axis++)
+					{
+						clipVertex[axis] = previous[axis] + fraction * (current[axis] - previous[axis]);
+					}
+					clipVertex[2] = near;
+					addTriangleVertex(clipVertex, null, previousIndex, i, fraction);
+				}
+				if (inside) addTriangleVertex(current, i == 0 ? pa : i == 1 ? pb : pc, i, i, 0);
+			}
+		}
+		int visible = 0;
+		Point first = triangleScreen[0];
+		for (int i = 1; i < triangleCount - 1; i++)
+		{
+			Point second = triangleScreen[i], third = triangleScreen[i + 1];
+			if (!isBackFace(first, second, third) && interest.intersects(triangleBounds(first, second, third)))
+			{
+				visible |= 1 << i;
+			}
+		}
+		return visible;
+	}
+
+	private static boolean finiteVertex(double[] vertex)
+	{
+		return Double.isFinite(vertex[0]) && Double.isFinite(vertex[1]) && Double.isFinite(vertex[2]);
+	}
+
+	private void addTriangleVertex(double[] vertex, Point projected, int from, int to, double fraction)
+	{
+		int index = triangleCount++;
+		triangleScreen[index] = projected != null ? projected : depthCalculator.projectCameraSpace(vertex);
+		triangleDepth[index] = vertex[2];
+		edgeFrom[index] = from;
+		edgeTo[index] = to;
+		edgeFraction[index] = fraction;
+	}
+
+	private void emitTriangles(int visible, String source, int transmittance, int tint, TileObject owner,
+		float bias, TerrainSurface surface, TextureSample texture, TextureUvs uv)
+	{
+		if (visible == 0) return;
+		boolean nativeGpu = uv != null && BillboardSceneVisibility.renderer(client.getDrawCallbacks()) instanceof GpuPlugin;
+		if (uv != null)
+		{
+			faceUvs[0] = uv.u0; faceUvs[1] = uv.v0;
+			faceUvs[2] = uv.u1; faceUvs[3] = uv.v1;
+			faceUvs[4] = uv.u2; faceUvs[5] = uv.v2;
+			// Quantize the original GPU UVs before interpolating any clipped vertices.
+			for (int i = 0; i < faceUvs.length; i++)
+			{
+				if (!Double.isFinite(faceUvs[i])) return;
+				if (nativeGpu) faceUvs[i] = (short) (faceUvs[i] * 256) / 256d;
+			}
+			for (int i = 0; i < triangleCount; i++)
+			{
+				for (int axis = 0; axis < 2; axis++)
+				{
+					double from = faceUvs[2 * edgeFrom[i] + axis];
+					double to = faceUvs[2 * edgeTo[i] + axis];
+					triangleUvs[i][axis] = from + edgeFraction[i] * (to - from);
+				}
+			}
+		}
+		for (int remaining = visible; remaining != 0; remaining &= remaining - 1)
+		{
+			int i = Integer.numberOfTrailingZeros(remaining);
+			Point p0 = triangleScreen[0], p1 = triangleScreen[i], p2 = triangleScreen[i + 1];
 			BillboardOcclusionMask.Occluder o = BillboardOcclusionMask.Occluder.triangle(
-				p0.getX(), p0.getY(), (float) clipVertices[0][2],
-				p1.getX(), p1.getY(), (float) clipVertices[i][2],
-				p2.getX(), p2.getY(), (float) clipVertices[i + 1][2], source, transmittance, tint, owner);
+				p0.getX(), p0.getY(), (float) triangleDepth[0], p1.getX(), p1.getY(), (float) triangleDepth[i],
+				p2.getX(), p2.getY(), (float) triangleDepth[i + 1], source, transmittance, tint, owner);
 			o.depthOffset = bias;
 			o.terrain = surface;
 			o.excludeThirdWeightZero = i > 1;
+			if (uv != null) o.cutout(texture, triangleUvs[0], triangleUvs[i], triangleUvs[i + 1], nativeGpu);
 			worldOccluders.add(o);
 		}
 	}
@@ -1838,7 +1613,7 @@ public final class BillboardWorldOcclusionCollector
 		addMeshTriangle(terrainCamera[0], terrainCamera[1], terrainCamera[2], terrainOccluderSource(tile.getPlane()),
 			0, 0xFFFFFF, null, nested() || upperSurface ? 0f : TERRAIN_OCCLUSION_DEPTH_BIAS,
 			new TerrainSurface(collectionView==null ? WorldView.TOPLEVEL : collectionView.getId(),tile.getPlane(),
-				tile.getSceneLocation().getX(),tile.getSceneLocation().getY(),upperSurface));
+				tile.getSceneLocation().getX(),tile.getSceneLocation().getY(),upperSurface), null, null);
 	}
 
 	public static boolean isUnevenTerrainTriangle(int height0, int height1, int height2)
@@ -2010,13 +1785,12 @@ public final class BillboardWorldOcclusionCollector
 		{
 			return addWorldOccluder(shape, flatDepth, source, owner);
 		}
-		if (interestBounds != null && !intersectsInterest(shape.getBounds()))
+		if (interest.bounds() != null && !interest.intersects(shape.getBounds()))
 		{
 			return false;
 		}
 
 		worldOccluders.add(occluder);
-		debugVerticalFallbackOccludersAccepted++;
 		return true;
 	}
 
@@ -2200,10 +1974,6 @@ public final class BillboardWorldOcclusionCollector
 			return new RoofClassification(RoofClassificationKind.UNKNOWN, -1, 0, 0, false);
 		}
 
-		String debugSummary()
-		{
-			return kind + ":id=" + roofId + ":supportingPlaneFlags=" + supportingPlaneFlags + ":tileFlags=" + tileFlags + ":underRoof=" + underRoof + ":visBelow=" + visibleBelow;
-		}
 	}
 
 	enum RoofClassificationKind
@@ -2213,70 +1983,21 @@ public final class BillboardWorldOcclusionCollector
 		UNKNOWN
 	}
 
-	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-	static final class UpperPlaneVisibility
+	@RequiredArgsConstructor
+	enum UpperPlaneVisibility
 	{
-		private final UpperPlaneVisibilityKind kind;
+		CURRENT_PLANE(true, "current-plane"),
+		BRIDGE(true, "bridge-linked"),
+		NON_ROOF(true, "upper-non-roof"),
+		RENDERED_ROOF(true, "upper-roof-rendered"),
+		UNRENDERED_ROOF(false, "upper-roof-not-rendered"),
+		UNKNOWN_METADATA(true, "upper-roof-metadata-unknown"),
+		UNKNOWN_RENDERER_VISIBILITY(true, "upper-roof-visibility-unavailable"),
+		RENDERER_HIDDEN(false, "renderer-hidden-floor-or-roof");
+
 		final boolean accepted;
 		private final String reason;
-		private final RoofClassification roof;
-
-		private static UpperPlaneVisibility currentPlane()
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.CURRENT_PLANE, true, "current-plane", null);
-		}
-
-		private static UpperPlaneVisibility bridge()
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.BRIDGE_LINKED, true, "bridge-linked", null);
-		}
-
-		private static UpperPlaneVisibility nonRoof(RoofClassification roof)
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.NON_ROOF, true, "upper-non-roof", roof);
-		}
-
-		private static UpperPlaneVisibility renderedRoof(RoofClassification roof)
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.ROOF_RENDERED, true, "upper-roof-rendered", roof);
-		}
-
-		private static UpperPlaneVisibility unrenderedRoof(RoofClassification roof)
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.ROOF_NOT_RENDERED, false, "upper-roof-not-rendered", roof);
-		}
-
-
-
-		private static UpperPlaneVisibility unknown(RoofClassification roof)
-		{
-			return new UpperPlaneVisibility(UpperPlaneVisibilityKind.UNKNOWN_METADATA, true, "upper-roof-metadata-unknown", roof);
-		}
-
-		private static UpperPlaneVisibility unknown()
-		{
-			return unknown(null);
-		}
-
-		private String debugSummary()
-		{
-			return kind + (roof == null ? "" : ":" + roof.debugSummary());
-		}
 	}
-
-	private enum UpperPlaneVisibilityKind
-	{
-		CURRENT_PLANE,
-		BRIDGE_LINKED,
-		NON_ROOF,
-		ROOF_RENDERED,
-		ROOF_VISIBILITY_UNKNOWN,
-		ROOF_NOT_RENDERED,
-		NOT_RENDERED,
-		UNKNOWN_METADATA
-	}
-
-
 
 	static final class TileCandidate
 	{

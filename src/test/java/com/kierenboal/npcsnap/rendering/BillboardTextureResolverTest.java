@@ -2,10 +2,12 @@ package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.TestProxies;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
 import net.runelite.api.Texture;
 import net.runelite.api.TextureProvider;
+import net.runelite.api.gameval.ItemID;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -49,6 +51,42 @@ public class BillboardTextureResolverTest
 
 		assertSame(first.entry, second.entry);
 		assertEquals(20L, second.entry.lastUsedMillis());
+	}
+
+	@Test
+	public void sceneryScrollsOnlyAnimatedFacesAndKeepsTheCapeOverride()
+	{
+		AtomicInteger cycle = new AtomicInteger(16);
+		AtomicInteger direction = new AtomicInteger(4);
+		int[] pixels = {1, 0, 3, 4};
+		Texture moving = TestProxies.proxy(Texture.class, TestProxies.method("getPixels", pixels),
+			TestProxies.methodSupplier("getAnimationDirection", direction::get), TestProxies.method("getAnimationSpeed", 2));
+		Texture staticTexture = texture(new int[] {1, 2, 3, 4}, 0f, 0f);
+		Model animatedModel = TestProxies.proxy(Model.class, TestProxies.method("getFaceTextures", new short[] {-1, 1, 0}));
+		Model staticModel = TestProxies.proxy(Model.class, TestProxies.method("getFaceTextures", new short[] {1, -1}));
+		BillboardTextureResolver resolver = new BillboardTextureResolver(TestProxies.proxy(Client.class,
+			TestProxies.method("isGpu", true), TestProxies.methodSupplier("getGameCycle", cycle::get),
+			TestProxies.method("getTextureProvider", provider(new Texture[] {moving, staticTexture}))));
+		int scene = BillboardTextureResolver.SCENE_TEXTURES;
+		assertEquals(0.25f, resolver.resolveTextureSample(0, 0, scene).uOffset, 0f);
+		assertEquals(0f, resolver.resolveTextureSample(1, 0, scene).uOffset, 0f);
+		assertEquals(17, resolver.animatedTextureOffsetStateHash(animatedModel, scene, 0));
+		assertEquals(0, resolver.animatedTextureOffsetStateHash(staticModel, scene, 0));
+		cycle.set(144);
+		assertEquals(17, resolver.animatedTextureOffsetStateHash(animatedModel, scene, 0));
+		cycle.incrementAndGet();
+		assertEquals(18, resolver.animatedTextureOffsetStateHash(animatedModel, scene, 0));
+		cycle.set(16);
+		direction.set(1);
+		TextureSample vertical = resolver.resolveTextureSample(0, 0, scene);
+		assertEquals(-0.25f, vertical.vOffset, 0f);
+		assertEquals(0f, vertical.uOffset, 0f);
+		assertEquals(1, vertical.pixel(1.1, 0.3));
+		assertEquals(0, vertical.pixel(1.1, 0.3, true));
+
+		TextureSample cape = resolver.resolveTextureSample(0, 500, ItemID.TZHAAR_CAPE_FIRE);
+		assertEquals(0f, cape.uOffset, 0f);
+		assertEquals(BillboardAnimatedTextures.vOffset(500, moving), cape.vOffset, 0f);
 	}
 
 	@Test

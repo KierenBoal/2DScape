@@ -105,15 +105,15 @@ public class SceneryCategoriesTest
 	}
 
 	@Test
-	public void examineOnlyObjectsAreIncludedButMissingOpsAreExcluded()
+	public void clickableDefinitionsCanBeClassifiedWithoutActions()
 	{
 		assertEquals(SceneryCategory.OTHER, category("Fence", (String[]) null));
 		assertEquals(SceneryCategory.OTHER, category("Fence"));
 		assertEquals(SceneryCategory.OTHER, category("Fence", null, null));
 		assertEquals(SceneryCategory.OTHER, category("Fence", "", " ", "\t"));
 		assertEquals(SceneryCategory.OTHER, category("Crate", "Search"));
-		ObjectComposition floor = proxy(ObjectComposition.class, method("getName", "Floor"));
-		assertEquals(SceneryCategory.EXCLUDED, SceneryCategories.categoryOfDefinition(floor));
+		ObjectComposition fence = proxy(ObjectComposition.class, method("getName", "Fence"));
+		assertEquals(SceneryCategory.OTHER, SceneryCategories.categoryOfDefinition(fence));
 	}
 
 	@Test
@@ -218,9 +218,9 @@ public class SceneryCategoriesTest
 			SceneryCategory.FARMING, categories.categoryOf(object(1)));
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
-		current[0] = proxy(ObjectComposition.class, method("getId", 12), method("getName", "Floor"));
+		current[0] = proxy(ObjectComposition.class, method("getId", 12), method("getName", "Tree stump"));
 		categories.invalidateTransforms();
-		assertEquals(SceneryCategory.EXCLUDED, categories.categoryOf(object(1)));
+		assertEquals(SceneryCategory.TREE, categories.categoryOf(object(1)));
 		current[0] = form(13, "Crate", new AtomicInteger(), "Search");
 		categories.invalidateTransforms();
 		assertEquals(SceneryCategory.OTHER, categories.categoryOf(object(1)));

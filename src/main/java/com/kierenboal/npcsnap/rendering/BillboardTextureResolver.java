@@ -13,8 +13,11 @@ import net.runelite.api.TextureProvider;
 
 public final class BillboardTextureResolver
 {
+	public static final int SCENE_TEXTURES = -2;
+	private static final TextureUvs DEFAULT_UVS = new TextureUvs(0f, 0f, 1f, 0f, 0f, 1f);
 	private final Client client;
 	private final Map<Integer, TextureCacheEntry> textureCache = new HashMap<>();
+	private final float[] uvScratch = new float[6];
 
 	public BillboardTextureResolver(Client client)
 	{
@@ -39,12 +42,28 @@ public final class BillboardTextureResolver
 		}
 	}
 
-	public int animatedTextureOffsetStateHash(int animatedTextureId, long nowMillis)
+	public int animatedTextureOffsetStateHash(Model model, int animatedTextureId, long nowMillis)
 	{
-		return BillboardAnimatedTextures.offsetStateHash(
-			animatedTextureId,
-			nowMillis
-		);
+		short[] faces = animatedTextureId == SCENE_TEXTURES && model != null ? model.getFaceTextures() : null;
+		if (faces != null)
+		{
+			TextureProvider provider = client.getTextureProvider();
+			Texture[] textures = provider == null ? null : provider.getTextures();
+			if (textures != null)
+			{
+				for (short faceTexture : faces)
+				{
+					int id = Short.toUnsignedInt(faceTexture);
+					if (id < textures.length && scrolls(textures[id])) return 1 + (client.getGameCycle() & 127);
+				}
+			}
+		}
+		return BillboardAnimatedTextures.offsetStateHash(animatedTextureId, nowMillis);
+	}
+
+	private static boolean scrolls(Texture texture)
+	{
+		return texture != null && texture.getAnimationDirection() > 0 && texture.getAnimationSpeed() > 0;
 	}
 
 	public TextureSample resolveTextureSample(int textureId, long nowMillis, int animatedTextureId)
@@ -87,7 +106,18 @@ public final class BillboardTextureResolver
 
 		float uOffset = texture != null ? normalizeTextureOffset(texture.getU(), entry.width) : 0f;
 		float vOffset = texture != null ? normalizeTextureOffset(texture.getV(), entry.height) : 0f;
-		if (BillboardAnimatedTextures.isAnimatedTextureId(animatedTextureId))
+		if (animatedTextureId == SCENE_TEXTURES)
+		{
+			// The GPU scrolls UVs in the shader. The software provider updates its pixels.
+			if (scrolls(texture) && client.isGpu())
+			{
+				float shift = (client.getGameCycle() & 127) * texture.getAnimationSpeed() / 128f;
+				int direction = texture.getAnimationDirection();
+				uOffset = direction == 2 ? -shift : direction == 4 ? shift : 0f;
+				vOffset = direction == 1 ? -shift : direction == 3 ? shift : 0f;
+			}
+		}
+		else if (BillboardAnimatedTextures.isAnimatedTextureId(animatedTextureId))
 		{
 			uOffset = 0f;
 			vOffset = BillboardAnimatedTextures.vOffset(nowMillis, texture);
@@ -99,88 +129,48 @@ public final class BillboardTextureResolver
 
 	public TextureUvs computeTextureUvs(Model model, int face)
 	{
-		float[] vertexX = model.getVerticesX();
-		float[] vertexY = model.getVerticesY();
-		float[] vertexZ = model.getVerticesZ();
-		int[] indices1 = model.getFaceIndices1();
-		int[] indices2 = model.getFaceIndices2();
-		int[] indices3 = model.getFaceIndices3();
-		byte[] textureFaces = model.getTextureFaces();
-		int[] texIndices1 = model.getTexIndices1();
-		int[] texIndices2 = model.getTexIndices2();
-		int[] texIndices3 = model.getTexIndices3();
+		return computeTextureUvs(face, model.getVerticesX(), model.getVerticesY(), model.getVerticesZ(),
+			model.getFaceIndices1(), model.getFaceIndices2(), model.getFaceIndices3(), model.getTextureFaces(),
+			model.getTexIndices1(), model.getTexIndices2(), model.getTexIndices3());
+	}
 
+	public TextureUvs computeTextureUvs(int face, float[] x, float[] y, float[] z,
+		int[] indices1, int[] indices2, int[] indices3, byte[] textureFaces,
+		int[] texIndices1, int[] texIndices2, int[] texIndices3)
+	{
 		if (textureFaces == null || face >= textureFaces.length || textureFaces[face] == -1
 			|| texIndices1 == null || texIndices2 == null || texIndices3 == null)
 		{
-			return new TextureUvs(0f, 0f, 1f, 0f, 0f, 1f);
+			return DEFAULT_UVS;
 		}
 
-		int triangleA = indices1[face];
-		int triangleB = indices2[face];
-		int triangleC = indices3[face];
 		int textureFace = textureFaces[face] & 0xFF;
 		if (textureFace >= texIndices1.length || textureFace >= texIndices2.length || textureFace >= texIndices3.length)
 		{
 			return null;
 		}
 
-		int texA = texIndices1[textureFace];
-		int texB = texIndices2[textureFace];
-		int texC = texIndices3[textureFace];
-
-		float v1x = vertexX[texA];
-		float v1y = vertexY[texA];
-		float v1z = vertexZ[texA];
-		float v2x = vertexX[texB] - v1x;
-		float v2y = vertexY[texB] - v1y;
-		float v2z = vertexZ[texB] - v1z;
-		float v3x = vertexX[texC] - v1x;
-		float v3y = vertexY[texC] - v1y;
-		float v3z = vertexZ[texC] - v1z;
-
-		float v4x = vertexX[triangleA] - v1x;
-		float v4y = vertexY[triangleA] - v1y;
-		float v4z = vertexZ[triangleA] - v1z;
-		float v5x = vertexX[triangleB] - v1x;
-		float v5y = vertexY[triangleB] - v1y;
-		float v5z = vertexZ[triangleB] - v1z;
-		float v6x = vertexX[triangleC] - v1x;
-		float v6y = vertexY[triangleC] - v1y;
-		float v6z = vertexZ[triangleC] - v1z;
-
-		float v7x = v2y * v3z - v2z * v3y;
-		float v7y = v2z * v3x - v2x * v3z;
-		float v7z = v2x * v3y - v2y * v3x;
-
-		float v8x = v3y * v7z - v3z * v7y;
-		float v8y = v3z * v7x - v3x * v7z;
-		float v8z = v3x * v7y - v3y * v7x;
-		float denominator = v8x * v2x + v8y * v2y + v8z * v2z;
-		if (Math.abs(denominator) < 1.0e-6f)
+		int a = texIndices1[textureFace], b = texIndices2[textureFace], c = texIndices3[textureFace];
+		int limit = Math.min(x.length, Math.min(y.length, z.length));
+		if (Math.min(a, Math.min(b, c)) < 0 || Math.max(a, Math.max(b, c)) >= limit) return null;
+		double bx = x[b] - x[a], by = y[b] - y[a], bz = z[b] - z[a];
+		double cx = x[c] - x[a], cy = y[c] - y[a], cz = z[c] - z[a];
+		double bb = bx * bx + by * by + bz * bz;
+		double cc = cx * cx + cy * cy + cz * cz;
+		double bc = bx * cx + by * cy + bz * cz;
+		double determinant = bb * cc - bc * bc;
+		if (!(determinant >= 1.0e-6)) return null;
+		for (int i = 0; i < 3; i++)
 		{
-			return null;
+			int vertex = i == 0 ? indices1[face] : i == 1 ? indices2[face] : indices3[face];
+			if (vertex < 0 || vertex >= limit) return null;
+			double dx = x[vertex] - x[a], dy = y[vertex] - y[a], dz = z[vertex] - z[a];
+			double alongB = dx * bx + dy * by + dz * bz;
+			double alongC = dx * cx + dy * cy + dz * cz;
+			uvScratch[2 * i] = (float) ((cc * alongB - bc * alongC) / determinant);
+			uvScratch[2 * i + 1] = (float) ((bb * alongC - bc * alongB) / determinant);
 		}
-
-		float factor = 1.0f / denominator;
-		float u0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
-		float u1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
-		float u2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
-
-		v8x = v2y * v7z - v2z * v7y;
-		v8y = v2z * v7x - v2x * v7z;
-		v8z = v2x * v7y - v2y * v7x;
-		denominator = v8x * v3x + v8y * v3y + v8z * v3z;
-		if (Math.abs(denominator) < 1.0e-6f)
-		{
-			return null;
-		}
-
-		factor = 1.0f / denominator;
-		float v0 = (v8x * v4x + v8y * v4y + v8z * v4z) * factor;
-		float v1 = (v8x * v5x + v8y * v5y + v8z * v5z) * factor;
-		float v2 = (v8x * v6x + v8y * v6y + v8z * v6z) * factor;
-		return new TextureUvs(u0, v0, u1, v1, u2, v2);
+		return new TextureUvs(uvScratch[0], uvScratch[1], uvScratch[2], uvScratch[3], uvScratch[4], uvScratch[5]);
 	}
 
 	private static float normalizeTextureOffset(float offset, int dimension)

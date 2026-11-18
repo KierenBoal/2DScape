@@ -13,7 +13,6 @@ import com.kierenboal.npcsnap.export.BillboardObjectExportResolver;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionDebugSampler;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionQuality;
-import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
 import com.kierenboal.npcsnap.occlusion.BillboardWorldOcclusionCollector;
 import com.kierenboal.npcsnap.occlusion.BillboardSceneVisibility;
 import com.kierenboal.npcsnap.occlusion.BillboardNpcSurfaceOcclusion;
@@ -226,13 +225,13 @@ class NpcBillboardOverlay extends Overlay
 		this.debug = debug;
 		this.depthCalculator = new BillboardDepthCalculator(client);
 		this.sceneryCategories = new SceneryCategories(client);
-		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, log, sceneVisibility);
+		this.textureResolver = new BillboardTextureResolver(client);
+		this.worldOcclusionCollector = new BillboardWorldOcclusionCollector(client, config, depthCalculator, log, sceneVisibility, textureResolver);
 		this.orientationCalculator = new BillboardOrientationCalculator(client, config);
 		this.requestFactory = new BillboardRenderRequestFactory(
 			client, config, debug, orientationCalculator);
 		this.targetEligibility = new BillboardTargetEligibility(
 			client, config, requestFactory, this::projectedModelCanvasBounds, this::isSceneRenderedInFront);
-		this.textureResolver = new BillboardTextureResolver(client);
 		this.classificationDebug = new BillboardClassificationDebug(client, config, log);
 		this.actorOverheadRenderer = new ActorOverheadRenderer(client, config);
 		setLayer(OverlayLayer.ABOVE_SCENE);
@@ -1306,6 +1305,7 @@ class NpcBillboardOverlay extends Overlay
 			// early to decide which scenery the renderer will hide.
 			// Gather from actual draw bounds so outer pixels receive scenery occlusion.
 			worldOcclusionCollector.clearInterest();
+			BillboardOcclusionQuality quality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
 			Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
 			Set<TileObject> billboardedObjects = IdentitySets.create();
 			List<BillboardWorldOcclusionCollector.TraceTarget> liveTraces = new ArrayList<>(preparedDraws.size());
@@ -1319,8 +1319,11 @@ class NpcBillboardOverlay extends Overlay
 					draw.highlightWidth = highlights.width();
 					draw.highlightFeather = highlights.feather();
 				}
-				liveTraces.add(new BillboardWorldOcclusionCollector.TraceTarget(draw.request.localPoint, draw.request.plane));
-				worldOcclusionCollector.addInterest(draw.visualBounds(), viewportBounds);
+				if (quality == BillboardOcclusionQuality.OFF) continue;
+				if (worldOcclusionCollector.addInterest(draw.visualBounds(), viewportBounds))
+				{
+					liveTraces.add(new BillboardWorldOcclusionCollector.TraceTarget(draw.request.localPoint, draw.request.plane));
+				}
 				if (draw.occlusionIgnoredTileObject != null && (!gpuScenery
 					|| staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
 					|| suppressedTileObjects.containsCurrent(draw.occlusionIgnoredTileObject)
@@ -1329,9 +1332,6 @@ class NpcBillboardOverlay extends Overlay
 					billboardedObjects.add(draw.occlusionIgnoredTileObject);
 				}
 			}
-			List<Rectangle> occlusionRegions = occlusionInterestRegions(preparedDraws, viewportX, viewportY, viewportWidth, viewportHeight);
-			Rectangle occlusionBounds = BillboardOcclusionRegions.union(occlusionRegions);
-			BillboardOcclusionQuality quality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
 			try (Timer timer = performanceMetrics.time("Collect terrain occluders"))
 			{
 				worldOcclusionCollector.collectTerrainOccluders(occlusionWorldView, liveTraces,
@@ -1345,10 +1345,11 @@ class NpcBillboardOverlay extends Overlay
 			}
 			try (Timer maskTimer = performanceMetrics.time("Prepare occlusion mask"))
 			{
-				occlusionMask.prepare(worldOcclusionCollector.occluders(), config.billboardOcclusionQuality(), viewportX, viewportY, viewportWidth, viewportHeight, occlusionBounds, occlusionRegions);
+				occlusionMask.prepare(worldOcclusionCollector.occluders(), quality, worldOcclusionCollector.interest(),
+					config.debugLogBillboardOcclusion());
 			}
 			occlusionDebugSampler.collect(preparedDraws, config.debugLogBillboardOcclusion());
-			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionBounds, occlusionDebugSampler.samples());
+			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionDebugSampler.samples());
 			try (Timer timer = performanceMetrics.time("Composite billboards"))
 			{
 				for (int i = preparedDraws.size() - 1; i >= 0; i--)
@@ -1369,20 +1370,6 @@ class NpcBillboardOverlay extends Overlay
 				drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
 			}
 		}
-	}
-
-	private List<Rectangle> occlusionInterestRegions(List<PreparedBillboardDraw> preparedDraws, int viewportX, int viewportY, int viewportWidth, int viewportHeight)
-	{
-		return BillboardOcclusionRegions.clippedDrawRegions(
-			preparedDraws,
-			new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight),
-			occlusionInterestMargin());
-	}
-
-	private int occlusionInterestMargin()
-	{
-		BillboardOcclusionQuality quality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
-		return Math.max(0, quality.sampleStep());
 	}
 
 	private BillboardDepthSurface billboardDepthSurface(PreparedBillboardDraw draw)
@@ -2146,10 +2133,18 @@ class NpcBillboardOverlay extends Overlay
 				}
 			}
 			for (Map.Entry<TileObject, ObservedTileObject> entry : visibleTileObjects.entrySet())
-            {
-                ObservedTileObject observed = buildObservedTileObject(entry.getKey());
-                if (observed == null) continue;
-                entry.setValue(observed);
+			{
+				TileObject object = entry.getKey();
+				ObservedTileObject observed = modelCompatibility == null ? null : modelCompatibility.observed(object);
+				if (observed == null)
+				{
+					ObservedTileObject previous = entry.getValue();
+					Renderable current = object instanceof GameObject ? ((GameObject) object).getRenderable() : null;
+					observed = current instanceof Model && previous != null && previous.parts.get(0).renderable == current
+						? previous : ObservedTileObjectBuilder.build(object);
+				}
+				if (observed == null) continue;
+				entry.setValue(observed);
 				if (worldViewVisibility != null && observed.tileObject.getWorldView() != null && !worldViewVisibility.isVisible(observed.tileObject.getWorldView())) continue;
 				if (!targetEligibility.tileObject(localPlayerLocation, observed, viewport))
 				{
@@ -2611,7 +2606,7 @@ class NpcBillboardOverlay extends Overlay
 			+ request.relativePitch;
 		// World-plane pitch and shadows are presentation transforms of this capture.
 		UpdateHeuristicSnapshot snapshot = UpdateHeuristicSnapshot.forCapture(request, depth,
-			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, System.currentTimeMillis()), view, animated, config.redrawOnClickboxResizePercent() > 0);
+			textureResolver.animatedTextureOffsetStateHash(request.model, request.animatedTextureId, System.currentTimeMillis()), view, animated, config.redrawOnClickboxResizePercent() > 0);
 		return new UpdateHeuristicSnapshot(depth, snapshot.positionKey, snapshot.animationHash, snapshot.modelStateHash,
 			snapshot.textureStateHash, snapshot.viewHash, snapshot.animated, snapshot.animationIdentityHash,
 			31 * snapshot.appearanceHash + captureStyleHash(request), snapshot.geometry);
@@ -2947,7 +2942,7 @@ class NpcBillboardOverlay extends Overlay
 						config.billboardColorBands(),
 						builtFaces.textureStateHash,
 						qualityKey(updatePlan.qualityScale),
-						textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis)
+						textureResolver.animatedTextureOffsetStateHash(request.model, request.animatedTextureId, nowMillis)
 					);
 					cacheInvalidated = updatePlan.isForcedRedraw()
 						|| shouldRefreshCache(renderable, cacheKey, imageBounds, nowMillis);
@@ -3104,7 +3099,7 @@ class NpcBillboardOverlay extends Overlay
 			config,
 			outlinePadding(qualityScale),
 			qualityKey(qualityScale),
-			textureResolver.animatedTextureOffsetStateHash(request.animatedTextureId, nowMillis),
+			textureResolver.animatedTextureOffsetStateHash(request.model, request.animatedTextureId, nowMillis),
 			BillboardBrightness.effectiveLightBoostPercent(client, config, request.model));
 	}
 

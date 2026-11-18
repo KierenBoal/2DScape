@@ -66,12 +66,9 @@ public final class BillboardFaceRasterizer
 				float w2 = 1.0f - w0 - w1;
 				if (w0 >= 0f && w1 >= 0f && w2 >= 0f)
 				{
-					float u = (float) BillboardGeometryUtils.wrapUnit((w0 * textureUvs.u0) + (w1 * textureUvs.u1) + (w2 * textureUvs.u2) + textureSample.uOffset);
-					float v = (float) BillboardGeometryUtils.wrapUnit((w0 * textureUvs.v0) + (w1 * textureUvs.v1) + (w2 * textureUvs.v2) + textureSample.vOffset);
-					int textureX = Math.min(textureSample.entry.width - 1, (int) (u * textureSample.entry.width));
-					int textureY = Math.min(textureSample.entry.height - 1, (int) (v * textureSample.entry.height));
-					int samplePixel = textureSample.entry.pixels[(textureY * textureSample.entry.width) + textureX];
-					if ((samplePixel >>> 24) != 0 || (samplePixel & 0xFFFFFF) != 0)
+					int samplePixel = textureSample.pixel(w0 * textureUvs.u0 + w1 * textureUvs.u1 + w2 * textureUvs.u2,
+						w0 * textureUvs.v0 + w1 * textureUvs.v1 + w2 * textureUvs.v2);
+					if (samplePixel != 0)
 					{
 						int shadedPixel = BillboardColorUtils.modulateTexturePixel(samplePixel, shade, colorBands);
 						int pixelIndex = row + x;

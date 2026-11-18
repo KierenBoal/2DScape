@@ -16,13 +16,13 @@ import net.runelite.api.ObjectComposition;
 import net.runelite.api.TileObject;
 
 /**
- * Sorts world objects into categories from their own definition (right-click options and
- * name), so new objects need no ID list. Uncategorized scenery without menu options
- * is excluded. Look objects up on the client thread only: object definitions are
- * not thread safe.
+ * Sorts clickable world objects into categories by action and name.
+ * Look objects up on the client thread only: object definitions are not thread safe.
  */
 public final class SceneryCategories
 {
+	// RuneLite documents hash bit 19 as "wall"; its clickbox check skips tags with this bit set.
+	private static final long NO_CLICKBOX = 1L << 19;
 	// Most trees / achey and blisterwood / redwood / arctic pine.
 	private static final Set<String> CHOP_OPTIONS = Set.of("chop down", "chop", "cut", "cut down");
 	private static final Set<String> TREE_WORDS = Set.of("tree", "trees", "stump");
@@ -86,7 +86,7 @@ public final class SceneryCategories
 
 	public SceneryCategory categoryOf(TileObject object)
 	{
-		if (object == null)
+		if (object == null || (object.getHash() & NO_CLICKBOX) != 0)
 		{
 			return SceneryCategory.EXCLUDED;
 		}
@@ -158,8 +158,7 @@ public final class SceneryCategories
 			return SceneryCategory.EXCLUDED;
 		}
 
-		boolean hasOps = composition.getOps() != null;
-		Set<String> options = options(hasOps ? composition.getActions() : null);
+		Set<String> options = options(composition.getOps() == null ? null : composition.getActions());
 		Set<String> words = words(composition.getName());
 		if (!Collections.disjoint(words, FARMING_WORDS)
 			|| words.contains("patch") && !Collections.disjoint(words, FARMING_PATCH_WORDS))
@@ -186,8 +185,7 @@ public final class SceneryCategories
 		{
 			return SceneryCategory.LOG;
 		}
-		// A non-null ops definition also allows Examine-only objects with no actions.
-		return hasOps ? SceneryCategory.OTHER : SceneryCategory.EXCLUDED;
+		return SceneryCategory.OTHER;
 	}
 
 	private static Set<String> options(String[] actions)

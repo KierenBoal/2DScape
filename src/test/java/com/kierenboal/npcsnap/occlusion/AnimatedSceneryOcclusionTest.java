@@ -13,6 +13,8 @@ import net.runelite.api.Model;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
 import net.runelite.api.Scene;
+import net.runelite.api.Texture;
+import net.runelite.api.TextureProvider;
 import net.runelite.api.Tile;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
@@ -133,11 +135,28 @@ public class AnimatedSceneryOcclusionTest
 		assertEquals(255, mask.transmittanceAt(600, 250, 2000));
 	}
 
+	@Test
+	public void cutoutUsesTheCapturedTextureMappingAfterTheModelBufferIsReused()
+	{
+		Fixture fixture = new Fixture();
+		fixture.begin();
+		fixture.textures[0] = 0;
+		fixture.callbacks.get().drawDynamic(null, fixture.scene, fixture.firstObject, fixture.first,
+			fixture.setModel(0, 0), 0, 512, 0, 1024);
+		fixture.textures[0] = -1;
+		fixture.textureB[0] = 2;
+		BillboardOcclusionMask mask = fixture.collect();
+		assertEquals(255, mask.transmittanceAt(384, 250, 2000));
+		assertEquals(0, mask.transmittanceAt(416, 250, 2000));
+	}
+
 	private static final class Fixture
 	{
 		final float[] x = {-100, 100, 0};
 		final int[] a = {0}, colors = {1234};
 		final byte[] alpha = {(byte) 128};
+		final short[] textures = {-1};
+		final int[] textureB = {1};
 		final AtomicReference<Double> brightness = new AtomicReference<>(0.8d);
 		final java.util.concurrent.atomic.AtomicInteger zbufReads = new java.util.concurrent.atomic.AtomicInteger();
 		final java.util.concurrent.atomic.AtomicInteger tempCalls = new java.util.concurrent.atomic.AtomicInteger();
@@ -145,6 +164,8 @@ public class AnimatedSceneryOcclusionTest
 		final Model shared = proxy(Model.class, method("getVerticesCount", 3), method("getFaceCount", 1),
 			method("getVerticesX", x), method("getVerticesY", new float[] {0, 0, -200}), method("getVerticesZ", new float[3]),
 			method("getFaceIndices1", a), method("getFaceIndices2", new int[] {1}), method("getFaceIndices3", new int[] {2}),
+			method("getFaceTextures", textures), method("getTextureFaces", new byte[] {0}),
+			method("getTexIndices1", new int[] {0}), method("getTexIndices2", textureB), method("getTexIndices3", new int[] {2}),
 			method("getFaceColors3", colors), method("getFaceTransparencies", alpha));
 		final DynamicObject first = proxy(DynamicObject.class, methodSupplier("getModelHeight", firstHeight::get),
 			methodSupplier("getModel", () -> setModel(2000, 0)),
@@ -167,8 +188,11 @@ public class AnimatedSceneryOcclusionTest
 			scene = proxy(Scene.class, method("getTiles", tiles), method("getWorldViewId", WorldView.TOPLEVEL));
 			view = proxy(WorldView.class, method("isTopLevel", true), method("getScene", scene),
 				method("getTileSettings", new byte[4][16][16]), method("getTileHeights", new int[4][17][17]));
+			Texture cutout = proxy(Texture.class, method("getPixels", new int[] {
+				0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1}));
 			Client client = proxy(Client.class, method("getWorldView", view), method("getTopLevelWorldView", view),
-				method("getTextureProvider", proxy(net.runelite.api.TextureProvider.class, methodSupplier("getBrightness", brightness::get))),
+				method("getTextureProvider", proxy(TextureProvider.class, methodSupplier("getBrightness", brightness::get),
+					method("getTextures", new Texture[] {cutout}))),
 				method("getLocalPlayer", proxy(Player.class, method("getWorldView", view))),
 				method("getCameraX", 512), method("getCameraFpX", 512f), method("getScale", 512),
 				method("getViewportWidth", 800), method("getViewportHeight", 600));

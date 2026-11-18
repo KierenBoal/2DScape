@@ -12,6 +12,8 @@ final class SceneryModelSnapshot
 	final int[] colors1, colors2, colors3;
 	final short[] unlitColors;
 	final short[] textures;
+	final byte[] textureFaces;
+	final int[] texIndices1, texIndices2, texIndices3;
 	final byte[] transparencies;
 	final byte transparency;
 	final int overrideHue, overrideSaturation, overrideLuminance, overrideAmount;
@@ -28,6 +30,11 @@ final class SceneryModelSnapshot
 		unlitColors = unlit == null ? null : Arrays.copyOf(unlit, Math.min(unlit.length, faces));
 		short[] faceTextures = model.getFaceTextures();
 		textures = faceTextures == null ? null : Arrays.copyOf(faceTextures, Math.min(faceTextures.length, faces));
+		byte[] mappings = textures == null ? null : model.getTextureFaces();
+		textureFaces = mappings == null ? null : Arrays.copyOf(mappings, Math.min(mappings.length, faces));
+		texIndices1 = mappings == null ? null : copy(model.getTexIndices1(), Integer.MAX_VALUE);
+		texIndices2 = mappings == null ? null : copy(model.getTexIndices2(), Integer.MAX_VALUE);
+		texIndices3 = mappings == null ? null : copy(model.getTexIndices3(), Integer.MAX_VALUE);
 		byte[] alpha = model.getFaceTransparencies();
 		transparencies = alpha == null ? null : Arrays.copyOf(alpha, Math.min(alpha.length, faces));
 		transparency = model.getTransparency();

@@ -44,6 +44,7 @@ public class BillboardTileVisitsTest
 					{
 						for (int y = centerY - radius; y <= centerY + radius; y++)
 						{
+							boolean visit = expand && visits.addCoordinate(x, y);
 							for (int plane = 0; plane < tiles.length; plane++)
 							{
 								if (tiles[plane] == null || x < 0 || x >= tiles[plane].length
@@ -56,7 +57,7 @@ public class BillboardTileVisitsTest
 								{
 									expected.add(key);
 								}
-								if (expand && visits.addCoordinate(plane, x, y))
+								if (visit)
 								{
 									actual.add(key);
 								}
@@ -80,15 +81,15 @@ public class BillboardTileVisitsTest
 		assertFalse(visits.addCenter(-3, 0));
 		assertTrue(visits.addCenter(5, 8));
 		assertFalse(visits.addCenter(6, 8));
-		assertTrue(visits.addCoordinate(0, 3, 6));
-		assertTrue(visits.addCoordinate(1, 3, 6));
-		assertFalse(visits.addCoordinate(0, 3, 6));
+		assertTrue(visits.addCoordinate(3, 6));
+		assertFalse(visits.addCoordinate(3, 6));
+		assertFalse(visits.addCoordinate(4, 6));
 		visits.reset(new Tile[4][12][13], 10);
 		assertTrue(visits.addCenter(-2, -2));
-		assertTrue(visits.addCoordinate(0, 3, 6));
-		assertTrue(visits.addCoordinate(3, 11, 12));
+		assertTrue(visits.addCoordinate(3, 6));
+		assertTrue(visits.addCoordinate(11, 12));
 		visits.reset(new Tile[1][1][1], 2);
-		assertTrue(visits.addCoordinate(0, 0, 0));
+		assertTrue(visits.addCoordinate(0, 0));
 		assertFalse(visits.addCenter(3, 0));
 	}
 }

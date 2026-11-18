@@ -13,6 +13,9 @@ import net.runelite.api.GameState;
 import net.runelite.api.Model;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
+import net.runelite.api.Renderable;
+import net.runelite.api.Texture;
+import net.runelite.api.TextureProvider;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
@@ -67,6 +70,18 @@ public class NpcBillboardObjectCadenceTest
 		assertNotEquals(fixture.frame(0), fixture.frame(1));
 	}
 
+	@Test
+	public void scrollingTextureOnStaticSceneryRefreshesAtTheConfiguredCadence()
+	{
+		Fixture limited = new Fixture(true, false, 10, true);
+		int first = limited.frame(0);
+		assertEquals(first, limited.frame(1));
+		assertNotEquals(first, limited.frame(5));
+
+		Fixture unlimited = new Fixture(false, false, 10, true);
+		assertNotEquals(unlimited.frame(0), unlimited.frame(1));
+	}
+
 	private static final class Fixture
 	{
 		private final AtomicInteger cycle = new AtomicInteger();
@@ -76,12 +91,22 @@ public class NpcBillboardObjectCadenceTest
 
 		private Fixture(boolean limited, boolean animated, int frameRate)
 		{
+			this(limited, animated, frameRate, false);
+		}
+
+		private Fixture(boolean limited, boolean animated, int frameRate, boolean scrolling)
+		{
 			view = proxy(WorldView.class, method("getId", WorldView.TOPLEVEL), method("isTopLevel", true),
 				method("contains", true), method("getSizeX", 16), method("getSizeY", 16),
 				method("getTileSettings", new byte[4][16][16]), method("getTileHeights", new int[4][17][17]));
 			LocalPoint location = new LocalPoint(512, 1024);
 			Player localPlayer = proxy(Player.class, method("getWorldView", view), method("getLocalLocation", location));
+			Texture texture = proxy(Texture.class, method("getAnimationDirection", 4), method("getAnimationSpeed", 2),
+				method("getPixels", new int[] {0xF0F0F0, 0, 0xF0F0F0, 0}));
+			TextureProvider provider = proxy(TextureProvider.class, method("getTextures", new Texture[] {texture}),
+				method("getBrightness", 1d));
 			Client client = proxy(Client.class, method("getTopLevelWorldView", view), method("getWorldView", view),
+				method("isGpu", scrolling), method("getTextureProvider", scrolling ? provider : null),
 				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
 					method("getName", "Crate"), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", localPlayer), method("getGameState", GameState.LOGGED_IN),
@@ -89,7 +114,7 @@ public class NpcBillboardObjectCadenceTest
 				method("getViewportWidth", 800), method("getViewportHeight", 600),
 				methodSupplier("getGameCycle", cycle::get));
 			Animation animation = proxy(Animation.class, method("getId", 1), method("getNumFrames", 100));
-			DynamicObject first = part(animation, animated);
+			Renderable first = part(animation, animated, scrolling);
 			object = proxy(GameObject.class, method("getWorldView", view),
 				method("getId", 1), method("getLocalLocation", location),
 				method("getSceneMinLocation", new Point(4, 8)), method("getSceneMaxLocation", new Point(4, 8)),
@@ -114,15 +139,19 @@ public class NpcBillboardObjectCadenceTest
 			overlay.setActive(true);
 		}
 
-		private DynamicObject part(Animation animation, boolean animated)
+		private Renderable part(Animation animation, boolean animated, boolean scrolling)
 		{
 			Model model = proxy(Model.class, method("getVerticesCount", 3), method("getModelHeight", 100),
-				methodSupplier("getVerticesX", () -> new float[] {-50 - cycle.get(), 50 + cycle.get(), 0}),
+				methodSupplier("getVerticesX", () -> {
+					int movement = scrolling ? 0 : cycle.get();
+					return new float[] {-50 - movement, 50 + movement, 0};
+				}),
 				method("getVerticesY", new float[] {0, 0, -100}), method("getVerticesZ", new float[3]),
 				method("getFaceCount", 1), method("getFaceIndices1", new int[] {0}),
 				method("getFaceIndices2", new int[] {1}), method("getFaceIndices3", new int[] {2}),
 				method("getFaceColors1", new int[] {5000}), method("getFaceColors2", new int[] {5000}),
-				method("getFaceColors3", new int[] {5000}));
+				method("getFaceColors3", new int[] {5000}), method("getFaceTextures", scrolling ? new short[] {0} : null));
+			if (scrolling) return model;
 			return proxy(DynamicObject.class, method("getModel", model), method("getModelHeight", 100),
 				method("getAnimation", animated ? animation : null), methodSupplier("getAnimFrame", cycle::get));
 		}

@@ -27,7 +27,7 @@ final class NpcSnapChangelog
 		new Release("1.2.0", "Added new shadow settings (legacy option available);Fixed ground clipping visuals;Improved click accuracy mode improvements"),
 		new Release("1.2.1", "Code reduction and deprecated unused features"),
 		new Release("1.3.0", "Support for rendering more world objects like trees and rocks (Thanks AJD!)"),
-		new Release("1.3.1", "Removed unused features;Performance improvements;Interaction highlights integration"));
+		new Release("1.3.1", "Performance improvements;Interaction highlights integration"));
 	static final String CURRENT_VERSION = RELEASES.get(RELEASES.size() - 1).version;
 
 	private final List<Release> releases;

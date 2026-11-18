@@ -80,7 +80,7 @@ public final class BillboardRenderRequestFactory
 			// still carried on the request for depth/occlusion decisions, but it must
 			// not activate the ground-item minimum pitch here.
 			sceneryYaw(part), orientationCalculator.relativePitch(),
-			animationId, originalFrame, -1, -1, -1,
+			animationId, originalFrame, -1, -1, BillboardTextureResolver.SCENE_TEXTURES,
 			VerticalAnchor.BOTTOM, frameDebugInfo, lowProfile), part);
 	}
 

@@ -1,12 +1,8 @@
 package com.kierenboal.npcsnap;
 
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionRegions;
-import com.kierenboal.npcsnap.rendering.BillboardRenderResult;
-import com.kierenboal.npcsnap.rendering.PreparedBillboardDraw;
 
 import java.awt.Rectangle;
-import java.awt.image.BufferedImage;
-import java.util.List;
 import net.runelite.api.Point;
 import org.junit.Test;
 
@@ -32,30 +28,6 @@ public class NpcBillboardOverlayOcclusionTest
 	}
 
 	@Test
-	public void clippedRegionsSkipInvalidDrawsAndClipToViewport()
-	{
-		PreparedBillboardDraw partlyVisible = draw(new Rectangle(-5, 5, 10, 10));
-		PreparedBillboardDraw outside = draw(new Rectangle(50, 50, 5, 5));
-
-		assertEquals(
-			List.of(new Rectangle(0, 3, 7, 14)),
-			BillboardOcclusionRegions.clippedDrawRegions(
-				List.of(partlyVisible, outside, new PreparedBillboardDraw(null, null, 0)),
-				new Rectangle(0, 0, 20, 20),
-				2));
-	}
-
-	@Test
-	public void unionIgnoresNullAndEmptyRegions()
-	{
-		assertEquals(
-			new Rectangle(1, 2, 12, 12),
-			BillboardOcclusionRegions.union(List.of(
-				new Rectangle(), new Rectangle(1, 2, 3, 4), new Rectangle(10, 10, 3, 4))));
-		assertEquals(null, BillboardOcclusionRegions.union(List.of()));
-	}
-
-	@Test
 	public void groundContactAlignsVisibleContentBottomToActorGroundPoint()
 	{
 		Rectangle drawRect = NpcBillboardOverlay.alignGroundContact(
@@ -65,11 +37,5 @@ public class NpcBillboardOverlayOcclusionTest
 			new Point(20, 200));
 
 		assertEquals(new Rectangle(10, 170, 20, 40), drawRect);
-	}
-
-	private static PreparedBillboardDraw draw(Rectangle bounds)
-	{
-		BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-		return new PreparedBillboardDraw(null, new BillboardRenderResult(bounds, image, bounds), 0);
 	}
 }

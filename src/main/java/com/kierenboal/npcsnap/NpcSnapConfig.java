@@ -251,7 +251,7 @@ public interface NpcSnapConfig extends Config
 	@ConfigItem(keyName = "shadowColor", name = "Shadow color", description = "Tint shadows; alpha multiplies their natural opacity.", section = spriteSection, position = 2)
 	default Color shadowColor()
 	{
-		return Color.BLACK;
+		return new Color(0, 0, 0, 180);
 	}
 
 	@ConfigItem(keyName = "useInteractionHighlight", name = "Use interaction highlight", description = "Draw sprite highlights using RuneLite Interact Highlight settings, even when that plugin is off.", section = spriteInteractionOutlineSection, position = 1)

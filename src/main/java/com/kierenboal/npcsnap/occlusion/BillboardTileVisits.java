@@ -47,10 +47,10 @@ final class BillboardTileVisits
 		return add(centers, (y + radius) * centerWidth + x + radius);
 	}
 
-	boolean addCoordinate(int plane, int x, int y)
+	boolean addCoordinate(int x, int y)
 	{
-		// The caller has already checked the actual (possibly ragged) scene row.
-		return add(coordinates, (plane * height + y) * width + x);
+		// Each corridor coordinate visits all candidate planes together.
+		return x >= 0 && y >= 0 && x < width && y < height && add(coordinates, y * width + x);
 	}
 
 	private static boolean add(BitSet bits, int index)

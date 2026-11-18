@@ -101,17 +101,19 @@ public class NpcBillboardStaticSceneryTest
 	}
 
 	@Test
-	public void everythingElseIncludesExamineOnlySceneryButSkipsMissingOps()
+	public void onlyClickableSceneryCanReplaceItsModel()
 	{
 		ObjectComposition floor = proxy(ObjectComposition.class, method("getName", "Floor"));
-		assertFalse(new Fixture(floor, true, true, true).swaps());
-		ObjectComposition fence = proxy(ObjectComposition.class, method("getName", "Fence"),
-			method("getOps", proxy(net.runelite.api.EntityOps.class)));
+		assertFalse(new Fixture(floor, true, true, true, false).swaps());
+		ObjectComposition fence = proxy(ObjectComposition.class, method("getName", "Fence"));
 		assertTrue(new Fixture(fence, false, true, true).swaps());
 		assertTrue(new Fixture(CRATE, false, true, true).swaps());
 		ObjectComposition stump = proxy(ObjectComposition.class, method("getName", "Tree stump"));
-		assertTrue("Named categories still include decorative objects",
-			new Fixture(stump, true, true, false).swaps());
+		assertTrue("Examine-only stumps still qualify", new Fixture(stump, true, true, false).swaps());
+		assertFalse("A category name cannot make scenery clickable",
+			new Fixture(stump, true, true, false, false).swaps());
+		assertFalse("Definition actions cannot override the scene flag",
+			new Fixture(CRATE, false, true, true, false).swaps());
 	}
 
 	@Test
@@ -159,6 +161,11 @@ public class NpcBillboardStaticSceneryTest
 
 		private Fixture(ObjectComposition definition, boolean trees, boolean objects, boolean everythingElse)
 		{
+			this(definition, trees, objects, everythingElse, true);
+		}
+
+		private Fixture(ObjectComposition definition, boolean trees, boolean objects, boolean everythingElse, boolean clickable)
+		{
 			this.trees = trees;
 			this.objects = objects;
 			LocalPoint location = new LocalPoint(SCENE_X * 128 + 64, SCENE_Y * 128 + 64);
@@ -174,8 +181,10 @@ public class NpcBillboardStaticSceneryTest
 				method("getFaceColors3", new int[] {5000}));
 
 			WorldView[] viewHolder = new WorldView[1];
+			long hash = (1L << 20) | (2L << 16) | (SCENE_Y << 7) | SCENE_X;
 			object = proxy(GameObject.class, methodSupplier("getWorldView", () -> viewHolder[0]),
 				method("getId", 1), method("getLocalLocation", location),
+				method("getHash", clickable ? hash : hash | (1L << 19)),
 				method("getSceneMinLocation", new Point(SCENE_X, SCENE_Y)),
 				method("getSceneMaxLocation", new Point(SCENE_X, SCENE_Y)),
 				method("getRenderable", model));
