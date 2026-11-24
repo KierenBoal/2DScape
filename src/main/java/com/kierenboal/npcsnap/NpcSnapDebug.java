@@ -23,7 +23,6 @@ import java.util.Locale;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import net.runelite.api.Actor;
 import net.runelite.client.ui.FontManager;
@@ -112,8 +111,9 @@ public class NpcSnapDebug
 		{
 			return;
 		}
-		
-		if (config.debugDrawBillboardOutline())
+
+		boolean drawBounds = config.debugDrawBillboardOutline();
+		if (drawBounds)
 		{
 			int size = 1;
 			Stroke stroke = graphics.getStroke();
@@ -155,20 +155,10 @@ public class NpcSnapDebug
 			}
 		}
 
-		if (config.debugDrawBillboardPaintOrder())
+		if (drawBounds)
 		{
 			drawCenteredText(graphics, Integer.toString(renderDebug.paintOrder), bounds.x + (bounds.width / 2), bounds.y + (bounds.height / 2));
 		}
-
-		if (config.debugDrawFrameNumber())
-		{
-			String[] stateLines = stateLines(renderDebug);
-			if (stateLines != null && stateLines.length > 0)
-			{
-				drawCenteredTextBlock(graphics, stateLines, bounds.x + (bounds.width / 2), bounds.y + Math.max(12, bounds.height / 4));
-			}
-		}
-
 	}
 
 	void drawPerformanceMetrics(Graphics2D graphics, Rectangle viewport, List<BillboardPerformanceMetrics.MetricRow> rows)
@@ -369,25 +359,6 @@ public class NpcSnapDebug
 			String.format(Locale.ROOT, "%.1f", row.avgMillis),
 			String.format(Locale.ROOT, "%.1f", row.maxMillis),
 			String.format(Locale.ROOT, "%.1f%%", row.percentOfOverall)
-		};
-	}
-
-	private String[] stateLines(RenderDebug renderDebug)
-	{
-		StateDebugInfo stateDebugInfo = renderDebug.stateDebugInfo;
-		if (stateDebugInfo == null)
-		{
-			return null;
-		}
-
-		String displayedFrame = Integer.toString(stateDebugInfo.displayedFrame);
-		String currentFrame = Integer.toString(stateDebugInfo.currentFrame);
-		String queuePosition = stateDebugInfo.queuePosition >= 0 ? Integer.toString(stateDebugInfo.queuePosition) : "-";
-		return new String[] {
-			"#" + Integer.toHexString(stateDebugInfo.stateHash).toUpperCase(),
-			"P: " + stateDebugInfo.pitchDegrees + " / Y: " + stateDebugInfo.yawDegrees,
-			"A: " + stateDebugInfo.animationId + " / DF: " + displayedFrame + " / CF: " + currentFrame,
-			"Q: " + queuePosition
 		};
 	}
 
@@ -607,7 +578,6 @@ public class NpcSnapDebug
 		private final int redrawColorSeed;
 		private final boolean readyToRedraw;
 		private final Color readyToRedrawColor;
-		private final StateDebugInfo stateDebugInfo;
 		private final Collection<BillboardRedrawReason> redrawReasons;
 
 		private RenderDebug(
@@ -617,7 +587,6 @@ public class NpcSnapDebug
 			int redrawColorSeed,
 			boolean readyToRedraw,
 			Color readyToRedrawColor,
-			StateDebugInfo stateDebugInfo,
 			Collection<BillboardRedrawReason> redrawReasons
 		)
 		{
@@ -628,7 +597,6 @@ public class NpcSnapDebug
 			this.redrawColorSeed = redrawColorSeed;
 			this.readyToRedraw = readyToRedraw;
 			this.readyToRedrawColor = readyToRedrawColor;
-			this.stateDebugInfo = stateDebugInfo;
 			this.redrawReasons = redrawReasons;
 		}
 
@@ -639,10 +607,9 @@ public class NpcSnapDebug
 			int redrawColorSeed,
 			boolean readyToRedraw,
 			Color readyToRedrawColor,
-			StateDebugInfo stateDebugInfo,
 			Collection<BillboardRedrawReason> redrawReasons)
 		{
-			return new RenderDebug(geometry, paintOrder, redrawOutlineWidth, redrawColorSeed, readyToRedraw, readyToRedrawColor, stateDebugInfo, redrawReasons);
+			return new RenderDebug(geometry, paintOrder, redrawOutlineWidth, redrawColorSeed, readyToRedraw, readyToRedrawColor, redrawReasons);
 		}
 	}
 
@@ -659,23 +626,6 @@ public class NpcSnapDebug
 		public static FrameDebugInfo of(int animationId, int animationFrame, int forcedAnimationFrame)
 		{
 			return new FrameDebugInfo(animationId, animationFrame, forcedAnimationFrame, -1, -1);
-		}
-	}
-
-	@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-	public static final class StateDebugInfo
-	{
-		private final int stateHash;
-		private final int pitchDegrees;
-		private final int yawDegrees;
-		private final int animationId;
-		private final int displayedFrame;
-		private final int currentFrame;
-		private final int queuePosition;
-
-		static StateDebugInfo of(int stateHash, int pitchDegrees, int yawDegrees, int animationId, int displayedFrame, int currentFrame, int queuePosition)
-		{
-			return new StateDebugInfo(stateHash, pitchDegrees, yawDegrees, animationId, displayedFrame, currentFrame, queuePosition);
 		}
 	}
 }

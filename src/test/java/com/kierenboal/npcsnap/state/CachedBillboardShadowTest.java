@@ -18,7 +18,7 @@ public class CachedBillboardShadowTest
 		for(SpriteShadowType type:SpriteShadowType.values())
 		{
 			if(type==SpriteShadowType.OFF) continue;
-			SpriteShadowMask mask=SpriteShadowRenderer.capture(original,type,new SpriteShadowRenderer.Scratch(),new BillboardOutlineRenderer.Scratch(),0.1);
+			SpriteShadowMask mask=SpriteShadowRenderer.capture(original,type,new SpriteShadowRenderer.Scratch());
 			CachedBillboard cached=new CachedBillboard(null,new Rectangle(0,0,30,40),new Rectangle(0,0,30,40),new SpriteCapture(original,mask),123,null,null);
 			BufferedImage tint=mask.tinted(Color.BLACK);
 			for(ShadowLighting light:ShadowLighting.values())

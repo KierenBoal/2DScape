@@ -17,14 +17,12 @@ public final class BillboardUpdateQueue implements Iterable<BillboardTargetKey>
 {
 	private final Deque<BillboardTargetKey> entries = new ArrayDeque<>();
 	private final Set<BillboardTargetKey> membership = new HashSet<>();
-	private final Map<BillboardTargetKey, Integer> debugPositions = new HashMap<>();
 	private final Map<BillboardTargetKey, Double> debugScores = new HashMap<>();
 
 	public void clear()
 	{
 		entries.clear();
 		membership.clear();
-		debugPositions.clear();
 		debugScores.clear();
 	}
 
@@ -80,7 +78,6 @@ public final class BillboardUpdateQueue implements Iterable<BillboardTargetKey>
 			{
 				iterator.remove();
 				membership.remove(key);
-				debugPositions.remove(key);
 				debugScores.remove(key);
 				removed.add(key);
 			}
@@ -96,12 +93,6 @@ public final class BillboardUpdateQueue implements Iterable<BillboardTargetKey>
 		{
 			addLast(target.key);
 		}
-		refreshDebugPositions();
-	}
-
-	public int debugPosition(BillboardTargetKey key)
-	{
-		return debugPositions.getOrDefault(key, -1);
 	}
 
 	public void putDebugScore(BillboardTargetKey key, double score)
@@ -122,16 +113,6 @@ public final class BillboardUpdateQueue implements Iterable<BillboardTargetKey>
 	public boolean hasDebugScores()
 	{
 		return !debugScores.isEmpty();
-	}
-
-	private void refreshDebugPositions()
-	{
-		debugPositions.clear();
-		int index = 0;
-		for (BillboardTargetKey key : entries)
-		{
-			debugPositions.put(key, index++);
-		}
 	}
 
 	@Override

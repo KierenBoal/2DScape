@@ -1,6 +1,5 @@
 package com.kierenboal.npcsnap.state;
 
-import com.kierenboal.npcsnap.NpcSnapDebug;
 import com.kierenboal.npcsnap.rendering.ActorBillboardBounds;
 import com.kierenboal.npcsnap.rendering.BillboardModelBounds;
 import com.kierenboal.npcsnap.rendering.SpriteCapture;
@@ -29,7 +28,6 @@ public final class CachedBillboard implements TimedCacheEntry
 	private Set<BillboardRedrawReason> debugRedrawReasons = Collections.singleton(BillboardRedrawReason.INITIAL_DRAW);
 	private boolean debugFrameInvalidated;
 	private java.awt.Color debugFrameInvalidatedColor;
-	private NpcSnapDebug.StateDebugInfo stateDebugInfo;
 
 	public CachedBillboard(BillboardCacheKey key, Rectangle bounds, BufferedImage image, long lastUsedMillis)
 	{
@@ -79,7 +77,6 @@ public final class CachedBillboard implements TimedCacheEntry
 		this.debugRedrawFramesRemaining = 3;
 		this.debugFrameInvalidated = false;
 		this.debugFrameInvalidatedColor = null;
-		this.stateDebugInfo = null;
 	}
 
 	public CachedBillboard(BillboardCacheKey key, Rectangle bounds, Rectangle contentBounds,
@@ -165,16 +162,6 @@ public final class CachedBillboard implements TimedCacheEntry
 		java.awt.Color color = debugFrameInvalidatedColor;
 		debugFrameInvalidatedColor = null;
 		return color;
-	}
-
-	public NpcSnapDebug.StateDebugInfo stateDebugInfo()
-	{
-		return stateDebugInfo;
-	}
-
-	public void stateDebugInfo(NpcSnapDebug.StateDebugInfo stateDebugInfo)
-	{
-		this.stateDebugInfo = stateDebugInfo;
 	}
 
 	public void flush()

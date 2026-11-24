@@ -55,6 +55,43 @@ public final class BillboardFrameBuffer
 		return image;
 	}
 
+	public boolean isFullyOccluded(PreparedBillboardDraw draw, Rectangle viewport)
+	{
+		if (occlusionMask.coveredCellCount() == 0 || draw.image == null || draw.bounds == null)
+		{
+			return false;
+		}
+		Rectangle clipped = viewport.intersection(draw.bounds);
+		if (clipped.isEmpty() || draw.surfaceOcclusionRow <= clipped.y)
+		{
+			return false;
+		}
+		clipped.height = Math.min(clipped.height, (int) Math.min(Integer.MAX_VALUE,
+			(long) draw.surfaceOcclusionRow - clipped.y));
+		if (!occlusionMask.mightFullyCover(clipped))
+		{
+			return false;
+		}
+		BillboardDepthSurface surface = depthSurfaceFactory.create(draw);
+		if (surface == null || !surface.supportsWorldOcclusion())
+		{
+			return false;
+		}
+		BillboardProjectedQuad quad = draw.geometry == null ? null : draw.geometry.projectedQuad;
+		double nearest;
+		if (quad == null)
+		{
+			int height = draw.image.getHeight();
+			nearest = Math.min(surface.depthAtRow(height, clipped.y), surface.depthAtRow(height, clipped.y + clipped.height - 1));
+		}
+		else
+		{
+			nearest = Math.min(Math.min(quad.depthAt(0, 0), quad.depthAt(1, 0)),
+				Math.min(quad.depthAt(1, 1), quad.depthAt(0, 1)));
+		}
+		return occlusionMask.fullyCovers(clipped, nearest, draw.occlusionIgnoredTileObject, draw.supportingGround);
+	}
+
 	public void blit(
 		PreparedBillboardDraw draw,
 		int viewportX,
@@ -63,19 +100,29 @@ public final class BillboardFrameBuffer
 		int viewportHeight,
 		boolean drawOccludedPixels)
 	{
+		blit(draw, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels, false, false);
+	}
+
+	public void blit(PreparedBillboardDraw draw, int viewportX, int viewportY, int viewportWidth,
+		int viewportHeight, boolean drawOccludedPixels, boolean skipBody, boolean proveOcclusion)
+	{
 		if (draw == null || draw.image == null || draw.bounds == null || draw.bounds.isEmpty()
 			|| !(draw.image.getRaster().getDataBuffer() instanceof DataBufferInt))
 		{
 			return;
 		}
 
-		blitLayer(draw,viewportX,viewportY,viewportWidth,viewportHeight,drawOccludedPixels);
-		if (draw.highlightWidth > 0) blitHighlight(draw, viewportX, viewportY);
-		PreparedBillboardDraw shadow=draw.shadowDraw();
-		while(shadow!=null)
+		if (!skipBody)
 		{
-			blitLayer(shadow,viewportX,viewportY,viewportWidth,viewportHeight,drawOccludedPixels);
-			shadow=shadow.shadowDraw();
+			blitLayer(draw, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels);
+			if (draw.highlightWidth > 0) blitHighlight(draw, viewportX, viewportY);
+		}
+		for (PreparedBillboardDraw shadow = draw.shadowDraw(); shadow != null; shadow = shadow.shadowDraw())
+		{
+			if (!proveOcclusion || !isFullyOccluded(shadow, new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight)))
+			{
+				blitLayer(shadow, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels);
+			}
 		}
 	}
 

@@ -13,9 +13,6 @@ public final class BillboardOutlineRenderer
 	private static final int[] ADJACENT_Y = {-1, -1, -1, 0, 0, 1, 1, 1};
 	private static final double SHADOW_DARKEN_FACTOR = 0.67d;
 	private static final double HIGHLIGHT_BRIGHTEN_FACTOR = 1.33d;
-	private static final int SPRITE_SHADOW_ALPHA = 80;
-	private static final int SPRITE_SHADOW_MIN_SPREAD = 2;
-	public static final double DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO = 0.10d;
 
 	private BillboardOutlineRenderer()
 	{
@@ -27,16 +24,14 @@ public final class BillboardOutlineRenderer
 		boolean highlightOutline,
 		boolean shadowOutline,
 		boolean solidOutline,
-		boolean spriteShadow,
 		boolean highlightInline,
 		boolean shadowInline,
 		boolean solidInline,
-		Color solidOutlineColor,
-		double spriteShadowHeightRatio)
+		Color solidOutlineColor)
 	{
 		int width = image.getWidth();
 		int height = image.getHeight();
-		if (width <= 0 || height <= 0 || (!highlightOutline && !shadowOutline && !solidOutline && !spriteShadow && !highlightInline && !shadowInline && !solidInline))
+		if (width <= 0 || height <= 0 || (!highlightOutline && !shadowOutline && !solidOutline && !highlightInline && !shadowInline && !solidInline))
 		{
 			return;
 		}
@@ -52,14 +47,6 @@ public final class BillboardOutlineRenderer
 		System.arraycopy(sourcePixels, 0, scratch.resultPixels, 0, pixelCount);
 		populateBoundaryMasks(sourcePixels, width, height, scratch);
 
-		// Build the shadow behind the edge effects. The shadow occupies transparent
-		// pixels near the feet, so drawing it last would replace the coloured
-		// exterior outline at the sprite's original silhouette.
-		if (spriteShadow)
-		{
-			applySpriteShadow(sourcePixels, scratch.resultPixels, width, height, spriteShadowHeightRatio, scratch);
-		}
-
 		applyBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorOpaqueBoundary,
 			highlightInline, shadowInline, solidInline, solidOutlineColor);
 		applyBoundary(sourcePixels, scratch.resultPixels, width, height, scratch.exteriorTransparentBoundary,
@@ -67,19 +54,8 @@ public final class BillboardOutlineRenderer
 		System.arraycopy(scratch.resultPixels, 0, sourcePixels, 0, pixelCount);
 	}
 
-	/** Shadow-only path avoids rebuilding boundary masks on camera movement. */
-	public static void applyShadow(BufferedImage image, Scratch scratch, double ratio)
-	{
-		int[] pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-		scratch.ensureCapacity(pixels.length);
-		System.arraycopy(pixels, 0, scratch.resultPixels, 0, pixels.length);
-		applySpriteShadow(pixels, scratch.resultPixels, image.getWidth(), image.getHeight(), ratio, scratch);
-		System.arraycopy(scratch.resultPixels, 0, pixels, 0, pixels.length);
-	}
-
 	public static final class Scratch
 	{
-		private int[] columnBottoms = new int[0];
 		private int[] resultPixels = new int[0];
 		private boolean[] visited = new boolean[0];
 		private boolean[] exteriorTransparentBoundary = new boolean[0];
@@ -159,119 +135,6 @@ public final class BillboardOutlineRenderer
 				resultPixels[index] = color;
 			}
 		}
-	}
-
-	private static void applySpriteShadow(
-		int[] sourcePixels,
-		int[] resultPixels,
-		int width,
-		int height,
-		double shadowHeightRatio, Scratch scratch)
-	{
-		double boundedHeightRatio = Double.isFinite(shadowHeightRatio)
-			? Math.max(0.0d, Math.min(1.0d, shadowHeightRatio))
-			: DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO;
-		int shadowBandHeight = Math.max(1, (int) Math.ceil(height * boundedHeightRatio));
-		int shadowBandStartY = Math.max(0, height - shadowBandHeight);
-		int minX = width;
-		int maxX = -1;
-		if (scratch.columnBottoms.length < width) scratch.columnBottoms = new int[width];
-		int[] columnBottoms = scratch.columnBottoms;
-		Arrays.fill(columnBottoms, 0, width, -1);
-
-		for (int y = shadowBandStartY; y < height; y++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				int argb = sourcePixels[(y * width) + x];
-				if (!isOpaque(argb))
-				{
-					continue;
-				}
-
-				minX = Math.min(minX, x);
-				maxX = Math.max(maxX, x);
-				columnBottoms[x] = Math.max(columnBottoms[x], y);
-			}
-		}
-
-		if (maxX < minX)
-		{
-			return;
-		}
-
-		int verticalSpread = Math.max(1, shadowBandHeight);
-		int horizontalSpread = Math.max(SPRITE_SHADOW_MIN_SPREAD, verticalSpread + 1);
-		for (int x = Math.max(0, minX - horizontalSpread); x <= Math.min(width - 1, maxX + horizontalSpread); x++)
-		{
-			for (int y = shadowBandStartY; y < height; y++)
-			{
-				int index = (y * width) + x;
-				if (isOpaque(sourcePixels[index]))
-				{
-					continue;
-				}
-
-				int alpha = spriteShadowAlpha(columnBottoms, width, x, y, shadowBandStartY, verticalSpread, horizontalSpread);
-				if (alpha <= 0)
-				{
-					continue;
-				}
-
-				resultPixels[index] = blendShadow(resultPixels[index], alpha);
-			}
-		}
-	}
-
-	private static int spriteShadowAlpha(
-		int[] columnBottoms,
-		int width,
-		int x,
-		int y,
-		int shadowBandStartY,
-		int verticalSpread,
-		int horizontalSpread)
-	{
-		double strongest = 0.0d;
-		for (int sampleX = Math.max(0, x - horizontalSpread); sampleX <= Math.min(width - 1, x + horizontalSpread); sampleX++)
-		{
-			int bottomY = columnBottoms[sampleX];
-			if (bottomY < shadowBandStartY || y < bottomY)
-			{
-				continue;
-			}
-
-			int dx = Math.abs(x - sampleX);
-			int dy = y - bottomY;
-			if (dy > verticalSpread)
-			{
-				continue;
-			}
-
-			double horizontalAllowance = horizontalSpread * (1.0d - (dy / (double) (verticalSpread + 1)));
-			if (dx > horizontalAllowance)
-			{
-				continue;
-			}
-
-			double horizontalFactor = 1.0d - Math.min(1.0d, dx / Math.max(1.0d, horizontalAllowance));
-			double verticalFactor = 1.0d - (dy / (double) (verticalSpread + 1));
-			strongest = Math.max(strongest, horizontalFactor * verticalFactor);
-		}
-
-		return clampToByte((int) Math.round(SPRITE_SHADOW_ALPHA * strongest));
-	}
-
-	private static int blendShadow(int existingArgb, int alpha)
-	{
-		if (alpha <= 0)
-		{
-			return existingArgb;
-		}
-
-		int existingAlpha = (existingArgb >>> 24) & 0xFF;
-		int blendedAlpha = Math.max(existingAlpha, alpha);
-		return (blendedAlpha << 24);
 	}
 
 	private static void enqueueBorderTransparentPixels(int[] pixels, int width, int height, Scratch scratch)

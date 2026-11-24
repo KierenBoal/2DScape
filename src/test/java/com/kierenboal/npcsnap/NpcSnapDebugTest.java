@@ -106,7 +106,7 @@ public class NpcSnapDebugTest
 			try
 			{
 				debug.drawBillboardDebugForeground(graphics, NpcSnapDebug.RenderDebug.forGeometry(
-					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 180, 160)), 0, width, 123, false, null, null,
+					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 180, 160)), 0, width, 123, false, null,
 					EnumSet.of(BillboardRedrawReason.FRAME_COUNT, BillboardRedrawReason.ACTOR_RESIZE)));
 			}
 			finally
@@ -136,6 +136,41 @@ public class NpcSnapDebugTest
 	}
 
 	@Test
+	public void spriteBoundsToggleAlsoControlsTheDrawOrderLabel()
+	{
+		for (boolean enabled : new boolean[]{false, true})
+		{
+			NpcSnapConfig config = new NpcSnapConfig()
+			{
+				@Override public boolean debugDrawBillboardOutline() { return enabled; }
+			};
+			BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+			Graphics2D graphics = image.createGraphics();
+			try
+			{
+				new NpcSnapDebug(config).drawBillboardDebugForeground(graphics,
+					NpcSnapDebug.RenderDebug.forGeometry(
+						BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 60, 60)),
+						42, 0, 0, false, null, EnumSet.noneOf(BillboardRedrawReason.class)));
+			}
+			finally
+			{
+				graphics.dispose();
+			}
+			assertEquals(enabled, (image.getRGB(50, 20) >>> 24) != 0);
+			boolean drewLabel = false;
+			for (int y = 35; y < 65; y++)
+			{
+				for (int x = 35; x < 65; x++)
+				{
+					drewLabel |= image.getRGB(x, y) == Color.WHITE.getRGB();
+				}
+			}
+			assertEquals(enabled, drewLabel);
+		}
+	}
+
+	@Test
 	public void redrawSettingAlsoMarksDelayedUpdates()
 	{
 		NpcSnapConfig config = new NpcSnapConfig()
@@ -149,7 +184,7 @@ public class NpcSnapDebugTest
 			new NpcSnapDebug(config).drawBillboardDebugForeground(graphics,
 				NpcSnapDebug.RenderDebug.forGeometry(
 					BillboardDrawGeometry.rectangular(new Rectangle(20, 20, 40, 40)),
-					0, 0, 0, true, Color.MAGENTA, null, EnumSet.noneOf(BillboardRedrawReason.class)));
+					0, 0, 0, true, Color.MAGENTA, EnumSet.noneOf(BillboardRedrawReason.class)));
 		}
 		finally
 		{

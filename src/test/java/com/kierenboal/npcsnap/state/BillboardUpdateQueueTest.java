@@ -64,7 +64,7 @@ public class BillboardUpdateQueueTest
 	}
 
 	@Test
-	public void replacementRefreshesDebugPositionsAndScoresRemainAvailable()
+	public void replacementReordersEntriesAndScoresRemainAvailable()
 	{
 		BillboardUpdateQueue queue = new BillboardUpdateQueue();
 		BillboardTargetKey first = key();
@@ -75,8 +75,7 @@ public class BillboardUpdateQueueTest
 		queue.putDebugScore(first, 10d);
 		queue.putDebugScore(second, 20d);
 
-		assertEquals(0, queue.debugPosition(second));
-		assertEquals(1, queue.debugPosition(first));
+		assertEquals(List.of(second, first), entries(queue));
 		assertEquals(20d, queue.debugScore(second), 0d);
 		assertTrue(queue.hasDebugScores());
 		assertEquals(Set.of(10d, 20d), new HashSet<>(queue.debugScores()));
@@ -95,7 +94,6 @@ public class BillboardUpdateQueueTest
 		assertTrue(queue.isEmpty());
 		assertFalse(queue.contains(key));
 		assertFalse(queue.hasDebugScores());
-		assertEquals(-1, queue.debugPosition(key));
 	}
 
 	private static List<BillboardTargetKey> entries(BillboardUpdateQueue queue)

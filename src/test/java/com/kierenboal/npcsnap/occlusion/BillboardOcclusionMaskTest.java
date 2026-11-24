@@ -32,6 +32,33 @@ import static org.junit.Assert.assertTrue;
 public class BillboardOcclusionMaskTest
 {
 	@Test
+	public void wholeLayerProofRequiresOpaqueCoverageInFrontAcrossCellSeams()
+	{
+		Rectangle region = new Rectangle(0, 0, 16, 8);
+		BillboardOcclusionMask.Occluder left = new BillboardOcclusionMask.Occluder(
+			new Rectangle(0, 0, 7, 8), 100f, "left");
+		BillboardOcclusionMask.Occluder right = new BillboardOcclusionMask.Occluder(
+			new Rectangle(7, 0, 9, 8), 120f, "right");
+		for (BillboardOcclusionQuality quality : Arrays.asList(BillboardOcclusionQuality.LOW,
+			BillboardOcclusionQuality.MEDIUM, BillboardOcclusionQuality.HIGH))
+		{
+			BillboardOcclusionMask mask = new BillboardOcclusionMask();
+			mask.prepare(Arrays.asList(left, right), quality, 0, 0, 16, 8, region);
+			assertTrue(mask.fullyCovers(region, 300, null, null));
+			assertFalse(mask.fullyCovers(region, 110, null, null));
+			mask.prepare(Collections.singletonList(left), quality, 0, 0, 16, 8, region);
+			assertFalse(mask.fullyCovers(region, 300, null, null));
+
+			TileObject owner = proxy(TileObject.class);
+			BillboardOcclusionMask.Occluder owned = new BillboardOcclusionMask.Occluder(region, 100f, "owned", 0, 0, owner);
+			BillboardOcclusionMask.Occluder glass = new BillboardOcclusionMask.Occluder(region, 80f, "glass", 128);
+			mask.prepare(Arrays.asList(owned, glass), quality, 0, 0, 16, 8, region);
+			assertTrue(mask.fullyCovers(region, 300, null, null));
+			assertFalse(mask.fullyCovers(region, 300, owner, null));
+		}
+	}
+
+	@Test
 	public void shadowBelowBodySurfaceCutoffStillRespectsSceneryOcclusion()
 	{
 		Rectangle bounds = new Rectangle(0, 0, 32, 4);

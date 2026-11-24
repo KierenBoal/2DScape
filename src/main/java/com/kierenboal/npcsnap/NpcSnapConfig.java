@@ -241,7 +241,7 @@ public interface NpcSnapConfig extends Config
 		return SpriteShadowType.FLAT;
 	}
 
-	@ConfigItem(keyName = "shadowLighting", name = "Shadow lighting", description = "Choose how modern shadows are cast. Legacy ignores lighting.", section = spriteSection, position = 1)
+	@ConfigItem(keyName = "shadowLighting", name = "Lighting", description = "Choose how sprite shadows are cast.", section = spriteSection, position = 1)
 	default ShadowLighting shadowLighting()
 	{
 		return ShadowLighting.DIRECTIONAL_DOWN;
@@ -252,6 +252,13 @@ public interface NpcSnapConfig extends Config
 	default Color shadowColor()
 	{
 		return new Color(0, 0, 0, 180);
+	}
+
+	@Range(min = 0, max = 256)
+	@ConfigItem(keyName = "maxShadows", name = "Max shadows", description = "Maximum projected shadows per frame.", section = spriteSection, position = 3)
+	default int maxShadows()
+	{
+		return 32;
 	}
 
 	@ConfigItem(keyName = "useInteractionHighlight", name = "Use interaction highlight", description = "Draw sprite highlights using RuneLite Interact Highlight settings, even when that plugin is off.", section = spriteInteractionOutlineSection, position = 1)
@@ -266,44 +273,44 @@ public interface NpcSnapConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 3)
+	@ConfigItem(keyName = "enableBillboardSpriteOutline", name = "Enable sprite outline", description = "Draw a coloured line around the outside edge of every sprite.", section = spriteSection, position = 4)
 	default boolean enableBillboardSpriteOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 4)
+	@ConfigItem(keyName = "enableBillboardSpriteInline", name = "Enable sprite inline", description = "Draw a coloured line just inside the edge of every sprite.", section = spriteSection, position = 5)
 	default boolean enableBillboardSpriteInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 5)
+	@ConfigItem(keyName = "billboardSpriteOutlineColor", name = "Sprite outline color", description = "Choose the colour used for the normal outline and inline.", section = spriteSection, position = 6)
 	@Alpha
 	default Color billboardSpriteOutlineColor()
 	{
 		return new Color(0x40000000, true);
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 6)
+	@ConfigItem(keyName = "enableBillboardHighlightOutline", name = "Enable highlight outlines", description = "Make sprite outlines lighter using nearby sprite colours.", section = spriteSection, position = 7)
 	default boolean enableBillboardHighlightOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 7)
+	@ConfigItem(keyName = "enableBillboardHighlightInline", name = "Enable highlight inline", description = "Make sprite inlines lighter using nearby sprite colours.", section = spriteSection, position = 8)
 	default boolean enableBillboardHighlightInline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 8)
+	@ConfigItem(keyName = "enableBillboardShadowOutline", name = "Enable shadow outline", description = "Make sprite outlines darker using nearby sprite colours.", section = spriteSection, position = 9)
 	default boolean enableBillboardShadowOutline()
 	{
 		return false;
 	}
 
-	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 9)
+	@ConfigItem(keyName = "enableBillboardShadowInline", name = "Enable shadow inline", description = "Make sprite inlines darker using nearby sprite colours.", section = spriteSection, position = 10)
 	default boolean enableBillboardShadowInline()
 	{
 		return false;
@@ -326,32 +333,6 @@ public interface NpcSnapConfig extends Config
 	default boolean enableBillboardCombatSnapping()
 	{
 		return false;
-	}
-
-	@ConfigItem(keyName = "enableUiTextureBanding", name = "Reduce UI texture quality", description = "Give interface icons and artwork fewer shades for a more retro look.", section = retroSection, position = 4)
-	default boolean enableUiTextureBanding()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "applyToCustomUiTextures", name = "Applies to custom UIs", description = "Reduce the effective custom UI artwork when texture reduction is enabled.", section = retroSection, position = 5)
-	default boolean applyToCustomUiTextures()
-	{
-		return true;
-	}
-
-	@Range(min = 1, max = 100)
-	@ConfigItem(keyName = "uiSpriteQuality", name = "UI sprite quality", description = "How sharp interface icons and artwork are. Lower values look rougher.", section = retroSection, position = 6)
-	default double uiSpriteQuality()
-	{
-		return 100.0d;
-	}
-
-	@Range(min = 1, max = 256)
-	@ConfigItem(keyName = "uiTextureColorBands", name = "UI texture color bands", description = "How many shades interface icons and artwork can use when UI texture reduction is on.", section = retroSection, position = 7)
-	default int uiTextureColorBands()
-	{
-		return 8;
 	}
 
 	@ConfigItem(keyName = "useRetroOverheads", name = "Use retro HP bar, overhead chat, hitsplats and prayers", description = "Replace RuneLite's complete actor overhead pass with the retro HP bar, overhead chat, hitsplats, and prayers.", section = retroSection, position = 11)
@@ -388,20 +369,8 @@ public interface NpcSnapConfig extends Config
 		return 64;
 	}
 
-	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw sprite bounds and projected shadow bounds.", section = debugSection, position = 0)
+	@ConfigItem(keyName = "debugDrawBillboardOutline", name = "Draw sprite bounds", description = "Draw sprite and projected shadow bounds, and show sprite draw order.", section = debugSection, position = 0)
 	default boolean debugDrawBillboardOutline()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugDrawBillboardPaintOrder", name = "Show sprite draw order", description = "Show the number that tells you which sprite was drawn first.", section = debugSection, position = 1)
-	default boolean debugDrawBillboardPaintOrder()
-	{
-		return false;
-	}
-
-	@ConfigItem(keyName = "debugDrawFrameNumber", name = "Show sprite state info", description = "Show extra numbers about a sprite's animation, direction, and place in the update list.", section = debugSection, position = 2)
-	default boolean debugDrawFrameNumber()
 	{
 		return false;
 	}

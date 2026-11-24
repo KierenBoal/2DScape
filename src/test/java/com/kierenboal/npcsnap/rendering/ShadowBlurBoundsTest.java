@@ -11,8 +11,7 @@ public class ShadowBlurBoundsTest
 {
 	private SpriteShadowMask capture(BufferedImage source,SpriteShadowType type)
 	{
-		return SpriteShadowRenderer.capture(source,type,new SpriteShadowRenderer.Scratch(),
-			new BillboardOutlineRenderer.Scratch(),0.1);
+		return SpriteShadowRenderer.capture(source,type,new SpriteShadowRenderer.Scratch());
 	}
 	private BufferedImage solid(int w,int h)
 	{

@@ -122,7 +122,7 @@ public class BillboardSceneDrawCallbacksTest
 	}
 
 	@Test
-	public void itemLayerTracksAllPartsAndHidesIfAnyPartIsHidden()
+	public void itemLayerTracksAllPartsAndHidesOnlyWhenEveryPartIsReady()
 	{
 		FakeOverlay overlay = new FakeOverlay();
 		Renderable bottom = TestProxies.proxy(Renderable.class);
@@ -134,7 +134,11 @@ public class BillboardSceneDrawCallbacksTest
 			TestProxies.method("getTop", top));
 		overlay.hiddenRenderables.add(middle);
 
-		assertFalse(callbacks(false, false, overlay).drawObject(layer));
+		BillboardSceneDrawCallbacks callbacks = callbacks(false, false, overlay);
+		assertTrue(callbacks.drawObject(layer));
+		overlay.hiddenRenderables.add(bottom);
+		overlay.hiddenRenderables.add(top);
+		assertFalse(callbacks.drawObject(layer));
 		assertTrue(overlay.noted.contains(bottom));
 		assertTrue(overlay.noted.contains(middle));
 		assertTrue(overlay.noted.contains(top));

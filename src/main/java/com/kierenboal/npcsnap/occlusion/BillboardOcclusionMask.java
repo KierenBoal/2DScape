@@ -34,6 +34,7 @@ public final class BillboardOcclusionMask
 	private float[] candidateFar = new float[0];
 	private float[] lower = new float[0];
 	private float[] upper = new float[0];
+	private int[] nearestOpaqueFullReference = new int[0];
 	private boolean[] active = new boolean[0];
 	private boolean[] fullRegion = new boolean[0];
 	private boolean[] rowCoverage = new boolean[0];
@@ -45,6 +46,9 @@ public final class BillboardOcclusionMask
 	private int height;
 	private int step;
 	private int references;
+	private static final int MAX_PROOF_OPERATIONS_PER_LAYER = 4096;
+	private static final int MAX_PROOF_OPERATIONS_PER_FRAME = 32768;
+	private int proofOperationsRemaining;
 	private int coveredCellCount;
 	private long uniformDecisions;
 	private long refinedPixels;
@@ -101,6 +105,7 @@ public final class BillboardOcclusionMask
 		step = BillboardOcclusionQuality.normalize(quality).sampleStep();
 		bounds = clip;
 		regions = interest;
+		proofOperationsRemaining = MAX_PROOF_OPERATIONS_PER_FRAME;
 		references = coveredCellCount = coverageRowCount = cutoutTexelTests = 0;
 		this.occluders = occluders == null ? Collections.emptyList() : occluders;
 		if (step == 0 || bounds.isEmpty())
@@ -117,6 +122,7 @@ public final class BillboardOcclusionMask
 			heads = new int[size];
 			lower = new float[size];
 			upper = new float[size];
+			nearestOpaqueFullReference = new int[size];
 			active = new boolean[size];
 			fullRegion = new boolean[size];
 		}
@@ -255,14 +261,94 @@ public final class BillboardOcclusionMask
 					next[reference] = heads[cell];
 					heads[cell] = reference;
 					lower[cell] = Math.min(lower[cell], near);
-					if (coverage == 2 && candidateTransmittance[reference] == 0)
+					if (coverage == 2 && candidateTransmittance[reference] == 0 && far < upper[cell])
 					{
-						upper[cell] = Math.min(upper[cell], far);
+						upper[cell] = far;
+						nearestOpaqueFullReference[cell] = reference;
 					}
 				}
 			}
 		}
 
+	}
+
+	public boolean mightFullyCover(Rectangle region)
+	{
+		if (coveredCellCount == 0 || proofOperationsRemaining == 0 || region.isEmpty() || !bounds.contains(region))
+		{
+			return false;
+		}
+		int firstColumn = (region.x - bounds.x) / step;
+		int lastColumn = (region.x + region.width - 1 - bounds.x) / step;
+		int firstRow = (region.y - bounds.y) / step * width;
+		int lastRow = (region.y + region.height - 1 - bounds.y) / step * width;
+		return heads[firstRow + firstColumn] != -1 && heads[firstRow + lastColumn] != -1
+			&& heads[lastRow + firstColumn] != -1 && heads[lastRow + lastColumn] != -1;
+	}
+
+	/**
+	 * Prove that every pixel in the rectangle has an opaque surface in front of
+	 * even the nearest point on the sprite. Combine row bits at triangle seams
+	 * without walking sprite pixels or refining silhouette edges.
+	 */
+	public boolean fullyCovers(Rectangle region, double nearestDepth, TileObject ignored, SupportingFootprint ground)
+	{
+		if (coveredCellCount == 0 || proofOperationsRemaining == 0 || region.isEmpty()
+			|| !Double.isFinite(nearestDepth) || !bounds.contains(region))
+		{
+			return false;
+		}
+		int layerBudget = Math.min(MAX_PROOF_OPERATIONS_PER_LAYER, proofOperationsRemaining);
+		int remaining = layerBudget;
+		int left = (region.x - bounds.x) / step;
+		int right = (region.x + region.width - 1 - bounds.x) / step;
+		int top = (region.y - bounds.y) / step;
+		int bottom = (region.y + region.height - 1 - bounds.y) / step;
+		try
+		{
+			for (int cy = top; cy <= bottom; cy++)
+			{
+				int baseY = bounds.y + cy * step;
+				int startRow = Math.max(0, region.y - baseY);
+				int endRow = Math.min(step, region.y + region.height - baseY);
+				for (int cx = left; cx <= right; cx++)
+				{
+					if (remaining == 0) return false;
+					remaining--;
+					int cell = cy * width + cx;
+					if (heads[cell] == -1 || lower[cell] + depthBias() >= nearestDepth) return false;
+					if (fullRegion[cell] && upper[cell] + depthBias() < nearestDepth
+						&& !occluders.get(candidates[nearestOpaqueFullReference[cell]]).excludedBy(ignored, ground)) continue;
+					int baseX = bounds.x + cx * step;
+					int first = Math.max(0, region.x - baseX);
+					int end = Math.min(step, region.x + region.width - baseX);
+					int wanted = ((1 << end) - 1) & (-1 << first);
+					// Partial interest cells may contain full-row references built
+					// without consulting per-pixel interest. Keep the proof conservative.
+					if (!fullRegion[cell]) return false;
+					for (int row = startRow; row < endRow; row++)
+					{
+						int missing = wanted;
+						for (int ref = heads[cell]; ref != -1 && missing != 0; ref = next[ref])
+						{
+							if (remaining == 0) return false;
+							remaining--;
+							if (candidateTransmittance[ref] == 0 && candidateFar[ref] + depthBias() < nearestDepth
+								&& !occluders.get(candidates[ref]).excludedBy(ignored, ground))
+							{
+								missing &= ~coverageBits(ref, row);
+							}
+						}
+						if (missing != 0) return false;
+					}
+				}
+			}
+			return true;
+		}
+		finally
+		{
+			proofOperationsRemaining -= layerBudget - remaining;
+		}
 	}
 
 	private int index(int x, int y)

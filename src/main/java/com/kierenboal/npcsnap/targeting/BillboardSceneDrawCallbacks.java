@@ -130,7 +130,8 @@ public final class BillboardSceneDrawCallbacks
 			overlay.noteSceneRenderable(bottom);
 			overlay.noteSceneRenderable(middle);
 			overlay.noteSceneRenderable(top);
-			return shouldDrawAll(bottom, middle, top);
+			return (bottom == null && middle == null && top == null)
+				|| drawsNativeItem(bottom) || drawsNativeItem(middle) || drawsNativeItem(top);
 		}
 
 		return true;
@@ -163,9 +164,9 @@ public final class BillboardSceneDrawCallbacks
 		return shouldDraw(first) && shouldDraw(second);
 	}
 
-	private boolean shouldDrawAll(Renderable first, Renderable second, Renderable third)
+	private boolean drawsNativeItem(Renderable part)
 	{
-		return shouldDraw(first) && shouldDraw(second) && shouldDraw(third);
+		return part != null && !overlay.shouldHideRenderable(part);
 	}
 
 	private boolean shouldDraw(Renderable renderable)

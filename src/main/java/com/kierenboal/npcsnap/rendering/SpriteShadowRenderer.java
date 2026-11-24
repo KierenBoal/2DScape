@@ -28,7 +28,7 @@ public final class SpriteShadowRenderer
 		int ow = w + 2*pad, oh = h + (type == SpriteShadowType.BLOB ? Math.max(10,(int)Math.ceil(w*0.125)+2) : 10);
 		BufferedImage out = new BufferedImage(ow, oh, BufferedImage.TYPE_INT_ARGB);
 		Rectangle bounds = source.bounds;
-		if (bounds.isEmpty() || !type.projected()) return out;
+		if (bounds.isEmpty() || type == SpriteShadowType.OFF) return out;
 		int[] pixels = source.pixels;
 		int top = bounds.y, feet = top + bounds.height - 1;
 		scratch.ensure(ow*oh);
@@ -173,25 +173,12 @@ public final class SpriteShadowRenderer
 		return type==SpriteShadowType.BLOB ? Math.max(3,(int)Math.ceil(width*0.1)+1) : 3;
 	}
 
-	public static SpriteShadowMask capture(BufferedImage sprite, SpriteShadowType type, Scratch scratch,
-		BillboardOutlineRenderer.Scratch outlineScratch, double legacyRatio)
+	public static SpriteShadowMask capture(BufferedImage sprite, SpriteShadowType type, Scratch scratch)
 	{
 		if (type == SpriteShadowType.OFF) return null;
 		SourceAlpha source = new SourceAlpha(sprite);
-		BufferedImage mask;
 		int pad = horizontalPadding(source.width, type);
-		if (type == SpriteShadowType.LEGACY)
-		{
-			int w = source.width, h = source.height;
-			BufferedImage copy = new BufferedImage(w,h,BufferedImage.TYPE_INT_ARGB);
-			copy.setRGB(0,0,w,h,source.pixels,0,w);
-			BillboardOutlineRenderer.applyShadow(copy,outlineScratch,legacyRatio);
-			mask = new BufferedImage(w+2*pad,h+10,BufferedImage.TYPE_INT_ARGB);
-			for(int y=0;y<h;y++) for(int x=0;x<w;x++)
-				if((source.pixels[y*w+x]>>>24)==0) mask.setRGB(x+pad,y,copy.getRGB(x,y));
-			copy.flush();
-		}
-		else mask = render(source,type,scratch);
+		BufferedImage mask = render(source, type, scratch);
 		SpriteShadowMask result=new SpriteShadowMask(source,mask,type,false,-pad,0);
 		if(type==SpriteShadowType.FLAT || type==SpriteShadowType.HARD || type==SpriteShadowType.RADIAL)
 			result.setDirectionalCaster(fullSilhouette(source,type,scratch));

@@ -188,7 +188,7 @@ public class BillboardCacheModelsTest
 			TestProxies.method("enableBillboardHighlightOutline", true),
 			TestProxies.method("enableBillboardShadowOutline", false),
 			TestProxies.method("enableBillboardSpriteOutline", true),
-			TestProxies.method("shadowType", com.kierenboal.npcsnap.SpriteShadowType.LEGACY),
+			TestProxies.method("shadowType", com.kierenboal.npcsnap.SpriteShadowType.FLAT),
 			TestProxies.method("enableBillboardHighlightInline", false),
 			TestProxies.method("enableBillboardShadowInline", true),
 			TestProxies.method("enableBillboardSpriteInline", false),

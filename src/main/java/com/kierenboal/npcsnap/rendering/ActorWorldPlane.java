@@ -90,12 +90,6 @@ public final class ActorWorldPlane
 
 	}
 
-	public static double shadowHeightRatio(double heightRatio)
-	{
-		// Keep actor shadows at the original default height at every camera pitch.
-		return BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO;
-	}
-
 	private static BillboardCanvasPoint corner(BillboardDepthCalculator calculator, LocalPoint location,
 		double baseWorldZ, double rightX, double rightY, double horizontal, double vertical, ProjectionBasis basis)
 	{

@@ -309,21 +309,6 @@ public class ActorWorldPlaneTest
 		}
 	}
 
-	@Test
-	public void shadowCoverageStaysAtDefaultAcrossPitchChanges()
-	{
-		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
-			ActorWorldPlane.shadowHeightRatio(1), 1e-10);
-		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
-			ActorWorldPlane.shadowHeightRatio(0.625), 1e-10);
-		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
-			ActorWorldPlane.shadowHeightRatio(0.25), 1e-10);
-		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
-			ActorWorldPlane.shadowHeightRatio(0), 1e-10);
-		assertEquals(BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO,
-			ActorWorldPlane.shadowHeightRatio(2), 1e-10);
-	}
-
 	private static BillboardDepthCalculator camera(boolean gpu, int yaw, int pitch)
 	{
 		return new BillboardDepthCalculator(cameraClient(gpu, yaw, pitch, 0, 0));

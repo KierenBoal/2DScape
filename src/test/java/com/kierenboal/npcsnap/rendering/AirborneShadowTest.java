@@ -22,7 +22,7 @@ public class AirborneShadowTest
 	}
 	private SpriteShadowMask mask(BufferedImage image, SpriteShadowType type)
 	{
-		return SpriteShadowRenderer.capture(image,type,new SpriteShadowRenderer.Scratch(),new BillboardOutlineRenderer.Scratch(),0.1);
+		return SpriteShadowRenderer.capture(image,type,new SpriteShadowRenderer.Scratch());
 	}
 	private Point contact(BillboardDrawGeometry geometry, SpriteShadowMask mask)
 	{
@@ -52,7 +52,7 @@ public class AirborneShadowTest
 					BillboardDrawGeometry shadow=ShadowProjection.downward(mask,body,ShadowLighting.DIRECTIONAL_DOWN,floor);
 					assertNotNull(shadow);
 					Point planted=contact(shadow,mask);
-					double lift=type==SpriteShadowType.LEGACY ? 0 : !worldPlane ? original.height/40.0 :
+					double lift=!worldPlane ? original.height/40.0 :
 						body.canvasPoint(mask.centerX/32,(mask.feet+1.0)/40).getY()-body.canvasPoint(mask.centerX/32,mask.feet/40.0).getY();
 					assertEquals(floor.x,planted.getX(),1); assertEquals(floor.y-lift,planted.getY(),1);
 					assertEquals(before,body.bounds);

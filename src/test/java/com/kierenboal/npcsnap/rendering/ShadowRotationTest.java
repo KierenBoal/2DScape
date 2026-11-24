@@ -10,6 +10,7 @@ import java.awt.image.BufferedImage;
 import net.runelite.api.Client;
 import net.runelite.api.Perspective;
 import net.runelite.api.Point;
+import net.runelite.api.coords.LocalPoint;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -23,8 +24,7 @@ public class ShadowRotationTest
 		// Asymmetric weapon and wing reach the occupied bounds.
 		for(int x=0;x<width;x++) source.setRGB(x,height/4,0xffffffff);
 		source.setRGB(width-1,height/2,0xffffffff);
-		return SpriteShadowRenderer.capture(source,style,new SpriteShadowRenderer.Scratch(),
-			new BillboardOutlineRenderer.Scratch(),0.1).directionalCaster();
+		return SpriteShadowRenderer.capture(source,style,new SpriteShadowRenderer.Scratch()).directionalCaster();
 	}
 
 	private Client camera(double x,double y,double z,double yaw,double pitch)
@@ -64,8 +64,7 @@ public class ShadowRotationTest
 	@Test public void cameraFacingCaptureWidthAndWorldCastDirectionUseIndependentAxes()
 	{
 		SpriteShadowMask mask=caster(SpriteShadowType.FLAT,1);
-		for(ShadowLighting mode:new ShadowLighting[]{ShadowLighting.GLOBAL_POINT,ShadowLighting.PLAYER_LANTERN,
-			ShadowLighting.WORLD_DIRECTIONAL,ShadowLighting.CAMERA_DIRECTIONAL})
+		for(ShadowLighting mode:new ShadowLighting[]{ShadowLighting.WORLD_DIRECTIONAL,ShadowLighting.CAMERA_DIRECTIONAL})
 		{
 			for(int step=0;step<720;step++)
 			{
@@ -105,6 +104,66 @@ public class ShadowRotationTest
 		}
 	}
 
+	@Test
+	public void pointLightsProjectTheSameGroundSilhouetteThroughoutTheCameraOrbit()
+	{
+		double pitch = 2064 * Math.PI * 2 / Perspective.SINE14.length;
+		int[] screenshotYaws = {0, 2761, 3956, 5801, 9289};
+		for (SpriteShadowType type : new SpriteShadowType[]{
+			SpriteShadowType.FLAT, SpriteShadowType.HARD, SpriteShadowType.RADIAL, SpriteShadowType.BLOB})
+		{
+			SpriteShadowMask mask = caster(type, 1);
+			for (int step = -screenshotYaws.length; step < 64; step++)
+			{
+				int yawUnits = step < 0 ? screenshotYaws[step + screenshotYaws.length] : step * Perspective.SINE14.length / 64;
+				double yaw = yawUnits * Math.PI * 2 / Perspective.SINE14.length;
+				BillboardDepthCalculator calculator = new BillboardDepthCalculator(camera(
+					4096 + Math.sin(yaw) * 1600, 4096 - Math.cos(yaw) * 1600, -1574, yaw, pitch));
+				BillboardCanvasPoint floor = calculator.projectCanvasPoint(4096, 4096, 0);
+				BillboardDrawGeometry sprite = BillboardDrawGeometry.rectangular(new Rectangle(400, 200, 48, 96));
+				for (ShadowLightVector light : new ShadowLightVector[]{
+					ShadowLightVector.resolve(ShadowLighting.PLAYER_LANTERN, 3210, 3230, 3200, 3200, yaw),
+					ShadowLightVector.lantern(new LocalPoint(4096, 4096), new LocalPoint(3976, 4024))})
+				{
+					double[] basis = ShadowProjection.groundBasis(mask, yaw, light);
+					assertEquals(1, Math.hypot(basis[0], basis[1]), 1e-12);
+					assertEquals(0, basis[0] * basis[2] + basis[1] * basis[3], 1e-12);
+					assertTrue(basis[0] * basis[3] - basis[1] * basis[2] < 0);
+					assertArrayEquals(ShadowProjection.groundBasis(mask, 0, light), basis, 1e-12);
+					double[] exportBasis = ShadowProjection.groundBasis(mask, 0, light.view(yaw));
+					for (int axis : new int[]{0, 2})
+					{
+						assertEquals(basis[axis] * Math.cos(yaw) + basis[axis + 1] * Math.sin(yaw), exportBasis[axis], 1e-12);
+						assertEquals(-basis[axis] * Math.sin(yaw) + basis[axis + 1] * Math.cos(yaw), exportBasis[axis + 1], 1e-12);
+					}
+
+					BillboardDrawGeometry shadow = ShadowProjection.ground(mask, sprite, calculator, 4096, 4096, 0, 2, yaw, light, floor);
+					assertNotNull(shadow);
+					double footU = (mask.centerX - mask.offsetX) / mask.image.getWidth();
+					double footV = (mask.feet + 1.0 - mask.offsetY) / mask.image.getHeight();
+					Point foot = shadow.canvasPoint(footU, footV);
+					assertEquals(floor.x, foot.getX(), 1);
+					assertEquals(floor.y, foot.getY(), 1);
+					for (double u : new double[]{0.1, 0.5, 0.9}) for (double v : new double[]{0, 0.4, 0.9})
+					{
+						double width = (u - footU) * mask.image.getWidth() * 2;
+						double height = (v - footV) * mask.image.getHeight() * 2;
+						double length = Math.hypot(light.x, light.y);
+						double scale = mask.visibleHeight / mask.projectionSpan() / length;
+						double cast = height * scale * (mask.fullResolution ? Math.min(length, 0.5) : length);
+						BillboardCanvasPoint expected = calculator.projectCanvasPoint(
+							4096 + (width * light.y / length) - cast * light.x,
+							4096 - (width * light.x / length) - cast * light.y, 0);
+						Point actual = shadow.canvasPoint(u, v);
+						assertEquals(expected.x, actual.getX(), 1);
+						assertEquals(expected.y, actual.getY(), 1);
+						assertEquals(expected.depth, shadow.projectedQuad.depthAt(u, v), 1e-8);
+					}
+				}
+			}
+		}
+	}
+
 	@Test public void loggedCameraAndOrbitKeepThicknessDirectionAndContactAcrossQualities()
 	{
 		double loggedYaw=4184*Math.PI*2/Perspective.SINE14.length;
@@ -122,8 +181,7 @@ public class ShadowRotationTest
 				BillboardDepthCalculator calculator=new BillboardDepthCalculator(client);
 				BillboardCanvasPoint receiver=calculator.projectCanvasPoint(5952,7744,-304);
 				assertNotNull(receiver);
-				for(ShadowLighting mode:new ShadowLighting[]{ShadowLighting.GLOBAL_POINT,ShadowLighting.PLAYER_LANTERN,
-					ShadowLighting.WORLD_DIRECTIONAL,ShadowLighting.CAMERA_DIRECTIONAL})
+				for(ShadowLighting mode:new ShadowLighting[]{ShadowLighting.WORLD_DIRECTIONAL,ShadowLighting.CAMERA_DIRECTIONAL})
 				{
 					ShadowLightVector light=ShadowLightVector.resolve(mode,3158,3484,3150,3482,yaw);
 					double unit=117.0/mask.sourceWidth;
@@ -158,10 +216,15 @@ public class ShadowRotationTest
 			// Hide the body so only the exported cast contributes to these measurements.
 			SpriteCapture capture=new SpriteCapture(new BufferedImage(mask.sourceWidth,mask.sourceHeight,
 				BufferedImage.TYPE_INT_ARGB),mask);
+			for (ShadowLighting lighting : new ShadowLighting[]{
+				ShadowLighting.CAMERA_DIRECTIONAL, ShadowLighting.PLAYER_LANTERN})
 			for(int step=0;step<24;step++)
 			{
-				ShadowLightVector light=ShadowLightVector.resolve(ShadowLighting.CAMERA_DIRECTIONAL,0,0,0,0,step*Math.PI/12);
-				ShadowExportImage out=ShadowExportImage.render(capture,ShadowLighting.CAMERA_DIRECTIONAL,
+				double yaw = step * Math.PI / 12;
+				ShadowLightVector light = lighting == ShadowLighting.CAMERA_DIRECTIONAL
+					? ShadowLightVector.resolve(lighting, 0, 0, 0, 0, yaw)
+					: ShadowLightVector.resolve(lighting, 3210, 3230, 3200, 3200, 0).view(yaw);
+				ShadowExportImage out=ShadowExportImage.render(capture,lighting,
 					Color.MAGENTA,light,-Math.PI/8);
 				double dx=light.x,dy=-Math.sin(Math.PI/8)*light.y,length=Math.hypot(dx,dy);
 				double min=Double.POSITIVE_INFINITY,max=Double.NEGATIVE_INFINITY;
@@ -199,7 +262,7 @@ public class ShadowRotationTest
 			double yaw=yawUnits*Math.PI*2/Perspective.SINE14.length;
 			BillboardDepthCalculator calculator=new BillboardDepthCalculator(camera(
 				4096+Math.sin(yaw)*2000,4096-Math.cos(yaw)*2000,-1600,yaw,Math.PI/4));
-			ShadowLightVector light=ShadowLightVector.resolve(ShadowLighting.GLOBAL_POINT,3210,3210,0,0,yaw);
+			ShadowLightVector light=ShadowLightVector.resolve(ShadowLighting.WORLD_DIRECTIONAL,3210,3210,0,0,yaw);
 			BillboardCanvasPoint floor=calculator.projectCanvasPoint(4096,4096,0);
 			BillboardDrawGeometry sprite=BillboardDrawGeometry.rectangular(new Rectangle(400,200,24,192));
 			double scale=mask.visibleHeight/mask.projectionSpan();

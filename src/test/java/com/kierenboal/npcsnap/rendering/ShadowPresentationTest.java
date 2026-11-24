@@ -2,6 +2,7 @@ package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.ShadowLighting;
 import com.kierenboal.npcsnap.SpriteShadowType;
+import net.runelite.api.coords.LocalPoint;
 import com.kierenboal.npcsnap.occlusion.BillboardOcclusionMask;
 import java.awt.Color;
 import java.awt.Rectangle;
@@ -18,8 +19,7 @@ public class ShadowPresentationTest
 	}
 	private SpriteShadowMask mask(BufferedImage sprite, SpriteShadowType type)
 	{
-		return SpriteShadowRenderer.capture(sprite,type,new SpriteShadowRenderer.Scratch(),
-			new BillboardOutlineRenderer.Scratch(),0.1);
+		return SpriteShadowRenderer.capture(sprite,type,new SpriteShadowRenderer.Scratch());
 	}
 	private int peak(BufferedImage image)
 	{
@@ -83,19 +83,12 @@ public class ShadowPresentationTest
 			Rectangle bounds=new Rectangle(50,60,(int)Math.round(source.getWidth()/quality),(int)Math.round(source.getHeight()/quality));
 			BillboardDrawGeometry sprite=BillboardDrawGeometry.rectangular(bounds);
 			BillboardDrawGeometry lifted=ShadowProjection.downward(mask,sprite,ShadowLighting.DIRECTIONAL_DOWN,400);
-			BillboardDrawGeometry unshifted=ShadowProjection.downward(mask,sprite,ShadowLighting.GLOBAL_POINT,400);
+			BillboardDrawGeometry unshifted=ShadowProjection.downward(mask,sprite,ShadowLighting.WORLD_DIRECTIONAL,400);
 			assertNotNull(lifted); assertEquals(unshifted.bounds.x,lifted.bounds.x);
 			assertEquals(unshifted.bounds.y-(int)Math.ceil(bounds.height/(double)source.getHeight()),lifted.bounds.y);
 			assertEquals(bounds,sprite.bounds);
 			assertEquals(400,lifted.projectedQuad.depthAt(0.5,0.5),1e-8);
 		}
-	}
-	@Test public void legacyIgnoresLightingAndLift() throws Exception
-	{
-		BufferedImage source=sprite(); SpriteShadowMask mask=mask(source,SpriteShadowType.LEGACY);
-		BillboardDrawGeometry sprite=BillboardDrawGeometry.rectangular(new Rectangle(0,0,source.getWidth()*3,source.getHeight()*3));
-		Rectangle expected=ShadowProjection.downward(mask,sprite,ShadowLighting.DIRECTIONAL_DOWN).bounds;
-		for(ShadowLighting mode:ShadowLighting.values()) assertEquals(expected,ShadowProjection.downward(mask,sprite,mode).bounds);
 	}
 	@Test public void fixedAndCameraLightsUseDifferentReferenceFrames()
 	{
@@ -135,17 +128,29 @@ public class ShadowPresentationTest
    }
  }
 
-	@Test public void pointLightsFollowPositionsAndStayBounded()
+	@Test public void lanternCentersWhenItsSourceIsMissingOrCoincident()
 	{
-		ShadowLightVector east=ShadowLightVector.resolve(ShadowLighting.GLOBAL_POINT,3210,3200,0,0,0);
-		ShadowLightVector west=ShadowLightVector.resolve(ShadowLighting.GLOBAL_POINT,3190,3200,0,0,0);
-		assertTrue(east.x>0); assertTrue(west.x<0);
 		ShadowLightVector centered=ShadowLightVector.resolve(ShadowLighting.PLAYER_LANTERN,3200,3200,3200,3200,0);
 		assertEquals(0,Math.hypot(centered.x,centered.y),0);
 		ShadowLightVector absent=ShadowLightVector.resolve(ShadowLighting.PLAYER_LANTERN,3200,3200,Double.NaN,Double.NaN,0);
 		assertEquals(0,Math.hypot(absent.x,absent.y),0);
-		ShadowLightVector distant=ShadowLightVector.resolve(ShadowLighting.GLOBAL_POINT,16000,16000,0,0,0);
-		assertTrue(Math.hypot(distant.x,distant.y)<=0.75000001);
+	}
+
+	@Test
+	public void lanternDirectionFollowsRenderedPositionsWithinOneTile()
+	{
+		LocalPoint target = new LocalPoint(4096 + 96, 4096 + 64);
+		LocalPoint player = new LocalPoint(4096 + 32, 4096 + 64);
+		LocalPoint movingPlayer = new LocalPoint(4096 + 32, 4096 + 96);
+		ShadowLightVector stationary = ShadowLightVector.lantern(target, player);
+		ShadowLightVector moved = ShadowLightVector.lantern(target, movingPlayer);
+		assertEquals(0.25, stationary.x, 0);
+		assertEquals(0, stationary.y, 0);
+		assertEquals(stationary.x, moved.x, 0);
+		assertEquals(-0.125, moved.y, 0);
+		assertEquals(0.125, ShadowLightVector.lantern(new LocalPoint(4096 + 64, 4096 + 64), player).x, 0);
+		assertFalse(ShadowLightVector.lantern(target, target).usesGroundAlignedWidth());
+		assertSame(ShadowLightVector.CENTERED, ShadowLightVector.lantern(target, null));
 	}
 	@Test public void separateShadowCompositesBehindSpriteAndExpandsInterest()
 	{

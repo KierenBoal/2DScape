@@ -11,6 +11,8 @@ public final class PreparedBillboardDraw
 	public java.awt.Color highlight;
 	public int highlightWidth, highlightFeather;
 	public final BillboardRenderResult result;
+	public BillboardRenderResult shadow;
+	public boolean shadowOnly;
 	public final int paintOrder;
 	public final BufferedImage image;
 	public final Rectangle bounds;
@@ -24,12 +26,11 @@ public final class PreparedBillboardDraw
 
 	public PreparedBillboardDraw shadowDraw()
 	{
-		return result == null || result.shadow == null ? null :
-			new PreparedBillboardDraw(this,result.shadow);
+		return shadow == null ? null : new PreparedBillboardDraw(this, shadow);
 	}
 	private PreparedBillboardDraw(PreparedBillboardDraw parent, BillboardRenderResult result)
 	{
-		this.request=parent.request; this.result=result; this.paintOrder=parent.paintOrder;
+		this.request=parent.request; this.result=result; this.shadow=result.shadow; this.paintOrder=parent.paintOrder;
 		this.image=result.image; this.bounds=result.bounds; this.sourceBounds=result.sourceBounds;
 		this.geometry=result.geometry; this.occlusionIgnoredTileObject=parent.occlusionIgnoredTileObject;
 		// Ground/water submersion clips the body, not its projected shadow.
@@ -42,7 +43,7 @@ public final class PreparedBillboardDraw
 	{
 		Rectangle visual=new Rectangle(bounds);
 		visual.grow(highlightWidth, highlightWidth);
-		for(BillboardRenderResult layer=result==null ? null : result.shadow; layer!=null; layer=layer.shadow)
+		for(BillboardRenderResult layer=shadow; layer!=null; layer=layer.shadow)
 			if(layer.bounds!=null) visual=visual.union(layer.bounds);
 		return visual;
 	}
@@ -70,6 +71,7 @@ public final class PreparedBillboardDraw
 	{
 		this.request = request;
 		this.result = result;
+		this.shadow = result != null ? result.shadow : null;
 		this.paintOrder = paintOrder;
 		this.image = result != null ? result.image : null;
 		this.bounds = result != null ? result.bounds : null;

@@ -23,6 +23,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.GraphicsObject;
 import net.runelite.api.IndexedObjectSet;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.IterableHashTable;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
@@ -207,6 +208,75 @@ public class NpcBillboardCadenceTest
 		}
 	}
 
+	@Test
+	public void shadowBudgetCanBeDisabledWithoutDroppingTheSprite()
+	{
+		Fixture f = new Fixture(BillboardTargetType.NPC, 1, true);
+		f.improved = true;
+		f.pitch.set(2048);
+		f.shadowType = SpriteShadowType.FLAT;
+		f.shadowColor = java.awt.Color.MAGENTA;
+		f.maxShadows = 0;
+		int captures = f.frame(0);
+		int width = f.canvas.getWidth();
+		int height = f.canvas.getHeight();
+		int[] body = f.canvas.getRGB(0, 0, width, height, null, 0, width);
+		assertTrue(java.util.Arrays.stream(body).anyMatch(pixel -> pixel >>> 24 != 0));
+
+		f.canvas.setRGB(0, 0, width, height, new int[width * height], 0, width);
+		f.maxShadows = 1;
+		assertEquals(captures, f.frame(1));
+		int[] lit = f.canvas.getRGB(0, 0, width, height, null, 0, width);
+		assertTrue(java.util.Arrays.stream(lit).anyMatch(pixel -> (pixel & 0xffffff) == 0xff00ff));
+	}
+
+	@Test
+	public void effectsAndProjectilesDrawWithoutProjectedShadows()
+	{
+		for (BillboardTargetType type : new BillboardTargetType[] {
+			BillboardTargetType.GRAPHICS_OBJECT, BillboardTargetType.ACTOR_SPOT_ANIM, BillboardTargetType.PROJECTILE})
+		{
+			Fixture f = new Fixture(type, 50, false);
+			f.pitch.set(2048);
+			f.improved = true;
+			f.shadowType = SpriteShadowType.FLAT;
+			f.shadowColor = java.awt.Color.MAGENTA;
+			assertTrue(type + " must rasterize", f.frame(0) > 0);
+			int width = f.canvas.getWidth();
+			int[] pixels = f.canvas.getRGB(0, 0, width, f.canvas.getHeight(), null, 0, width);
+			assertTrue(type + " must stay visible", java.util.Arrays.stream(pixels).anyMatch(pixel -> pixel >>> 24 != 0));
+			assertFalse(type + " must not cast a shadow", java.util.Arrays.stream(pixels)
+				.anyMatch(pixel -> (pixel & 0xffffff) == 0xff00ff));
+		}
+	}
+
+	@Test
+	public void groundPileWarmsAndFallsBackAsAUnitAtTheSpriteCap()
+	{
+		Fixture f = new Fixture(BillboardTargetType.GROUND_ITEM, 50, false);
+		TileItem first = (TileItem) f.renderable;
+		f.groundSecond = proxy(TileItem.class, method("getId", 100), method("getQuantity", 1),
+			method("getModel", first.getModel()), method("getModelHeight", 100));
+		f.overlay.trackGroundItem(f.groundSecond, f.groundTile);
+		f.maxSprites = 1;
+		assertEquals(0, f.frame(0));
+		assertFalse(f.overlay.shouldHideRenderable(first));
+		assertFalse(f.overlay.shouldHideRenderable(f.groundSecond));
+
+		f.maxSprites = 2;
+		assertTrue(f.frame(1) > 0);
+		assertFalse(f.overlay.shouldHideRenderable(first));
+		assertFalse(f.overlay.shouldHideRenderable(f.groundSecond));
+		f.frame(2);
+		assertTrue(f.overlay.shouldHideRenderable(first));
+		assertTrue(f.overlay.shouldHideRenderable(f.groundSecond));
+
+		f.maxSprites = 1;
+		f.frame(3);
+		assertFalse(f.overlay.shouldHideRenderable(first));
+		assertFalse(f.overlay.shouldHideRenderable(f.groundSecond));
+	}
+
 	private static final class Fixture
 	{
 		final AtomicInteger cycle = new AtomicInteger();
@@ -220,6 +290,10 @@ public class NpcBillboardCadenceTest
 		final AtomicInteger yaw = new AtomicInteger();
 		final AtomicInteger pitch = new AtomicInteger();
 		boolean improved;
+		int maxShadows = 32;
+		int maxSprites = 128;
+		Tile groundTile;
+		TileItem groundSecond;
 		SpriteShadowType shadowType = SpriteShadowType.OFF;
 		ShadowLighting lighting = ShadowLighting.DIRECTIONAL_DOWN;
 		java.awt.Color shadowColor = java.awt.Color.BLACK;
@@ -310,6 +384,8 @@ public class NpcBillboardCadenceTest
 				@Override public boolean useRetroOverheads() { return false; }
 				@Override public boolean enableActorWorldPlaneProjection() { return improved; }
 				@Override public SpriteShadowType shadowType() { return shadowType; }
+				@Override public int maxShadows() { return maxShadows; }
+				@Override public int billboardMaxEntities() { return maxSprites; }
     @Override public ShadowLighting shadowLighting() { return lighting; }
     @Override public java.awt.Color shadowColor() { return shadowColor; }
 				@Override public boolean useInteractionHighlight() { return false; }
@@ -323,18 +399,25 @@ public class NpcBillboardCadenceTest
 			overlay = new NpcBillboardOverlay(client, null, config, debug, null);
 			overlay.setActive(true);
 			if (type == BillboardTargetType.GROUND_ITEM)
-				overlay.trackGroundItem((TileItem) renderable, proxy(Tile.class, method("getLocalLocation", location)));
+			{
+				ItemLayer layer = proxy(ItemLayer.class, method("getTop", renderable),
+					methodSupplier("getBottom", () -> groundSecond));
+				groundTile = proxy(Tile.class, method("getLocalLocation", location), method("getItemLayer", layer));
+				overlay.trackGroundItem((TileItem) renderable, groundTile);
+			}
 		}
 
 		int frame(int gameCycle)
 		{
 			cycle.set(gameCycle);
 			overlay.noteSceneRenderable(renderable);
+			if (groundSecond != null) overlay.noteSceneRenderable(groundSecond);
 			if (renderable instanceof Actor)
 				for (ActorSpotAnim spot : ((Actor) renderable).getSpotAnims()) overlay.noteSceneRenderable(spot);
 			if (object != null) overlay.observeTileObject(object);
 			overlay.beginFrame();
 			overlay.noteSceneRenderable(renderable);
+			if (groundSecond != null) overlay.noteSceneRenderable(groundSecond);
 			if (renderable instanceof Actor)
 				for (ActorSpotAnim spot : ((Actor) renderable).getSpotAnims()) overlay.noteSceneRenderable(spot);
 			overlay.prepareFrame(view);

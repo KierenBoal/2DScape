@@ -4,14 +4,10 @@ final class NpcSnapConfigChangeHandler
 {
 	private static final String CONFIG_GROUP = "npc-snap";
 
-	private final Runnable markUiTexturesDirty;
 	private final Runnable clearBillboardCache;
 
-	NpcSnapConfigChangeHandler(
-		Runnable markUiTexturesDirty,
-		Runnable clearBillboardCache)
+	NpcSnapConfigChangeHandler(Runnable clearBillboardCache)
 	{
-		this.markUiTexturesDirty = markUiTexturesDirty;
 		this.clearBillboardCache = clearBillboardCache;
 	}
 
@@ -20,14 +16,6 @@ final class NpcSnapConfigChangeHandler
 		if (!CONFIG_GROUP.equals(group))
 		{
 			return;
-		}
-
-		if ("enableUiTextureBanding".equals(key)
-			|| "applyToCustomUiTextures".equals(key)
-			|| "uiTextureColorBands".equals(key)
-			|| "uiSpriteQuality".equals(key))
-		{
-			markUiTexturesDirty.run();
 		}
 
 		if ("shadowType".equals(key)

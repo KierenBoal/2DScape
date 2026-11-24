@@ -9,7 +9,6 @@ import com.kierenboal.npcsnap.export.BillboardExportPaths;
 import com.kierenboal.npcsnap.export.BillboardPngExporter;
 import com.kierenboal.npcsnap.export.BillboardObjectExportTarget;
 import com.kierenboal.npcsnap.compatibility.InteractHighlightCompatibility;
-import com.kierenboal.npcsnap.rendering.NpcSnapUiTextureManager;
 import com.kierenboal.npcsnap.targeting.BillboardHoverInteractionResolver;
 import com.kierenboal.npcsnap.targeting.BillboardSceneDrawCallbacks;
 
@@ -29,7 +28,6 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.Player;
 import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
-import net.runelite.api.SpritePixels;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldType;
 import net.runelite.api.WorldView;
@@ -51,7 +49,6 @@ import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerDespawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
-import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.callback.RenderCallback;
@@ -85,7 +82,6 @@ public class NpcSnapPlugin extends Plugin
 	private final NpcSnapChangelog changelog = new NpcSnapChangelog();
 	private boolean pendingSkillXpSeed;
 	private Scene groundItemScene;
-	private NpcSnapUiTextureManager uiTextureManager;
 	private volatile BillboardSceneDrawCallbacks sceneDrawCallbacks;
 	private NpcSnapConfigChangeHandler configChangeHandler;
 	private final Set<String> exportMenuTargetsThisTick = new HashSet<>();
@@ -226,7 +222,6 @@ public class NpcSnapPlugin extends Plugin
 		rendererAvailabilityWarning.reset();
 		billboardOverlay.setActive(true);
 		skillingThoughtBubbleOverlay.setActive(true);
-		ensureUiTextureManager().markDirty();
 		pendingSkillXpSeed = client.getGameState() == GameState.LOGGED_IN;
 		if (pendingSkillXpSeed)
 		{
@@ -269,7 +264,6 @@ public class NpcSnapPlugin extends Plugin
 		cleanupStep("interaction state", billboardOverlay::clearInteractionState);
 		cleanupStep("skilling state", skillingActivityTracker::clear);
 		cleanupStep("debug frame state", debug::clearFrameStates);
-		cleanupStep("UI texture restoration", () -> ensureUiTextureManager().restore());
 		sceneDrawCallbacks = null;
 		pendingSkillXpSeed = false;
 		loginXpDropGuard.onLoggedOut();
@@ -355,7 +349,6 @@ public class NpcSnapPlugin extends Plugin
 		debug.clearFrameStates();
 		billboardOverlay.beginFrame();
 		ensureSceneDrawCallbacks().beginFrame();
-		syncUiTextureQuality();
 
 		if (client.getGameState() != GameState.LOGGED_IN)
 		{
@@ -467,7 +460,6 @@ public class NpcSnapPlugin extends Plugin
 			skillingActivityTracker.clear();
 			pendingSkillXpSeed = true;
 			loginXpDropGuard.onLoggedIn();
-			ensureUiTextureManager().markDirty();
 			billboardOverlay.clearTextureCache();
 		}
 		else
@@ -478,8 +470,6 @@ public class NpcSnapPlugin extends Plugin
 			pendingSkillXpSeed = false;
 			loginXpDropGuard.onLoggedOut();
 			billboardOverlay.clearInteractionState();
-			ensureUiTextureManager().restore();
-			ensureUiTextureManager().markDirty();
 		}
 		reconcileSafetyState();
 	}
@@ -516,14 +506,6 @@ public class NpcSnapPlugin extends Plugin
 			config.applyToGroundItems(),
 			config.applyToObjects());
 		reconcileSafetyState();
-	}
-
-	@Subscribe
-	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
-	{
-		if (!active) return;
-		ensureUiTextureManager().onWidgetLoaded(config.enableUiTextureBanding(), config.uiTextureColorBands(),
-			config.uiSpriteQuality(), config.applyToCustomUiTextures());
 	}
 
 	@Subscribe
@@ -859,7 +841,6 @@ public class NpcSnapPlugin extends Plugin
 		if (configChangeHandler == null)
 		{
 			configChangeHandler = new NpcSnapConfigChangeHandler(
-				() -> ensureUiTextureManager().markDirty(),
 				billboardOverlay::clearBillboardCache);
 		}
 		return configChangeHandler;
@@ -950,12 +931,6 @@ public class NpcSnapPlugin extends Plugin
 		return sceneDrawCallbacks;
 	}
 
-	private void syncUiTextureQuality()
-	{
-		ensureUiTextureManager().sync(config.enableUiTextureBanding(), config.uiTextureColorBands(),
-			config.uiSpriteQuality(), config.applyToCustomUiTextures());
-	}
-
 	private void ensureGroundItemsSeeded(WorldView worldView)
 	{
 		Scene scene = worldView == null ? null : worldView.getScene();
@@ -984,27 +959,6 @@ public class NpcSnapPlugin extends Plugin
 		{
 			groundItemScene = null;
 		}
-	}
-
-	private NpcSnapUiTextureManager ensureUiTextureManager()
-	{
-		if (uiTextureManager == null)
-		{
-			uiTextureManager = new NpcSnapUiTextureManager(client, this::loadSpriteSnapshot);
-		}
-
-		return uiTextureManager;
-	}
-
-	private NpcSnapUiTextureManager.SpriteSnapshot loadSpriteSnapshot(int spriteId)
-	{
-		SpritePixels[] sprites = client.getSprites(client.getIndexSprites(), spriteId, 0);
-		if (sprites == null || sprites.length == 0 || sprites[0] == null)
-		{
-			return null;
-		}
-
-		return NpcSnapUiTextureManager.SpriteSnapshot.of(sprites[0]);
 	}
 
 	private void seedCurrentSkillXp()

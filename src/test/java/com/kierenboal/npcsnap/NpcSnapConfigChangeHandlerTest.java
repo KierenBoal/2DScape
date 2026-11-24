@@ -15,20 +15,9 @@ public class NpcSnapConfigChangeHandlerTest
 
 		handler.handle("other", "enableUiTextureBanding");
 		handler.handle("npc-snap", "unrelated");
+		handler.handle("npc-snap", "maxShadows");
 
-		counters.assertCounts(0, 0);
-	}
-
-	@Test
-	public void uiChangesOnlyDirtyUiTextures()
-	{
-		for (String key : new String[] {"enableUiTextureBanding", "applyToCustomUiTextures",
-			"uiTextureColorBands", "uiSpriteQuality"})
-		{
-			Counters counters = new Counters();
-			counters.handler().handle("npc-snap", key);
-			counters.assertCounts(1, 0);
-		}
+		counters.assertCounts(0);
 	}
 
 	@Test
@@ -40,29 +29,25 @@ public class NpcSnapConfigChangeHandlerTest
 			Counters counters = new Counters();
 			NpcSnapConfigChangeHandler handler = counters.handler();
 			handler.handle("other", key);
-			counters.assertCounts(0, 0);
+			counters.assertCounts(0);
 			handler.handle("npc-snap", key);
-			counters.assertCounts(0, 1);
+			counters.assertCounts(1);
 			handler.handle("npc-snap", key);
-			counters.assertCounts(0, 2);
+			counters.assertCounts(2);
 		}
 	}
 
 	private static final class Counters
 	{
-		private final AtomicInteger uiDirty = new AtomicInteger();
 		private final AtomicInteger billboardCache = new AtomicInteger();
 
 		private NpcSnapConfigChangeHandler handler()
 		{
-			return new NpcSnapConfigChangeHandler(
-				uiDirty::incrementAndGet,
-				billboardCache::incrementAndGet);
+			return new NpcSnapConfigChangeHandler(billboardCache::incrementAndGet);
 		}
 
-		private void assertCounts(int uiDirty, int billboardCache)
+		private void assertCounts(int billboardCache)
 		{
-			assertEquals(uiDirty, this.uiDirty.get());
 			assertEquals(billboardCache, this.billboardCache.get());
 		}
 	}

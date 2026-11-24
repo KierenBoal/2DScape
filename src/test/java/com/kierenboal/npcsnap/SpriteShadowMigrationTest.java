@@ -34,4 +34,29 @@ public class SpriteShadowMigrationTest
 		Map<String,String> fresh = new HashMap<>();migrate(fresh);assertTrue(fresh.isEmpty());
 		assertEquals(SpriteShadowType.FLAT,new NpcSnapConfig(){}.shadowType());
 	}
+
+	@Test
+	public void migratesGlobalPointWithoutALegacyShadowType()
+	{
+		Map<String, String> profile = new HashMap<>();
+		profile.put("shadowLighting", "GLOBAL_POINT");
+		migrate(profile);
+		assertEquals("WORLD_DIRECTIONAL", profile.get("shadowLighting"));
+		assertEquals(32, new NpcSnapConfig() {}.maxShadows());
+		assertNull(profile.get("shadowType"));
+	}
+
+	@Test
+	public void replacesLegacySelectionAndPreservesLighting()
+	{
+		Map<String, String> profile = new HashMap<>();
+		profile.put("shadowType", "LEGACY");
+		profile.put("shadowLighting", "PLAYER_LANTERN");
+		migrate(profile);
+		assertEquals("FLAT", profile.get("shadowType"));
+		assertEquals("PLAYER_LANTERN", profile.get("shadowLighting"));
+		profile.put("shadowType", "OFF");
+		migrate(profile);
+		assertEquals("OFF", profile.get("shadowType"));
+	}
 }

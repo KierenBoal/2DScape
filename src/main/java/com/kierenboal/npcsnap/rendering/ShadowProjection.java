@@ -34,10 +34,9 @@ public final class ShadowProjection
 		Point oldAnchor=sprite.canvasPoint(mask.centerX/mask.sourceWidth,(mask.feet+1.0)/mask.sourceHeight);
 		double dx=receiver==null ? 0 : receiver.x-oldAnchor.getX();
 		double dy=receiver==null ? 0 : receiver.y-oldAnchor.getY();
-		int lift = mask.type != SpriteShadowType.LEGACY && lighting == ShadowLighting.DIRECTIONAL_DOWN ? 1 : 0;
 		double x=mask.offsetX, y=mask.offsetY;
 		double liftPixels=0;
-		if(lift!=0)
+		if(lighting == ShadowLighting.DIRECTIONAL_DOWN)
 		{
 			if(sprite.projectedQuad==null) liftPixels=sprite.unskewedBounds.height/(double)mask.sourceHeight;
 			else
@@ -86,6 +85,10 @@ public final class ShadowProjection
 			BillboardCanvasPoint p=calculator.projectCanvasPoint(localX+wx,localY+wy,groundZ);
 			if(p==null) return null;
 			corners[i]=new BillboardCanvasPoint(p.x+anchorX-base.x,p.y+anchorY-base.y,p.depth,0,0);
+		}
+		if (light.usesGroundAlignedWidth())
+		{
+			return quad(corners, mask);
 		}
 		double minimumWidth=mask.fullResolution || Math.hypot(light.x,light.y)>1e-6
 			? minimumCastWidth(mask,sprite) : 0;
@@ -141,6 +144,13 @@ public final class ShadowProjection
 			double depth=mask.fullResolution ? Math.min(0.1,2.0/mask.visibleHeight)*scale : 1;
 			return new double[]{rx,ry,fx*depth,fy*depth};
 		}
+		if (light.usesGroundAlignedWidth())
+		{
+			// Both axes stay fixed in the ground plane during a camera orbit.
+			// Cap the cast before camera projection so it has a fixed world length.
+			double castScale = mask.fullResolution ? scale * Math.min(1, 0.5 / length) : scale;
+			return new double[]{light.y / length, -light.x / length, -castScale * light.x, -castScale * light.y};
+		}
 		// Treat the capture as an upright camera-facing sheet. Its horizontal
 		// axis remains camera-right; only height is displaced away from the light.
 		// Rotating width around the light and then flipping/shearing it back adds
@@ -162,14 +172,9 @@ public final class ShadowProjection
 		return Math.max(2,displayedWidth*ratio);
 	}
 
-	private static BillboardDrawGeometry quad(BillboardCanvasPoint[] points, SpriteShadowMask mask)
+	static BillboardDrawGeometry quad(BillboardCanvasPoint[] points, SpriteShadowMask mask)
 	{
-		return quad(points,mask,0,0);
-	}
-
-	static BillboardDrawGeometry quad(BillboardCanvasPoint[] points, SpriteShadowMask mask, double anchorX, double anchorY)
-	{
-		return quad(points,mask,anchorX,anchorY,mask.fullResolution ? minimumCastWidth(mask,mask.image.getWidth()) : 0);
+		return quad(points,mask,0,0,0);
 	}
 
 	static BillboardDrawGeometry quad(BillboardCanvasPoint[] points, SpriteShadowMask mask,

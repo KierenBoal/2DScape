@@ -13,6 +13,12 @@ import net.runelite.api.coords.LocalPoint;
 public final class GroundItemBillboardTracker
 {
 	private final Map<TileItem, GroundItemBillboard> groundItems = new HashMap<>();
+	private final Map<TileItem, Tile> itemTiles = new HashMap<>();
+
+	public Tile tile(TileItem item)
+	{
+		return itemTiles.get(item);
+	}
 
 	public void track(TileItem item, Tile tile)
 	{
@@ -30,6 +36,7 @@ public final class GroundItemBillboardTracker
 		ItemLayer itemLayer = tile.getItemLayer();
 		int verticalOffset = itemLayer != null ? itemLayer.getHeight() : 0;
 		groundItems.put(item, new GroundItemBillboard(tile.getPlane(), localPoint, verticalOffset));
+		itemTiles.put(item, tile);
 	}
 
 	public void untrack(TileItem item)
@@ -40,11 +47,13 @@ public final class GroundItemBillboardTracker
 		}
 
 		groundItems.remove(item);
+		itemTiles.remove(item);
 	}
 
 	public void clear()
 	{
 		groundItems.clear();
+		itemTiles.clear();
 	}
 
 	public GroundItemBillboard get(TileItem item)

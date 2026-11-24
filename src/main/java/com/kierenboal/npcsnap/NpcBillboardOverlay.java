@@ -28,7 +28,6 @@ import com.kierenboal.npcsnap.rendering.BillboardDrawGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardFaceRasterizer;
 import com.kierenboal.npcsnap.rendering.BillboardFrameBuffer;
 import com.kierenboal.npcsnap.rendering.BillboardGeometryUtils;
-import com.kierenboal.npcsnap.rendering.BillboardModelStateHash;
 import com.kierenboal.npcsnap.rendering.BillboardOrientationCalculator;
 import com.kierenboal.npcsnap.rendering.BillboardOutlineRenderer;
 import com.kierenboal.npcsnap.rendering.SpriteShadowRenderer;
@@ -38,7 +37,6 @@ import com.kierenboal.npcsnap.rendering.ShadowLightVector;
 import com.kierenboal.npcsnap.rendering.ShadowProjection;
 import com.kierenboal.npcsnap.rendering.ActorGroundAnchor;
 import com.kierenboal.npcsnap.rendering.ShadowExportImage;
-import net.runelite.api.coords.WorldPoint;
 import com.kierenboal.npcsnap.rendering.BillboardPaintOrder;
 import com.kierenboal.npcsnap.rendering.BillboardProjectileGeometry;
 import com.kierenboal.npcsnap.rendering.BillboardRenderQuality;
@@ -126,6 +124,7 @@ import net.runelite.api.Renderable;
 import net.runelite.api.Scene;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.Tile;
+import net.runelite.api.ItemLayer;
 import net.runelite.api.TileItem;
 import net.runelite.api.TileObject;
 import net.runelite.api.WorldView;
@@ -158,6 +157,8 @@ class NpcBillboardOverlay extends Overlay
 	private final BillboardTextureResolver textureResolver;
 	private final BillboardPerformanceMetrics performanceMetrics = new BillboardPerformanceMetrics();
 	private final GroundItemBillboardTracker groundItemTracker = new GroundItemBillboardTracker();
+	private final Map<Renderable, GroundItemPile> groundPiles = new IdentityHashMap<>();
+	private final Set<GroundItemPile> drawableGroundPiles = IdentitySets.create();
 	private final Map<TileObject, ObservedTileObject> observedTileObjects = new IdentityHashMap<>();
 	private final Map<TileObject, ObservedTileObject> visibleTileObjects = new IdentityHashMap<>();
 	private final Object observedTileObjectsLock = new Object();
@@ -185,6 +186,13 @@ class NpcBillboardOverlay extends Overlay
 	private float[] spriteDepthScratch = new float[0];
 	private final BillboardFrameBuffer frameBuffer = new BillboardFrameBuffer(occlusionMask, this::billboardDepthSurface);
 	private final BillboardOcclusionDebugSampler occlusionDebugSampler = new BillboardOcclusionDebugSampler(occlusionMask, this::billboardDepthSurface);
+	private final Set<Renderable> occludedActors = IdentitySets.create();
+	private final Map<Renderable, BillboardTarget> deferredActors = new IdentityHashMap<>();
+	private long frameSequence;
+	private long occlusionEvidenceFrame = -1;
+	private Scene occlusionEvidenceScene;
+	private Rectangle occlusionEvidenceViewport;
+	private BillboardOcclusionQuality occlusionEvidenceQuality;
 	private int activeBillboardsGameCycle = Integer.MIN_VALUE;
 	private final BillboardInteractionState interactionState = new BillboardInteractionState();
 	private final ActorStackTracker actorStackTracker = new ActorStackTracker();
@@ -273,20 +281,37 @@ class NpcBillboardOverlay extends Overlay
 			{
 				visibleTargets = getVisibleTargets(worldView);
 			}
+			occludedActors.clear();
+			occlusionEvidenceFrame = frameSequence;
+			occlusionEvidenceScene = worldView.getScene();
+			occlusionEvidenceViewport = getViewportBounds();
+			occlusionEvidenceQuality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
 			interactionState.update(client, groundItemTracker.entries());
 			frameUpdatePlans.clear();
 			frameSnapshots.clear();
 			compositeResizes.clear();
 			try (Timer timer = performanceMetrics.time("Schedule frame updates"))
 			{
+				visibleTargets.addAll(deferredActors.values());
 				visibleTargets = sortTargetsForRender(visibleTargets);
-				scheduleFrameUpdates(visibleTargets, client.getGameCycle());
+				List<BillboardTarget> updateTargets = visibleTargets;
+				if (!deferredActors.isEmpty())
+				{
+					updateTargets = new ArrayList<>(visibleTargets);
+					updateTargets.removeIf(target -> deferredActors.containsKey(target.renderable));
+				}
+				scheduleFrameUpdates(updateTargets, client.getGameCycle());
 			}
 			List<PreparedBillboardDraw> preparedDraws = new ArrayList<>(visibleTargets.size());
 			for (int i = 0; i < visibleTargets.size(); i++)
 			{
 				renderTarget(visibleTargets.get(i), i + 1, preparedDraws);
 			}
+			preparedDraws.removeIf(draw ->
+			{
+				GroundItemPile pile = groundPiles.get(draw.request.renderable);
+				return pile != null && !drawableGroundPiles.contains(pile);
+			});
 			Set<TileObject> drawableScenery = IdentitySets.create();
 			for (PreparedBillboardDraw draw : preparedDraws)
 			{
@@ -310,6 +335,7 @@ class NpcBillboardOverlay extends Overlay
 				&& !staticScenery.isReplaced(draw.occlusionIgnoredTileObject)
                 && (modelCompatibility == null || !modelCompatibility.replaces(draw.occlusionIgnoredTileObject)));
 			compositePreparedDraws(graphics, preparedDraws);
+			preparedDraws.removeIf(draw -> draw.shadowOnly);
 			try (Timer timer = performanceMetrics.time("Render actor overheads"))
 			{
 				actorOverheadRenderer.render(graphics, preparedDraws);
@@ -380,6 +406,8 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		groundItemTracker.clear();
+		groundPiles.clear();
+		drawableGroundPiles.clear();
 	}
 
 	private void clearGroundItemRenderState(TileItem item)
@@ -393,6 +421,9 @@ class NpcBillboardOverlay extends Overlay
 	private void clearActiveState()
 	{
 		worldOcclusionCollector.clear();
+		occludedActors.clear();
+		deferredActors.clear();
+		occlusionEvidenceScene = null;
 		activeRenderableTargets.clear();
 		actorStackTracker.clear();
 		actorDrawOrderTracker.clear();
@@ -535,6 +566,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void beginFrame()
 	{
+		frameSequence++;
 		frameGroundAnchors.clear();
 		if (worldViewVisibility != null)
 		{
@@ -794,7 +826,8 @@ class NpcBillboardOverlay extends Overlay
 			return null;
 		}
 
-		WorldPoint exportPlayer=lightingPlayerPoint();
+		LocalPoint exportPlayer = lanternPlayerLocation(config.shadowLighting());
+		SpriteShadowType shadowType = shadowTypeFor(target);
 		boolean groundItem = target.type == BillboardTargetType.GROUND_ITEM;
 		List<BillboardExportFrame> frames = new ArrayList<>();
 		for (int pitch : BillboardExportAngles.pitches(config.numberOfPitchRotationAngles(), groundItem))
@@ -805,7 +838,7 @@ class NpcBillboardOverlay extends Overlay
 				LocalPoint origin = requests.get(0).localPoint;
 				for (BillboardRenderRequest request : requests)
 				{
-					ExportRenderedPart image = renderExportRequest(request, yaw, pitch, origin, exportPlayer);
+					ExportRenderedPart image = renderExportRequest(request, yaw, pitch, origin, exportPlayer, shadowType);
 					if (image != null)
 					{
 						partImages.add(image);
@@ -877,7 +910,8 @@ class NpcBillboardOverlay extends Overlay
 		return BillboardExportPaths.sanitizeName(name, fallback);
 	}
 
-	private ExportRenderedPart renderExportRequest(BillboardRenderRequest original, int yaw, int pitch, LocalPoint origin, WorldPoint exportPlayer)
+	private ExportRenderedPart renderExportRequest(BillboardRenderRequest original, int yaw, int pitch,
+		LocalPoint origin, LocalPoint exportPlayer, SpriteShadowType shadowType)
 	{
 		Model model = original.model;
 		if (model == null || model.getVerticesCount() <= 0)
@@ -912,13 +946,16 @@ class NpcBillboardOverlay extends Overlay
 		double qualityScale = renderQualityScale();
 		int outlinePadding = outlinePadding(qualityScale);
 		SpriteCapture rendered = renderBillboardImage(
-			builtFaces.faces, bounds, outlinePadding, qualityScale);
+			builtFaces.faces, bounds, outlinePadding, qualityScale, shadowType);
 		if(rendered==null) return null;
 		Rectangle imageBounds=BillboardGeometryUtils.expandedBounds(bounds,outlinePadding);
 		BillboardCanvasPoint exportOrigin=original.renderable instanceof Actor ? new BillboardCanvasPoint(
 			-imageBounds.x*qualityScale,-imageBounds.y*qualityScale,100,0,0) : null;
-		ShadowExportImage exported=ShadowExportImage.render(rendered,config.shadowLighting(),config.shadowColor(),
-			lightVector(original,exportPlayer,yaw*Math.PI*2/BILLBOARD_FULL_CIRCLE).view(yaw*Math.PI*2/BILLBOARD_FULL_CIRCLE),pitch*Math.PI*2/BILLBOARD_FULL_CIRCLE,exportOrigin);
+		ShadowLighting lighting = config.shadowLighting();
+		double yawRadians = yaw * Math.PI * 2 / BILLBOARD_FULL_CIRCLE;
+		ShadowExportImage exported=ShadowExportImage.render(rendered,lighting,config.shadowColor(),
+			lightVector(lighting, original, exportPlayer, yawRadians).view(yawRadians),
+			pitch * Math.PI * 2 / BILLBOARD_FULL_CIRCLE, exportOrigin);
 		Rectangle exportBounds=new Rectangle(
 			imageBounds.x+(int)Math.floor(exported.bounds.x/qualityScale),
 			imageBounds.y+(int)Math.floor(exported.bounds.y/qualityScale),
@@ -1084,16 +1121,17 @@ class NpcBillboardOverlay extends Overlay
 				return;
 			}
 
-			int queuePosition = updateQueue.debugPosition(target.targetKey);
-			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), queuePosition);
+			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), shadowTypeFor(target));
 			if (result == null)
 			{
 				return;
 			}
 
 			isReadyToRedrawDebug(target);
-			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder, null,
-				BillboardNpcSurfaceOcclusion.firstOccludedRow(client, depthCalculator, request)));
+			PreparedBillboardDraw draw = new PreparedBillboardDraw(request, result, paintOrder, null,
+				BillboardNpcSurfaceOcclusion.firstOccludedRow(client, depthCalculator, request));
+			draw.shadowOnly = deferredActors.containsKey(target.renderable);
+			preparedDraws.add(draw);
 		}
 	}
 
@@ -1114,6 +1152,7 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
+		SpriteShadowType shadowType = shadowTypeFor(target);
 		FrameUpdatePlan tilePlan = frameUpdatePlans.get(target.targetKey);
 		if (tilePlan != null) tilePlan.expectParts((int) target.observedTileObject.parts.stream()
 			.filter(part -> part != null && part.renderable != null).map(part -> part.renderable).distinct().count());
@@ -1126,8 +1165,7 @@ class NpcBillboardOverlay extends Overlay
 				continue;
 			}
 
-			int queuePosition = updateQueue.debugPosition(target.targetKey);
-			BillboardRenderResult result = renderRenderableBillboard(request, frameUpdatePlans.get(target.targetKey), queuePosition);
+			BillboardRenderResult result = renderRenderableBillboard(request, tilePlan, shadowType);
 			if (result == null)
 			{
 				continue;
@@ -1166,7 +1204,8 @@ class NpcBillboardOverlay extends Overlay
 		return readyToRedraw;
 	}
 
-	private void drawRenderDebug(Graphics2D graphics, BillboardRenderResult result, BillboardRenderRequest request, int paintOrder)
+	private void drawRenderDebug(Graphics2D graphics, BillboardRenderResult result, BillboardRenderRequest request, int paintOrder,
+		BillboardRenderResult shadow)
 	{
 		CachedBillboard cached = request != null ? billboardCache.get(request.renderable) : null;
 		NpcSnapDebug.RenderDebug renderDebug = NpcSnapDebug.RenderDebug.forGeometry(
@@ -1176,11 +1215,10 @@ class NpcBillboardOverlay extends Overlay
 			cached != null ? Long.hashCode(cached.lastRedrawMillis()) ^ System.identityHashCode(request.renderable) : 0,
 			cached != null && cached.consumeDebugFrameInvalidated(),
 			cached != null ? cached.consumeDebugFrameInvalidatedColor() : null,
-			cached != null ? cached.stateDebugInfo() : null,
 			cached != null ? cached.debugRedrawReasons() : Collections.emptySet()
 		);
 		debug.drawBillboardDebugForeground(graphics, renderDebug);
-		debug.drawShadowBounds(graphics, result.shadow);
+		debug.drawShadowBounds(graphics, shadow);
 	}
 
 	private void markDebugFrameInvalidated(BillboardTarget target, Color color)
@@ -1234,47 +1272,6 @@ class NpcBillboardOverlay extends Overlay
 		return NpcSnapDebug.readyToRedrawColor(score, minScore, maxScore);
 	}
 
-	private NpcSnapDebug.StateDebugInfo buildStateDebugInfo(BillboardRenderRequest request, int queuePosition, CachedBillboard cached)
-	{
-		if (request == null)
-		{
-			return null;
-		}
-
-		int currentFrame = request.animationFrame;
-		int displayedFrame = cached.key.animationFrame;
-		int animationId = cached.key.animationId;
-		int stateHash = debugStateHash(request);
-		return NpcSnapDebug.StateDebugInfo.of(
-			stateHash,
-			jauToDegrees(request.relativePitch),
-			jauToDegrees(request.relativeYaw),
-			animationId,
-			displayedFrame,
-			currentFrame,
-			queuePosition
-		);
-	}
-
-	private int debugStateHash(BillboardRenderRequest request)
-	{
-		int hash = 1;
-		hash = (31 * hash) + request.animationId;
-		hash = (31 * hash) + request.animationFrame;
-		hash = (31 * hash) + request.poseAnimationId;
-		hash = (31 * hash) + request.poseAnimationFrame;
-		hash = (31 * hash) + request.relativeYaw;
-		hash = (31 * hash) + request.relativePitch;
-		hash = (31 * hash) + request.animatedTextureId;
-		hash = (31 * hash) + BillboardModelStateHash.hash(request.model);
-		return hash;
-	}
-
-	private static int jauToDegrees(int jau)
-	{
-		return Math.floorMod((int) Math.round((jau * 360.0d) / BILLBOARD_FULL_CIRCLE), 360);
-	}
-
 	private void compositePreparedDraws(Graphics2D graphics, List<PreparedBillboardDraw> preparedDraws)
 	{
 		try (Timer ignored = performanceMetrics.time("Composite prepared draws"))
@@ -1300,13 +1297,14 @@ class NpcBillboardOverlay extends Overlay
 			Color interact = showHighlights ? highlights.color(interactionState.interacted, true, interactionState.attacked,
 				interactionState.clickAge(client.getGameCycle())) : null;
 			frameBuffer.begin(viewportWidth, viewportHeight);
+			Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
+			prepareShadows(preparedDraws, viewportBounds);
 			// ABOVE_SCENE runs after preSceneDraw has supplied this frame's actual
 			// roof groups and floor range. Preparing targets in BeforeRender is too
 			// early to decide which scenery the renderer will hide.
 			// Gather from actual draw bounds so outer pixels receive scenery occlusion.
 			worldOcclusionCollector.clearInterest();
 			BillboardOcclusionQuality quality = BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality());
-			Rectangle viewportBounds = new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight);
 			Set<TileObject> billboardedObjects = IdentitySets.create();
 			List<BillboardWorldOcclusionCollector.TraceTarget> liveTraces = new ArrayList<>(preparedDraws.size());
 			for (PreparedBillboardDraw draw : preparedDraws)
@@ -1350,24 +1348,36 @@ class NpcBillboardOverlay extends Overlay
 			}
 			occlusionDebugSampler.collect(preparedDraws, config.debugLogBillboardOcclusion());
 			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionDebugSampler.samples());
+			boolean debugPixels = config.debugDrawBillboardOcclusionMask();
+			boolean proveOcclusion = !debugPixels && !config.debugLogBillboardOcclusion();
 			try (Timer timer = performanceMetrics.time("Composite billboards"))
 			{
 				for (int i = preparedDraws.size() - 1; i >= 0; i--)
 				{
+					PreparedBillboardDraw draw = preparedDraws.get(i);
+					boolean hidden = proveOcclusion && draw.highlightWidth <= 0
+						&& frameBuffer.isFullyOccluded(draw, viewportBounds);
+					if (hidden && draw.request.renderable instanceof Actor)
+					{
+						occludedActors.add(draw.request.renderable);
+					}
 					frameBuffer.blit(
-						preparedDraws.get(i),
+						draw,
 						viewportX,
 						viewportY,
 						viewportWidth,
 						viewportHeight,
-						config.debugDrawBillboardOcclusionMask());
+						debugPixels, hidden || draw.shadowOnly, proveOcclusion);
 				}
 			}
 
 			graphics.drawImage(frameBuffer.image(), viewportX, viewportY, null);
 			for (PreparedBillboardDraw draw : preparedDraws)
 			{
-				drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder);
+				if (!draw.shadowOnly)
+				{
+					drawRenderDebug(graphics, draw.result, draw.request, draw.paintOrder, draw.shadow);
+				}
 			}
 		}
 	}
@@ -1420,7 +1430,21 @@ class NpcBillboardOverlay extends Overlay
 		List<BillboardPaintOrder.Entry<BillboardTarget>> entries = new ArrayList<>(targets.size());
 		for (BillboardTarget target : targets)
 		{
+			GroundItemPile pile = groundPiles.get(target.renderable);
+			if (pile != null && target != pile.top())
+			{
+				continue;
+			}
 			Rectangle previewBounds = buildSortPreviewBounds(target);
+			if (pile != null)
+			{
+				for (BillboardTarget member : pile.members)
+				{
+					if (member == target) continue;
+					Rectangle bounds = buildSortPreviewBounds(member);
+					if (bounds != null) previewBounds = previewBounds == null ? bounds : previewBounds.union(bounds);
+				}
+			}
 			entries.add(new BillboardPaintOrder.Entry<>(
 				target,
 				previewBounds,
@@ -1433,11 +1457,24 @@ class NpcBillboardOverlay extends Overlay
 			));
 		}
 
-		return BillboardPaintOrder.sort(entries);
+		List<BillboardTarget> ordered = new ArrayList<>(targets.size());
+		for (BillboardTarget target : BillboardPaintOrder.sort(entries))
+		{
+			GroundItemPile pile = groundPiles.get(target.renderable);
+			if (pile == null) ordered.add(target);
+			else ordered.addAll(pile.members);
+		}
+		return ordered;
 	}
 
 	int sortBottomY(BillboardTarget target, Rectangle previewBounds)
 	{
+		if (target.groundItem != null)
+		{
+			GroundItemBillboard item = target.groundItem;
+			BillboardCanvasPoint anchor = depthCalculator.projectCanvasPoint(item.localPoint, item.plane, item.verticalOffset);
+			if (anchor != null) return (int) Math.round(anchor.y);
+		}
 		if(target.renderable instanceof Actor)
 		{
 			ActorGroundAnchor anchor=actorGroundAnchor((Actor)target.renderable);
@@ -1593,6 +1630,7 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		activeRenderableTargets.clear();
+		deferredActors.clear();
 		clearActiveSelections();
 		activeBillboardsGameCycle = gameCycle;
 		frameUpdatePlans.clear();
@@ -1603,6 +1641,8 @@ class NpcBillboardOverlay extends Overlay
 			return;
 		}
 
+		groundPiles.clear();
+		drawableGroundPiles.clear();
 		CollectedCandidates collected;
 		try (Timer ignored = performanceMetrics.time("Collect candidates"))
 		{
@@ -1619,31 +1659,102 @@ class NpcBillboardOverlay extends Overlay
 			.<BillboardTarget>comparingInt(priorities::get).reversed()
 			.thenComparingDouble(BillboardTarget::getDepth));
 		int limit = Math.max(1, config.billboardMaxEntities());
-		if (candidates.size() > limit)
+		// Current scene depth is available only after RuneLite has drawn the scene.
+		// Previous proof changes slot allocation and leaves the native model eligible.
+		boolean useOcclusionEvidence = candidates.size() > limit && !occludedActors.isEmpty()
+			&& occlusionEvidenceFrame == frameSequence - 1 && occlusionEvidenceScene == worldView.getScene() && getViewportBounds().equals(occlusionEvidenceViewport)
+			&& occlusionEvidenceQuality == BillboardOcclusionQuality.normalize(config.billboardOcclusionQuality())
+			&& occlusionEvidenceQuality != BillboardOcclusionQuality.OFF
+			&& !config.debugDrawBillboardOcclusionMask() && !config.debugLogBillboardOcclusion();
+		List<BillboardTarget> skippedActors = new ArrayList<>();
+		Set<Actor> stackedActors = IdentitySets.create();
+		if (useOcclusionEvidence)
 		{
-			candidates = new ArrayList<>(candidates.subList(0, limit));
+			for (List<Actor> stack : collected.actorsByTile.values())
+			{
+				if (stack.size() > 1) stackedActors.addAll(stack);
+			}
+			interactionState.update(client, groundItemTracker.entries());
 		}
-
+		Set<GroundItemPile> consideredPiles = IdentitySets.create();
 		for (BillboardTarget target : candidates)
 		{
-			if (target.renderable != null)
+			if (limit == 0)
 			{
-				activeRenderableTargets.put(target.renderable, target);
-				if (billboardCache.contains(target.renderable))
-				{
-					visibility.activeBillboards.add(target.renderable);
-				}
+				break;
 			}
-			else if (target.tileObject != null)
+			GroundItemPile pile = groundPiles.get(target.renderable);
+			if (pile != null)
 			{
-				visibility.activeTileObjects.add(target.tileObject);
-				addActiveTileObjectBillboardParts(target);
+				if (consideredPiles.add(pile) && pile.members.size() <= limit)
+				{
+					selectGroundPile(pile);
+					limit -= pile.members.size();
+				}
+				continue;
+			}
+
+			if (useOcclusionEvidence && occludedActors.contains(target.renderable)
+				&& target.renderable != client.getLocalPlayer() && !stackedActors.contains(target.renderable)
+				&& target.renderable != interactionState.hovered && target.renderable != interactionState.interacted
+				&& billboardCache.contains(target.renderable) && skippedActors.size() < config.billboardMaxEntities())
+			{
+				skippedActors.add(target);
+				continue;
+			}
+			selectTarget(target);
+			limit--;
+		}
+		for (BillboardTarget target : skippedActors)
+		{
+			if (limit > 0)
+			{
+				selectTarget(target);
+				limit--;
+			}
+			else
+			{
+				deferredActors.put(target.renderable, target);
 			}
 		}
 		occlusionWorldView = worldView;
 		markSuppressedStackedActors(collected);
 
 		updateActiveSnapshots();
+	}
+
+	private void selectTarget(BillboardTarget target)
+	{
+		if (target.renderable != null)
+		{
+			activeRenderableTargets.put(target.renderable, target);
+			if (billboardCache.contains(target.renderable))
+			{
+				visibility.activeBillboards.add(target.renderable);
+			}
+		}
+		else if (target.tileObject != null)
+		{
+			visibility.activeTileObjects.add(target.tileObject);
+			addActiveTileObjectBillboardParts(target);
+		}
+	}
+
+	private void selectGroundPile(GroundItemPile pile)
+	{
+		boolean ready = pile.members.stream().allMatch(target -> billboardCache.contains(target.renderable));
+		for (BillboardTarget target : pile.members)
+		{
+			activeRenderableTargets.put(target.renderable, target);
+			if (ready)
+			{
+				visibility.activeBillboards.add(target.renderable);
+			}
+		}
+		if (ready)
+		{
+			drawableGroundPiles.add(pile);
+		}
 	}
 
 	private void addActiveTileObjectBillboardParts(BillboardTarget target)
@@ -2101,21 +2212,7 @@ class NpcBillboardOverlay extends Overlay
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.GROUND_ITEM, config))
 		{
-			for (Map.Entry<TileItem, GroundItemBillboard> entry : groundItemTracker.entries())
-			{
-				TileItem item = entry.getKey();
-				GroundItemBillboard groundItem = entry.getValue();
-				if (item == null
-					|| groundItem == null
-					|| !wasSceneRenderableDrawnLastFrame(item)
-					|| !targetEligibility.groundItem(localPlayerLocation, item, groundItem, viewport))
-				{
-					continue;
-				}
-
-				candidates.add(BillboardTarget.forGroundItem(item, groundItem, depthCalculator.depth(item, groundItem)));
-				classificationDebug.logDecision(item, ObjectClassifier.classifyDecision(item, client));
-			}
+			collectGroundPiles(candidates, localPlayerLocation, viewport);
 		}
 
 		if (ObjectClassifier.isEnabled(ClassifiedObjectType.OBJECT, config) || ObjectClassifier.isEnabled(ClassifiedObjectType.EFFECT, config))
@@ -2168,6 +2265,71 @@ class NpcBillboardOverlay extends Overlay
 		}
 
 		return new CollectedCandidates(candidates, topActorsByTile, actorsByTile);
+	}
+
+	private void collectGroundPiles(List<BillboardTarget> candidates, LocalPoint localPlayerLocation, Rectangle viewport)
+	{
+		Set<Tile> visited = IdentitySets.create();
+		for (TileItem trackedItem : groundItemTracker.items())
+		{
+			Tile tile = groundItemTracker.tile(trackedItem);
+			if (tile == null || !visited.add(tile))
+			{
+				continue;
+			}
+			ItemLayer layer = tile.getItemLayer();
+			if (layer == null)
+			{
+				continue;
+			}
+			GroundItemBillboard placement = new GroundItemBillboard(tile.getPlane(), tile.getLocalLocation(), layer.getHeight());
+			List<BillboardTarget> members = new ArrayList<>(3);
+			for (Renderable part : new Renderable[]{layer.getBottom(), layer.getMiddle(), layer.getTop()})
+			{
+				if (part == null)
+				{
+					continue;
+				}
+				if (!(part instanceof TileItem) || groundItemTracker.tile((TileItem) part) != tile)
+				{
+					members.clear();
+					break;
+				}
+				TileItem item = (TileItem) part;
+				if (!wasSceneRenderableDrawnLastFrame(item)
+					|| !targetEligibility.groundItem(localPlayerLocation, item, placement, viewport))
+				{
+					members.clear();
+					break;
+				}
+				double depth = depthCalculator.cameraDistance(placement.localPoint, placement.plane, placement.verticalOffset);
+				members.add(BillboardTarget.forGroundItem(item, placement, depth));
+			}
+			if (!members.isEmpty())
+			{
+				GroundItemPile pile = new GroundItemPile(members);
+				for (BillboardTarget member : members)
+				{
+					groundPiles.put(member.renderable, pile);
+				}
+				candidates.addAll(members);
+			}
+		}
+	}
+
+	private static final class GroundItemPile
+	{
+		final List<BillboardTarget> members;
+
+		GroundItemPile(List<BillboardTarget> members)
+		{
+			this.members = members;
+		}
+
+		BillboardTarget top()
+		{
+			return members.get(members.size() - 1);
+		}
 	}
 
 	private <T extends Actor> List<T> allActors(WorldView topLevel, Function<WorldView, Iterable<? extends T>> actorsInView)
@@ -2668,11 +2830,18 @@ class NpcBillboardOverlay extends Overlay
 			animated, identity, appearance, null);
 	}
 
+	private SpriteShadowType shadowTypeFor(BillboardTarget target)
+	{
+		return target.classifiedType == ClassifiedObjectType.EFFECT || target.classifiedType == ClassifiedObjectType.PROJECTILE
+			? SpriteShadowType.OFF : config.shadowType();
+	}
+
 	private SpriteCapture renderBillboardImage(
 		List<FaceDraw> faces,
 		Rectangle bounds,
 		int outlinePadding,
-		double qualityScaleOverride)
+		double qualityScaleOverride,
+		SpriteShadowType shadowType)
 	{
 		Rectangle imageBounds = BillboardGeometryUtils.expandedBounds(bounds, outlinePadding);
 		double qualityScale = renderQualityScale(qualityScaleOverride);
@@ -2714,15 +2883,14 @@ class NpcBillboardOverlay extends Overlay
 			);
 		}
 
-		SpriteShadowMask projectedShadow = SpriteShadowRenderer.capture(image, config.shadowType(), shadowScratch,
-			outlineScratch, BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
+		SpriteShadowMask projectedShadow = SpriteShadowRenderer.capture(image, shadowType, shadowScratch);
 		if (hasAnyEdgeEffect())
 		{
 			BillboardOutlineRenderer.applyOutline(image, outlineScratch,
 				config.enableBillboardHighlightOutline(), config.enableBillboardShadowOutline(),
-				config.enableBillboardSpriteOutline(), false, config.enableBillboardHighlightInline(),
+				config.enableBillboardSpriteOutline(), config.enableBillboardHighlightInline(),
 				config.enableBillboardShadowInline(), config.enableBillboardSpriteInline(),
-				config.billboardSpriteOutlineColor(), BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
+				config.billboardSpriteOutlineColor());
 		}
 
 		return new SpriteCapture(image,projectedShadow);
@@ -2881,7 +3049,8 @@ class NpcBillboardOverlay extends Overlay
 		return new BuiltFaces(faces, textureStateHash);
 	}
 
-	private BillboardRenderResult renderRenderableBillboard(BillboardRenderRequest request, FrameUpdatePlan updatePlan, int queuePosition)
+	private BillboardRenderResult renderRenderableBillboard(BillboardRenderRequest request, FrameUpdatePlan updatePlan,
+		SpriteShadowType shadowType)
 	{
 		if (updatePlan != null && updatePlan.isCompleted()) updatePlan = null;
 		Renderable renderable = request.renderable;
@@ -2932,7 +3101,7 @@ class NpcBillboardOverlay extends Overlay
 					previewGeometry = buildDrawGeometry(request, renderable, imageBounds, sourceBounds);
 					if (previewGeometry == null)
 					{
-						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis, queuePosition);
+						return cached == null ? null : drawCachedBillboard(request, renderable, cached, nowMillis);
 					}
 
 					BillboardCacheKey cacheKey;
@@ -2961,7 +3130,8 @@ class NpcBillboardOverlay extends Overlay
 							faces,
 							sourceBounds,
 							outlinePadding,
-							updatePlan.qualityScale
+							updatePlan.qualityScale,
+							shadowType
 						);
 						if (rendered != null)
 						{
@@ -2993,84 +3163,117 @@ class NpcBillboardOverlay extends Overlay
 			updatePlan.partSucceeded(renderable);
 		}
 
-		return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis, queuePosition);
+		return drawCachedBillboard(request, renderable, cached, spriteRedrawn ? -1L : nowMillis);
 	}
 
 	private BillboardRenderResult drawCachedBillboard(
 		BillboardRenderRequest request,
 		Renderable renderable,
 		CachedBillboard cached,
-		long touchMillis,
-		int queuePosition)
+		long touchMillis)
 	{
 		if (touchMillis >= 0L)
 		{
 			cached.touch(touchMillis);
 		}
 
-		cached.stateDebugInfo(buildStateDebugInfo(request, queuePosition, cached));
 		if (renderable instanceof Actor)
 			debug.recordActorFrames((Actor) renderable, request.animationId, request.animationFrame,
 				cached.key.animationFrame, request.poseAnimationFrame, cached.key.poseAnimationFrame);
 		BillboardDrawGeometry geometry = buildDrawGeometry(request, renderable, cached.bounds, cached.contentBounds);
 		if (geometry == null) return null;
-		ActorGroundAnchor actorGround=renderable instanceof Actor ? actorGroundAnchor((Actor)renderable) : null;
-		BillboardRenderResult shadow=null;
-		if(cached.shadow!=null && config.shadowColor().getAlpha()!=0)
+		return new BillboardRenderResult(geometry, cached.image, cached.bounds);
+	}
+
+	private void prepareShadows(List<PreparedBillboardDraw> draws, Rectangle viewport)
+	{
+		int remaining = Math.max(0, Math.min(256, config.maxShadows()));
+		Color color = config.shadowColor();
+		if (remaining == 0 || color.getAlpha() == 0 || config.shadowType() == SpriteShadowType.OFF)
 		{
-			BillboardDrawGeometry shadowGeometry;
-			if(cached.shadow.type==SpriteShadowType.LEGACY || config.shadowLighting()==ShadowLighting.DIRECTIONAL_DOWN)
-				{
-					com.kierenboal.npcsnap.rendering.BillboardCanvasPoint ground=depthCalculator.projectCanvasPoint(
-						request.localPoint,request.plane,request.verticalOffset);
-					shadowGeometry=actorGround!=null ? ShadowProjection.downward(cached.shadow,geometry,
-						config.shadowLighting(),actorGround.canvas) : ground==null ? null : ShadowProjection.downward(cached.shadow,geometry,
-						config.shadowLighting(),ground.depth);
-				}
-			else
-			{
-				ShadowLightVector light=lightVector(request,lightingPlayerPoint(),cameraYawRadians());
-				shadow=groundShadowLayer(cached.shadow.directionalCaster(),geometry,request,cached,light,actorGround);
-				return new BillboardRenderResult(geometry,cached.image,cached.bounds,shadow);
-			}
-			if(shadowGeometry!=null)
-				shadow=new BillboardRenderResult(shadowGeometry,cached.shadow.tinted(config.shadowColor()),cached.bounds);
+			return;
 		}
-		return new BillboardRenderResult(geometry,cached.image,cached.bounds,shadow);
+		ShadowLighting lighting = config.shadowLighting();
+		LocalPoint lantern = lanternPlayerLocation(lighting);
+		double yaw = cameraYawRadians();
+		for (int i = draws.size() - 1; i >= 0 && remaining > 0; i--)
+		{
+			PreparedBillboardDraw draw = draws.get(i);
+			Renderable renderable = draw.request.renderable;
+			GroundItemPile pile = groundPiles.get(renderable);
+			if (pile != null && pile.top().renderable != renderable)
+			{
+				continue;
+			}
+			CachedBillboard cached = billboardCache.get(renderable);
+			if (cached == null || cached.shadow == null)
+			{
+				continue;
+			}
+			draw.shadow = projectShadow(draw, cached, lighting, lantern, yaw, color, viewport);
+			if (draw.shadow != null)
+			{
+				remaining--;
+			}
+		}
+	}
+
+	private BillboardRenderResult projectShadow(PreparedBillboardDraw draw, CachedBillboard cached,
+		ShadowLighting lighting, LocalPoint lantern, double yaw, Color color, Rectangle viewport)
+	{
+		BillboardRenderRequest request = draw.request;
+		ActorGroundAnchor actorGround = request.renderable instanceof Actor ? actorGroundAnchor((Actor) request.renderable) : null;
+		if (lighting != ShadowLighting.DIRECTIONAL_DOWN)
+		{
+			return groundShadowLayer(cached.shadow.directionalCaster(), draw.geometry, request, cached,
+				lightVector(lighting, request, lantern, yaw), actorGround, color, viewport);
+		}
+		BillboardCanvasPoint ground = actorGround != null ? actorGround.canvas
+			: depthCalculator.projectCanvasPoint(request.localPoint, request.plane, request.verticalOffset);
+		if (ground == null)
+		{
+			return null;
+		}
+		BillboardDrawGeometry geometry = actorGround != null
+			? ShadowProjection.downward(cached.shadow, draw.geometry, lighting, ground)
+			: ShadowProjection.downward(cached.shadow, draw.geometry, lighting, ground.depth);
+		return geometry != null && viewport.intersects(geometry.bounds)
+			? new BillboardRenderResult(geometry, cached.shadow.tinted(color), cached.bounds) : null;
 	}
 
 	private BillboardRenderResult groundShadowLayer(SpriteShadowMask mask, BillboardDrawGeometry geometry,
-		BillboardRenderRequest request, CachedBillboard cached, ShadowLightVector light, ActorGroundAnchor actorGround)
+		BillboardRenderRequest request, CachedBillboard cached, ShadowLightVector light, ActorGroundAnchor actorGround,
+		Color color, Rectangle viewport)
 	{
 		if(mask==null) return null;
 		LocalPoint location=actorGround==null ? request.localPoint : actorGround.localPoint;
+		if (location == null) return null;
 		double groundZ=actorGround==null ? BillboardDepthCalculator.worldHeight(
 			Perspective.getTileHeight(client,request.localPoint,request.plane),request.verticalOffset) : actorGround.height;
 		double unit=cached.bounds.width/(double)cached.image.getWidth();
 		BillboardDrawGeometry projected=ShadowProjection.ground(mask,geometry,depthCalculator,
 			location.getX(),location.getY(),groundZ,unit,
 			ActorWorldPlane.viewingBearing(client,location),light,actorGround==null ? null : actorGround.canvas);
-		return projected==null ? null : new BillboardRenderResult(projected,mask.tinted(config.shadowColor()),cached.bounds);
+		return projected != null && viewport.intersects(projected.bounds)
+			? new BillboardRenderResult(projected, mask.tinted(color), cached.bounds) : null;
 	}
 
-	private WorldPoint lightingPlayerPoint()
+	private LocalPoint lanternPlayerLocation(ShadowLighting lighting)
 	{
-		Player player=client.getLocalPlayer();
-		if(player==null) return null;
-		return client.getTopLevelWorldView()!=null && player.getLocalLocation()!=null
-			? WorldPoint.fromLocalInstance(client,player.getLocalLocation()) : player.getWorldLocation();
+		return lighting == ShadowLighting.PLAYER_LANTERN
+			? WorldViewLocationResolver.toMainWorld(client, client.getLocalPlayer()) : null;
 	}
 	private double cameraYawRadians()
 	{
 		return client.isGpu() ? client.getCameraFpYaw() : client.getCameraYaw()*Math.PI*2/Perspective.SINE14.length;
 	}
-	private ShadowLightVector lightVector(BillboardRenderRequest request, WorldPoint player, double yaw)
+	private ShadowLightVector lightVector(ShadowLighting lighting, BillboardRenderRequest request, LocalPoint player, double yaw)
 	{
-		WorldPoint target=request.localPoint==null || client.getTopLevelWorldView()==null
-			? null : WorldPoint.fromLocalInstance(client,request.localPoint);
-		double x=target==null ? 3200 : target.getX(), y=target==null ? 3200 : target.getY();
-		return ShadowLightVector.resolve(config.shadowLighting(),x,y,
-			player==null ? Double.NaN : player.getX(),player==null ? Double.NaN : player.getY(),yaw);
+		if (lighting == ShadowLighting.PLAYER_LANTERN)
+		{
+			return ShadowLightVector.lantern(request.localPoint, player);
+		}
+		return ShadowLightVector.resolve(lighting, 0, 0, Double.NaN, Double.NaN, yaw);
 	}
 
 	private BillboardCacheKey buildCacheKey(

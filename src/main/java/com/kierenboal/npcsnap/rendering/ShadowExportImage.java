@@ -1,7 +1,6 @@
 package com.kierenboal.npcsnap.rendering;
 
 import com.kierenboal.npcsnap.ShadowLighting;
-import com.kierenboal.npcsnap.SpriteShadowType;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
@@ -34,7 +33,7 @@ public final class ShadowExportImage
 		BillboardDrawGeometry geometry = null;
 		if (mask != null && color.getAlpha() != 0)
 		{
-			if (mask.type != SpriteShadowType.LEGACY && lighting != ShadowLighting.DIRECTIONAL_DOWN)
+			if (lighting != ShadowLighting.DIRECTIONAL_DOWN)
 			{
 				mask = mask.directionalCaster();
 				geometry = obliqueGeometry(mask, light, pitch, groundOrigin);
@@ -84,6 +83,10 @@ public final class ShadowExportImage
 			double x = mask.offsetX + (i == 1 || i == 2 ? mask.image.getWidth() : 0)-mask.centerX;
 			double y = mask.offsetY + (i >= 2 ? mask.image.getHeight() : 0) - (mask.feet + 1);
 			corners[i] = new BillboardCanvasPoint(anchorX+x*basis[0]+y*basis[2],anchorY-sin*(x*basis[1]+y*basis[3]),100,0,0);
+		}
+		if (light.usesGroundAlignedWidth())
+		{
+			return ShadowProjection.quad(corners, mask);
 		}
 		double minimumWidth=mask.fullResolution || Math.hypot(light.x,light.y)>1e-6
 			? ShadowProjection.minimumCastWidth(mask,mask.image.getWidth()) : 0;

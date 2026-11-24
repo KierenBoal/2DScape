@@ -22,7 +22,7 @@ public class FullSilhouetteShadowTest
 	}
 	private SpriteShadowMask capture(BufferedImage source,SpriteShadowType type)
 	{
-		return SpriteShadowRenderer.capture(source,type,new SpriteShadowRenderer.Scratch(),new BillboardOutlineRenderer.Scratch(),0.1);
+		return SpriteShadowRenderer.capture(source,type,new SpriteShadowRenderer.Scratch());
 	}
 	private int alpha(SpriteShadowMask mask,int x,int y)
 	{
@@ -86,20 +86,15 @@ public class FullSilhouetteShadowTest
 				double[] basis=ShadowProjection.groundBasis(mask,yaw,ShadowLightVector.resolve(light,3210,3200,3200,3200,yaw));
 				assertTrue(Double.isFinite(basis[2])); assertTrue(Double.isFinite(basis[3]));
 				assertEquals(1,Math.hypot(basis[0],basis[1]),1e-12);
-				assertEquals(Math.cos(yaw),basis[0],1e-12);
-				assertEquals(Math.sin(yaw),basis[1],1e-12);
 				assertTrue(Math.hypot(basis[2],basis[3])<=0.750001);
 			}
 		}
 	}
-	@Test public void blobAndLegacyRetainTheirOriginalCastPaths()
+	@Test public void blobKeepsItsCompactCastMask()
 	{
-		for(SpriteShadowType type:new SpriteShadowType[]{SpriteShadowType.BLOB,SpriteShadowType.LEGACY})
-		{
-			SpriteShadowMask mask=capture(armedSprite(),type);
-			assertFalse(mask.fullResolution);
-			assertSame(mask,mask.directionalCaster());
-		}
+		SpriteShadowMask mask = capture(armedSprite(), SpriteShadowType.BLOB);
+		assertFalse(mask.fullResolution);
+		assertSame(mask, mask.directionalCaster());
 	}
 
 	@Test

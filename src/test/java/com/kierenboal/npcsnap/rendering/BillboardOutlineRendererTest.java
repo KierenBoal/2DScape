@@ -10,12 +10,11 @@ import static org.junit.Assert.assertTrue;
 public class BillboardOutlineRendererTest
 {
 	private static void applyOutline(BufferedImage image, boolean highlightOutline, boolean shadowOutline,
-		boolean solidOutline, boolean spriteShadow, boolean highlightInline, boolean shadowInline,
+		boolean solidOutline, boolean highlightInline, boolean shadowInline,
 		boolean solidInline, Color color)
 	{
 		BillboardOutlineRenderer.applyOutline(image, new BillboardOutlineRenderer.Scratch(), highlightOutline,
-			shadowOutline, solidOutline, spriteShadow, highlightInline, shadowInline, solidInline, color,
-			BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
+			shadowOutline, solidOutline, highlightInline, shadowInline, solidInline, color);
 	}
 
 	@Test
@@ -24,7 +23,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		applyOutline(image, false, false, true, false, false, false, false, new Color(0xDDDDDD));
+		applyOutline(image, false, false, true, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 1));
 		assertEquals(0xFFDDDDDD, image.getRGB(1, 2));
@@ -53,7 +52,7 @@ public class BillboardOutlineRendererTest
 			}
 		}
 
-		applyOutline(image, false, false, true, false, false, false, false, new Color(0xDDDDDD));
+		applyOutline(image, false, false, true, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0x00000000, image.getRGB(3, 3));
 		assertEquals(0xFFDDDDDD, image.getRGB(0, 3));
@@ -65,7 +64,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFF0000);
 
-		applyOutline(image, false, true, false, false, false, false, false, new Color(0xDDDDDD));
+		applyOutline(image, false, true, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFAB0000, image.getRGB(2, 1));
 		assertEquals(0xFFFF0000, image.getRGB(2, 2));
@@ -77,7 +76,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		applyOutline(image, false, false, false, false, false, false, true, new Color(0xDDDDDD));
+		applyOutline(image, false, false, false, false, false, true, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 2));
 		assertEquals(0x00000000, image.getRGB(2, 1));
@@ -90,7 +89,7 @@ public class BillboardOutlineRendererTest
 		image.setRGB(2, 2, 0xFFFF0000);
 		image.setRGB(2, 3, 0xFF00FF00);
 
-		applyOutline(image, false, false, false, false, false, true, false, new Color(0xDDDDDD));
+		applyOutline(image, false, false, false, false, true, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFF00AB00, image.getRGB(2, 2));
 		assertEquals(0xFFAB0000, image.getRGB(2, 3));
@@ -102,7 +101,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		applyOutline(image, false, false, true, false, false, false, true, new Color(0xDDDDDD));
+		applyOutline(image, false, false, true, false, false, true, new Color(0xDDDDDD));
 
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 2));
 		assertEquals(0xFFDDDDDD, image.getRGB(2, 1));
@@ -114,7 +113,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFF804000);
 
-		applyOutline(image, true, false, false, false, false, false, false, new Color(0xDDDDDD));
+		applyOutline(image, true, false, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFFAA5500, image.getRGB(2, 1));
 		assertEquals(0xFF804000, image.getRGB(2, 2));
@@ -127,56 +126,10 @@ public class BillboardOutlineRendererTest
 		image.setRGB(2, 2, 0xFFFF0000);
 		image.setRGB(2, 3, 0xFF00FF00);
 
-		applyOutline(image, false, false, false, false, true, false, false, new Color(0xDDDDDD));
+		applyOutline(image, false, false, false, true, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0xFF00FF00, image.getRGB(2, 2));
 		assertEquals(0xFFFF0000, image.getRGB(2, 3));
-	}
-
-	@Test
-	public void applyOutlineDrawsSpriteShadowOnlyInTransparentPixels()
-	{
-		BufferedImage image = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
-		image.setRGB(10, 19, 0xFFFFFFFF);
-
-		applyOutline(image, false, false, false, true, false, false, false, new Color(0xDDDDDD));
-
-		assertEquals(0xFFFFFFFF, image.getRGB(10, 19));
-		assertEquals(0x35000000, image.getRGB(9, 19));
-		assertEquals(0x00000000, image.getRGB(10, 18));
-	}
-
-	@Test
-	public void applyOutlineKeepsSolidExteriorOutlineInFrontOfSpriteShadow()
-	{
-		BufferedImage image = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
-		image.setRGB(10, 19, 0xFFFFFFFF);
-
-		applyOutline(image, false, false, true, true, false, false, false, new Color(0xFFFFFF00));
-
-		assertEquals(0xFFFFFF00, image.getRGB(10, 18));
-		assertEquals(0x1B000000, image.getRGB(8, 19));
-	}
-
-	@Test
-	public void applyOutlineUsesCustomSpriteShadowHeightRatio()
-	{
-		BufferedImage defaultShadow = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
-		BufferedImage groundItemShadow = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
-		defaultShadow.setRGB(10, 14, 0xFFFFFFFF);
-		groundItemShadow.setRGB(10, 14, 0xFFFFFFFF);
-
-		BillboardOutlineRenderer.applyOutline(
-			defaultShadow, new BillboardOutlineRenderer.Scratch(),
-			false, false, false, true, false, false, false, new Color(0xDDDDDD),
-			BillboardOutlineRenderer.DEFAULT_SPRITE_SHADOW_HEIGHT_RATIO);
-		BillboardOutlineRenderer.applyOutline(
-			groundItemShadow, new BillboardOutlineRenderer.Scratch(),
-			false, false, false, true, false, false, false, new Color(0xDDDDDD),
-			0.33d);
-
-		assertEquals(0x00000000, defaultShadow.getRGB(9, 14));
-		assertTrue((groundItemShadow.getRGB(9, 14) >>> 24) > 0);
 	}
 
 	@Test
@@ -185,7 +138,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFFFFFFFF);
 
-		applyOutline(image, false, false, true, false, false, false, false, new Color(0x90FF0000, true));
+		applyOutline(image, false, false, true, false, false, false, new Color(0x90FF0000, true));
 
 		assertEquals(0x90FF0000, image.getRGB(2, 1));
 	}
@@ -196,7 +149,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0x80804000);
 
-		applyOutline(image, true, false, false, false, false, false, false, new Color(0xDDDDDD));
+		applyOutline(image, true, false, false, false, false, false, new Color(0xDDDDDD));
 
 		assertEquals(0x80AA5500, image.getRGB(2, 1));
 	}
@@ -207,7 +160,7 @@ public class BillboardOutlineRendererTest
 		BufferedImage image = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
 		image.setRGB(2, 2, 0xFF804000);
 
-		applyOutline(image, true, true, true, false, false, false, false, new Color(0x9000FF00, true));
+		applyOutline(image, true, true, true, false, false, false, new Color(0x9000FF00, true));
 
 		assertEquals(0xFFAA5500, image.getRGB(2, 1));
 		assertEquals(0x00000000, image.getRGB(1, 1));
@@ -220,7 +173,7 @@ public class BillboardOutlineRendererTest
 		image.setRGB(2, 2, 0xFF804000);
 		Color inline = new Color(0x9000FF00, true);
 
-		applyOutline(image, false, false, false, false, true, true, true, inline);
+		applyOutline(image, false, false, false, true, true, true, inline);
 
 		assertEquals(inline.getRGB(), image.getRGB(2, 2));
 	}
