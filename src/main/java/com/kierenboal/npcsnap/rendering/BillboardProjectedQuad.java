@@ -97,6 +97,11 @@ public final class BillboardProjectedQuad
 			&& Double.isFinite(result.depth);
 	}
 
+	public double nearestDepth()
+	{
+		return depthAt(forward[6] < 0 ? 1 : 0, forward[7] < 0 ? 1 : 0);
+	}
+
 	public double depthAt(double u, double v)
 	{
 		return forward[6] * u + forward[7] * v + forward[8];

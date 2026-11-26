@@ -209,6 +209,56 @@ public class NpcBillboardCadenceTest
 	}
 
 	@Test
+	public void shadowCasterSurvivesShuffledCrowdAndReleasesSlotOnDespawn()
+	{
+		Fixture f = new Fixture(BillboardTargetType.NPC, 50, false);
+		f.improved = true;
+		f.pitch.set(2048);
+		f.shadowType = SpriteShadowType.FLAT;
+		f.maxShadows = 1;
+		f.maxSprites = 2;
+		NPC first = (NPC) f.renderable;
+		for (int i = 0; i < 4; i++)
+		{
+			f.addCrowdActor(first.getLocalLocation());
+		}
+		f.frame(0);
+		NPC caster = f.crowd.stream().filter(f.overlay::castsShadow).findFirst().get();
+		for (int i = 1; i < 12; i++)
+		{
+			Collections.rotate(f.crowd, 1);
+			f.frame(i);
+			assertTrue(f.overlay.castsShadow(caster));
+			assertEquals(1, f.crowd.stream().filter(f.overlay::castsShadow).count());
+		}
+		f.crowd.remove(caster);
+		f.frame(12);
+		assertFalse(f.overlay.castsShadow(caster));
+		assertEquals(1, f.crowd.stream().filter(f.overlay::castsShadow).count());
+	}
+
+	@Test
+	public void nearerCasterWinsAfterCameraMoveAndOffscreenCastersReleaseTheirSlots()
+	{
+		Fixture f = new Fixture(BillboardTargetType.NPC, 50, false);
+		f.improved = true;
+		f.pitch.set(2048);
+		f.shadowType = SpriteShadowType.FLAT;
+		f.maxShadows = 1;
+		NPC other = f.addCrowdActor(new LocalPoint(640, 1024));
+		f.frame(0);
+		assertTrue(f.overlay.castsShadow(f.renderable));
+		f.cameraX.set(640);
+		f.frame(1);
+		assertTrue(f.overlay.castsShadow(other));
+		assertFalse(f.overlay.castsShadow(f.renderable));
+		f.cameraX.set(4000);
+		f.frame(2);
+		assertFalse(f.overlay.castsShadow(other));
+		assertFalse(f.overlay.castsShadow(f.renderable));
+	}
+
+	@Test
 	public void shadowBudgetCanBeDisabledWithoutDroppingTheSprite()
 	{
 		Fixture f = new Fixture(BillboardTargetType.NPC, 1, true);
@@ -279,6 +329,7 @@ public class NpcBillboardCadenceTest
 
 	private static final class Fixture
 	{
+		final AtomicInteger cameraX = new AtomicInteger(512);
 		final AtomicInteger cycle = new AtomicInteger();
 		final AtomicInteger identity = new AtomicInteger(7);
 		final AtomicInteger size = new AtomicInteger(1);
@@ -292,6 +343,7 @@ public class NpcBillboardCadenceTest
 		boolean improved;
 		int maxShadows = 32;
 		int maxSprites = 128;
+		final java.util.List<NPC> crowd = new java.util.ArrayList<>();
 		Tile groundTile;
 		TileItem groundSecond;
 		SpriteShadowType shadowType = SpriteShadowType.OFF;
@@ -321,7 +373,7 @@ public class NpcBillboardCadenceTest
 				method("contains", true), method("getSizeX", 16), method("getSizeY", 16),
 				method("getTileSettings", new byte[4][16][16]), method("getTileHeights", new int[4][17][17]),
 				methodSupplier("npcs", () -> proxy(IndexedObjectSet.class, methodSupplier("iterator", () ->
-					renderable instanceof NPC ? Collections.singleton((NPC) renderable).iterator() : Collections.emptyIterator()))),
+					crowd.iterator()))),
 				methodSupplier("players", () -> proxy(IndexedObjectSet.class, methodSupplier("iterator", () ->
 					type == BillboardTargetType.PLAYER ? Collections.singleton((Player) renderable).iterator() : Collections.emptyIterator()))),
 				methodSupplier("getGraphicsObjects", () -> proxy(Deque.class, methodSupplier("iterator", () ->
@@ -359,6 +411,7 @@ public class NpcBillboardCadenceTest
 				default: selected = (Renderable) actor;
 			}
 			renderable = selected;
+			if (selected instanceof NPC) crowd.add((NPC) selected);
 			object = type == BillboardTargetType.TILE_OBJECT ? proxy(GameObject.class, method("getWorldView", view),
 				method("getId", 9), method("getLocalLocation", location), method("getSceneMinLocation", new Point(4, 8)),
 				method("getSceneMaxLocation", new Point(4, 8)), method("getRenderable", renderable)) : null;
@@ -367,7 +420,7 @@ public class NpcBillboardCadenceTest
 				method("getObjectDefinition", proxy(net.runelite.api.ObjectComposition.class,
 					method("getName", "Crate"), method("getOps", proxy(net.runelite.api.EntityOps.class)), method("getActions", new String[] {"Search"}))),
 				method("getLocalPlayer", local), method("getGameState", GameState.LOGGED_IN), method("isClientThread", true),
-				method("getCameraX", 512), methodSupplier("getCameraZ", () -> improved ? -1024 : 0), method("getScale", 512), method("get3dZoom", 512),
+				methodSupplier("getCameraX", cameraX::get), methodSupplier("getCameraZ", () -> improved ? -1024 : 0), method("getScale", 512), method("get3dZoom", 512),
 				method("getViewportWidth", 320), method("getViewportHeight", 240), methodSupplier("getGameCycle", cycle::get),
 				methodSupplier("getCameraPitch", pitch::get), methodSupplier("getCameraYaw", yaw::get), method("getProjectiles", proxy(Deque.class,
 					methodSupplier("iterator", () -> type == BillboardTargetType.PROJECTILE
@@ -407,16 +460,29 @@ public class NpcBillboardCadenceTest
 			}
 		}
 
+		NPC addCrowdActor(LocalPoint point)
+		{
+			NPC first = (NPC) renderable;
+			NPC npc = proxy(NPC.class, method("getWorldView", view), method("getLocalLocation", point),
+				method("getFootprintSize", 1), method("getModel", first.getModel()), method("getModelHeight", 100),
+				method("getSpotAnims", first.getSpotAnims()), method("getCanvasTilePoly", first.getCanvasTilePoly()),
+				method("getId", first.getId()), methodSupplier("getAnimationFrame", cycle::get));
+			crowd.add(npc);
+			return npc;
+		}
+
 		int frame(int gameCycle)
 		{
 			cycle.set(gameCycle);
 			overlay.noteSceneRenderable(renderable);
+			for (NPC npc : crowd) overlay.noteSceneRenderable(npc);
 			if (groundSecond != null) overlay.noteSceneRenderable(groundSecond);
 			if (renderable instanceof Actor)
 				for (ActorSpotAnim spot : ((Actor) renderable).getSpotAnims()) overlay.noteSceneRenderable(spot);
 			if (object != null) overlay.observeTileObject(object);
 			overlay.beginFrame();
 			overlay.noteSceneRenderable(renderable);
+			for (NPC npc : crowd) overlay.noteSceneRenderable(npc);
 			if (groundSecond != null) overlay.noteSceneRenderable(groundSecond);
 			if (renderable instanceof Actor)
 				for (ActorSpotAnim spot : ((Actor) renderable).getSpotAnims()) overlay.noteSceneRenderable(spot);

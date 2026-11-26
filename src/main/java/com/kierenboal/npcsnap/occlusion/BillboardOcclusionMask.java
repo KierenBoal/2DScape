@@ -10,6 +10,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import net.runelite.api.TileObject;
 
 public final class BillboardOcclusionMask
@@ -31,6 +33,7 @@ public final class BillboardOcclusionMask
 	private int[] tintReferences = new int[8];
 	private float[] tintDepths = new float[8];
 	private int coverageRowCount;
+	private float[] candidateNear = new float[0];
 	private float[] candidateFar = new float[0];
 	private float[] lower = new float[0];
 	private float[] upper = new float[0];
@@ -99,8 +102,81 @@ public final class BillboardOcclusionMask
 		prepare(occluders, quality, interest.bounds() == null ? new Rectangle() : interest.bounds(), interest, debug);
 	}
 
+	// The worker only reads projected faces and completed interest regions. Each band
+	// owns its reference lists until both builds finish on this frame.
+	private BillboardOcclusionMask lowerBand;
+
+	public void prepare(List<Occluder> faces, BillboardOcclusionQuality quality,
+		BillboardOcclusionRegions interest, boolean debug, Executor worker)
+	{
+		Rectangle clip = interest.bounds();
+		int step = BillboardOcclusionQuality.normalize(quality).sampleStep();
+		if (worker == null || clip == null || step == 0 || faces == null || faces.size() < 256
+			|| clip.height < 8 * step || (long) clip.width * clip.height < 1024L * step * step)
+		{
+			prepare(faces, quality, interest, debug);
+			return;
+		}
+		int split = ((clip.height / step + 1) / 2) * step;
+		Rectangle bottom = new Rectangle(clip.x, clip.y + split, clip.width, clip.height - split);
+		if (lowerBand == null) lowerBand = new BillboardOcclusionMask();
+		BillboardOcclusionMask band = lowerBand;
+		CompletableFuture<Void> pending = CompletableFuture.runAsync(
+			() -> band.prepare(faces, quality, bottom, interest, debug), worker);
+		try
+		{
+			prepare(faces, quality, clip, interest, debug, split / step);
+		}
+		finally
+		{
+			pending.join();
+		}
+		appendBand(band, split / step);
+		band.occluders = Collections.emptyList();
+		band.regions = null;
+	}
+
+	private void appendBand(BillboardOcclusionMask band, int firstRow)
+	{
+		int cells = band.width * band.height;
+		int start = firstRow * width;
+		System.arraycopy(band.rowCoverage, 0, rowCoverage, firstRow, band.height);
+		System.arraycopy(band.fullRegion, 0, fullRegion, start, cells);
+		System.arraycopy(band.lower, 0, lower, start, cells);
+		System.arraycopy(band.upper, 0, upper, start, cells);
+		for (int i = 0; i < cells; i++)
+		{
+			heads[start + i] = band.heads[i] < 0 ? -1 : references + band.heads[i];
+			nearestOpaqueFullReference[start + i] = references + band.nearestOpaqueFullReference[i];
+		}
+		ensureReferences(references + band.references);
+		System.arraycopy(band.candidates, 0, candidates, references, band.references);
+		System.arraycopy(band.candidateNear, 0, candidateNear, references, band.references);
+		System.arraycopy(band.candidateFar, 0, candidateFar, references, band.references);
+		System.arraycopy(band.candidateTransmittance, 0, candidateTransmittance, references, band.references);
+		System.arraycopy(band.candidateTintRgb, 0, candidateTintRgb, references, band.references);
+		for (int i = 0; i < band.references; i++)
+		{
+			next[references + i] = band.next[i] < 0 ? -1 : references + band.next[i];
+			int offset = band.coverageOffsets[i];
+			coverageOffsets[references + i] = offset < 0 ? offset : coverageRowCount + offset;
+		}
+		ensureCoverageRows(coverageRowCount + band.coverageRowCount);
+		System.arraycopy(band.coverageRows, 0, coverageRows, coverageRowCount, band.coverageRowCount);
+		references += band.references;
+		coverageRowCount += band.coverageRowCount;
+		coveredCellCount += band.coveredCellCount;
+		cutoutTexelTests += band.cutoutTexelTests;
+	}
+
 	private void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality, Rectangle clip,
 		BillboardOcclusionRegions interest, boolean debug)
+	{
+		prepare(occluders, quality, clip, interest, debug, Integer.MAX_VALUE);
+	}
+
+	private void prepare(List<Occluder> occluders, BillboardOcclusionQuality quality, Rectangle clip,
+		BillboardOcclusionRegions interest, boolean debug, int rowLimit)
 	{
 		step = BillboardOcclusionQuality.normalize(quality).sampleStep();
 		bounds = clip;
@@ -116,6 +192,7 @@ public final class BillboardOcclusionMask
 		}
 		width = (bounds.width + step - 1) / step;
 		height = (bounds.height + step - 1) / step;
+		int rows = Math.min(height, rowLimit);
 		int size = width * height;
 		if (heads.length < size)
 		{
@@ -130,19 +207,20 @@ public final class BillboardOcclusionMask
 		{
 			rowCoverage = new boolean[height];
 		}
-		Arrays.fill(heads, 0, size, -1);
-		Arrays.fill(lower, 0, size, Float.POSITIVE_INFINITY);
-		Arrays.fill(upper, 0, size, Float.POSITIVE_INFINITY);
-		Arrays.fill(active, 0, size, false);
-		Arrays.fill(fullRegion, 0, size, false);
-		Arrays.fill(rowCoverage, 0, height, false);
+		int bandCells = width * rows;
+		Arrays.fill(heads, 0, bandCells, -1);
+		Arrays.fill(lower, 0, bandCells, Float.POSITIVE_INFINITY);
+		Arrays.fill(upper, 0, bandCells, Float.POSITIVE_INFINITY);
+		Arrays.fill(active, 0, bandCells, false);
+		Arrays.fill(fullRegion, 0, bandCells, false);
+		Arrays.fill(rowCoverage, 0, rows, false);
 		// Mark each rectangle's cell span directly, rather than visiting every region per cell.
 		for (Rectangle region : regions.rectangles())
 		{
 			int left = (region.x - bounds.x) / step;
 			int right = (region.x + region.width - 1 - bounds.x) / step;
-			int top = (region.y - bounds.y) / step;
-			int bottom = (region.y + region.height - 1 - bounds.y) / step;
+			int top = Math.max(0, (region.y - bounds.y) / step);
+			int bottom = Math.min(rows - 1, Math.floorDiv(region.y + region.height - 1 - bounds.y, step));
 			int firstFull = (region.x - bounds.x + step - 1) / step;
 			int end = region.x + region.width - bounds.x;
 			int afterFull = end == bounds.width ? width : end / step;
@@ -167,13 +245,19 @@ public final class BillboardOcclusionMask
 			int left = Math.max(0, Math.floorDiv(o.bounds.x - bounds.x, step));
 			int top = Math.max(0, Math.floorDiv(o.bounds.y - bounds.y, step));
 			int right = Math.min(width - 1, Math.floorDiv(o.bounds.x + o.bounds.width - 1 - bounds.x, step));
-			int bottom = Math.min(height - 1, Math.floorDiv(o.bounds.y + o.bounds.height - 1 - bounds.y, step));
+			int bottom = Math.min(rows - 1, Math.floorDiv(o.bounds.y + o.bounds.height - 1 - bounds.y, step));
+			if (top > bottom) continue;
+			float near = o.vertical ? 0 : o.minimumDepth(0, 1);
+			float far = o.vertical ? 0 : o.maximumDepth(0, 1);
 			for (int cy = top; cy <= bottom; cy++)
 			{
 				int py = bounds.y + cy * step;
 				int ch = Math.min(step, bounds.y + bounds.height - py);
-				float near = o.minimumDepth(py, ch);
-				float far = o.maximumDepth(py, ch);
+				if (o.vertical)
+				{
+					near = o.minimumDepth(py, ch);
+					far = o.maximumDepth(py, ch);
+				}
 				for (int cx = left; cx <= right; cx++)
 				{
 					int cell = cy * width + cx;
@@ -188,16 +272,7 @@ public final class BillboardOcclusionMask
 					{
 						continue;
 					}
-					if (references == next.length)
-					{
-						int capacity = Math.max(256, references + references / 2);
-						next = Arrays.copyOf(next, capacity);
-						candidates = Arrays.copyOf(candidates, capacity);
-						candidateFar = Arrays.copyOf(candidateFar, capacity);
-						coverageOffsets = Arrays.copyOf(coverageOffsets, capacity);
-						candidateTransmittance = Arrays.copyOf(candidateTransmittance, capacity);
-						candidateTintRgb = Arrays.copyOf(candidateTintRgb, capacity);
-					}
+					ensureReferences(references + 1);
 					// Coverage bits retain crisp edges without repeating triangle membership
 					// calculations for each overlapping billboard.
 					if (coverage == 2)
@@ -207,12 +282,7 @@ public final class BillboardOcclusionMask
 					}
 					else
 					{
-						int requiredRows = coverageRowCount + ch;
-						if (coverageRows.length < requiredRows)
-						{
-							coverageRows = Arrays.copyOf(coverageRows,
-								Math.max(requiredRows, Math.max(256, coverageRows.length * 2)));
-						}
+						ensureCoverageRows(coverageRowCount + ch);
 						coverageOffsets[references] = coverageRowCount;
 						int any = 0;
 						int all = (1 << cw) - 1;
@@ -254,6 +324,7 @@ public final class BillboardOcclusionMask
 						rowCoverage[cy] = true;
 					}
 					int reference = references++;
+					candidateNear[reference] = near;
 					candidateFar[reference] = far;
 					candidates[reference] = id;
 					candidateTransmittance[reference] = o.transmittance;
@@ -270,6 +341,25 @@ public final class BillboardOcclusionMask
 			}
 		}
 
+	}
+
+	private void ensureReferences(int required)
+	{
+		if (required <= next.length) return;
+		int capacity = Math.max(required, Math.max(256, next.length + next.length / 2));
+		next = Arrays.copyOf(next, capacity);
+		candidates = Arrays.copyOf(candidates, capacity);
+		candidateNear = Arrays.copyOf(candidateNear, capacity);
+		candidateFar = Arrays.copyOf(candidateFar, capacity);
+		coverageOffsets = Arrays.copyOf(coverageOffsets, capacity);
+		candidateTransmittance = Arrays.copyOf(candidateTransmittance, capacity);
+		candidateTintRgb = Arrays.copyOf(candidateTintRgb, capacity);
+	}
+
+	private void ensureCoverageRows(int required)
+	{
+		if (required > coverageRows.length)
+			coverageRows = Arrays.copyOf(coverageRows, Math.max(required, Math.max(256, coverageRows.length * 2)));
 	}
 
 	public boolean mightFullyCover(Rectangle region)
@@ -361,6 +451,14 @@ public final class BillboardOcclusionMask
 		return fullRegion[cell] || regions.contains(x, y) ? cell : -1;
 	}
 
+	public boolean opaqueCell(int sampleX, int y, double nearest, TileObject ignored, SupportingFootprint ground)
+	{
+		if (sampleX < 0 || sampleX >= width || y < bounds.y || y >= bounds.y + bounds.height) return false;
+		int cell = (y - bounds.y) / step * width + sampleX;
+		return fullRegion[cell] && upper[cell] + depthBias() < nearest
+			&& !occluders.get(candidates[nearestOpaqueFullReference[cell]]).excludedBy(ignored, ground);
+	}
+
 	public CellResult classifySample(int sampleX, int y, double depth)
 	{
 		return classifySample(sampleX, y, depth, null);
@@ -379,18 +477,13 @@ public final class BillboardOcclusionMask
 			return CellResult.VISIBLE;
 		}
 		int cell = ((y - bounds.y) / step) * width + sampleX;
-		// Aggregate cells include supporting terrain and replaced objects. Refine
-		// cells containing either exclusion so other geometry can still occlude.
-		if ((ignoredTileObject != null || supportingGround != null) && cellContainsExclusion(cell, ignoredTileObject, supportingGround))
-		{
-			return CellResult.REFINE;
-		}
 		CellResult result = CellResult.REFINE;
 		if (heads[cell] == -1 || lower[cell] + depthBias() >= depth)
 		{
 			result = CellResult.VISIBLE;
 		}
-		else if (fullRegion[cell] && upper[cell] + depthBias() < depth)
+		else if (fullRegion[cell] && upper[cell] + depthBias() < depth
+			&& !occluders.get(candidates[nearestOpaqueFullReference[cell]]).excludedBy(ignoredTileObject, supportingGround))
 		{
 			result = CellResult.OCCLUDED;
 		}
@@ -412,18 +505,6 @@ public final class BillboardOcclusionMask
 		return (coverageBits(reference, (y - bounds.y) % step) & (1 << ((x - bounds.x) % step))) != 0;
 	}
 
-	private boolean cellContainsExclusion(int cell, TileObject ignoredTileObject, SupportingFootprint supportingGround)
-	{
-		for (int ref = heads[cell]; ref != -1; ref = next[ref])
-		{
-			if (occluders.get(candidates[ref]).excludedBy(ignoredTileObject, supportingGround))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
 	/**
 	 * Returns the amount of the billboard pixel which remains visible after all
 	 * closer world geometry. 255 is fully visible and 0 is fully occluded.
@@ -441,7 +522,7 @@ public final class BillboardOcclusionMask
 	public int transmittanceAt(int x, int y, double depth, TileObject ignoredTileObject, SupportingFootprint supportingGround)
 	{
 		int cell = index(x, y);
-		if (cell < 0 || !Double.isFinite(depth))
+		if (cell < 0 || !Double.isFinite(depth) || lower[cell] + depthBias() >= depth)
 		{
 			return 255;
 		}
@@ -654,6 +735,7 @@ public final class BillboardOcclusionMask
 		for (int ref = heads[cell]; ref != -1 && unblocked != 0; ref = next[ref])
 		{
 			candidateTests++;
+			if (candidateNear[ref] + bias >= depth) continue;
 			int covered = coverageBits(ref, localY) & unblocked;
 			if (covered == 0) continue;
 			Occluder o = occluders.get(candidates[ref]);

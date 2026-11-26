@@ -32,6 +32,100 @@ import static org.junit.Assert.assertTrue;
 public class BillboardOcclusionMaskTest
 {
 	@Test
+	public void mergedBandsPreservePartialCoverageTintAndDepthAcrossTheSplit()
+	{
+		Rectangle viewport = new Rectangle(3, 5, 291, 279);
+		BillboardOcclusionRegions interest = new BillboardOcclusionRegions();
+		interest.add(new Rectangle(5, 6, 135, 270), viewport);
+		interest.add(new Rectangle(120, 16, 165, 260), viewport);
+		java.util.List<BillboardOcclusionMask.Occluder> faces = new java.util.ArrayList<>();
+		for (int i = 0; i < 256; i++)
+		{
+			int x = 5 + (i % 16) * 16, y = 5 + (i / 16) * 16;
+			faces.add(BillboardOcclusionMask.Occluder.triangle(x, y, 70, x + 29, y + 4, 400,
+				x + 11, y + 36, 220));
+		}
+		faces.add(new BillboardOcclusionMask.Occluder(viewport, 80, "glass", 120, 0x603090));
+		BillboardOcclusionMask serial = new BillboardOcclusionMask();
+		BillboardOcclusionMask split = new BillboardOcclusionMask();
+		java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+		try
+		{
+			serial.prepare(faces, BillboardOcclusionQuality.MEDIUM, interest);
+			split.prepare(faces, BillboardOcclusionQuality.MEDIUM, interest, false, worker);
+			assertEquals(serial.coveredCellCount(), split.coveredCellCount());
+			for (int y = viewport.y; y < viewport.y + viewport.height; y++)
+			{
+				for (int x = viewport.x; x < viewport.x + viewport.width; x++)
+				{
+					assertEquals(serial.depthAt(x, y), split.depthAt(x, y), 0d);
+					assertEquals(serial.transmittanceAt(x, y, 210), split.transmittanceAt(x, y, 210));
+					assertEquals(serial.tintPixel(x, y, 210, 0xff204080), split.tintPixel(x, y, 210, 0xff204080));
+				}
+			}
+		}
+		finally
+		{
+			worker.shutdownNow();
+		}
+	}
+
+	@Test
+	public void crowdedParallelAndSerialFramesMatchBaselineInEveryPixel()
+	{
+		CrowdRenderBenchmark fixture = new CrowdRenderBenchmark(true);
+		java.util.concurrent.ExecutorService worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+		try
+		{
+			for (boolean debug : new boolean[] {false, true})
+			{
+				fixture.prepare(null);
+				fixture.composite(debug);
+				int[] serial = fixture.pixels().clone();
+				assertEquals(debug ? 0xc75dc723 : 0xd786109e, Arrays.hashCode(serial));
+				fixture.prepare(worker);
+				fixture.composite(debug);
+				org.junit.Assert.assertArrayEquals(serial, fixture.pixels());
+			}
+		}
+		finally
+		{
+			worker.shutdownNow();
+		}
+	}
+
+	@Test
+	public void currentFramePillarHidesOnlyBodyAndMovingPastItRevealsBodyImmediately()
+	{
+		Rectangle viewport = new Rectangle(32, 16);
+		Rectangle body = new Rectangle(2, 3, 8, 8);
+		BufferedImage sprite = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+		sprite.setRGB(0, 0, 0xff00ff00);
+		PreparedBillboardDraw draw = new PreparedBillboardDraw(null,
+			new BillboardRenderResult(body, sprite, new Rectangle(1, 1)), 2);
+		draw.shadow = new BillboardRenderResult(new Rectangle(12, 9, 8, 4), sprite, new Rectangle(1, 1));
+		BillboardDepthCalculator camera = new BillboardDepthCalculator(proxy(Client.class, method("getScale", 512)));
+		camera.beginRender();
+		BillboardOcclusionMask mask = new BillboardOcclusionMask();
+		BillboardFrameBuffer frame = new BillboardFrameBuffer(mask, layer ->
+			new BillboardDepthSurface(camera, 0, 500, 0, 20, layer.sourceBounds, layer.bounds));
+		for (boolean wallInFront : new boolean[] {true, false})
+		{
+			Rectangle pillar = new Rectangle(wallInFront ? 0 : 22, 0, 12, 16);
+			mask.prepare(Collections.singletonList(new BillboardOcclusionMask.Occluder(pillar, 100)),
+				BillboardOcclusionQuality.HIGH, 0, 0, viewport.width, viewport.height);
+			frame.begin(32, 16);
+			assertEquals(wallInFront, frame.blit(draw, 0, 0, 32, 16, false, false, true));
+			assertEquals(wallInFront ? 0 : 0xff00ff00, frame.image().getRGB(4, 4));
+			assertEquals(0xff00ff00, frame.image().getRGB(15, 10));
+			frame.begin(32, 16);
+			assertEquals(wallInFront, frame.blit(draw, 0, 0, 32, 16, false, true, true));
+			assertEquals(0, frame.image().getRGB(4, 4));
+			assertEquals(0xff00ff00, frame.image().getRGB(15, 10));
+		}
+	}
+
+	@Test
 	public void wholeLayerProofRequiresOpaqueCoverageInFrontAcrossCellSeams()
 	{
 		Rectangle region = new Rectangle(0, 0, 16, 8);

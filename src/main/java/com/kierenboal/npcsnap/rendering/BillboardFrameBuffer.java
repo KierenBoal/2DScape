@@ -20,8 +20,13 @@ public final class BillboardFrameBuffer
 
 	private final BillboardOcclusionMask occlusionMask;
 	private final DepthSurfaceFactory depthSurfaceFactory;
-	private boolean[] rowHasDepth = new boolean[0];
-	private double[] rowDepth = new double[0];
+	private final Rectangle clipped = new Rectangle();
+	private long skippedPixels;
+
+	public long skippedPixels()
+	{
+		return skippedPixels;
+	}
 	private int[] sampleTransmittance = new int[0];
 	private final BillboardProjectedQuad.Sample projectedSample = new BillboardProjectedQuad.Sample();
 	private BufferedImage image;
@@ -45,6 +50,7 @@ public final class BillboardFrameBuffer
 
 	public void begin(int width, int height)
 	{
+		skippedPixels = 0;
 		ensureCapacity(width, height);
 		Arrays.fill(pixels, 0, width * height, 0);
 		Arrays.fill(paintOrder, 0, width * height, (char) 0);
@@ -55,28 +61,10 @@ public final class BillboardFrameBuffer
 		return image;
 	}
 
-	public boolean isFullyOccluded(PreparedBillboardDraw draw, Rectangle viewport)
+	private boolean isFullyOccluded(PreparedBillboardDraw draw, BillboardDepthSurface surface)
 	{
-		if (occlusionMask.coveredCellCount() == 0 || draw.image == null || draw.bounds == null)
-		{
+		if (surface == null || !surface.supportsWorldOcclusion() || !occlusionMask.mightFullyCover(clipped))
 			return false;
-		}
-		Rectangle clipped = viewport.intersection(draw.bounds);
-		if (clipped.isEmpty() || draw.surfaceOcclusionRow <= clipped.y)
-		{
-			return false;
-		}
-		clipped.height = Math.min(clipped.height, (int) Math.min(Integer.MAX_VALUE,
-			(long) draw.surfaceOcclusionRow - clipped.y));
-		if (!occlusionMask.mightFullyCover(clipped))
-		{
-			return false;
-		}
-		BillboardDepthSurface surface = depthSurfaceFactory.create(draw);
-		if (surface == null || !surface.supportsWorldOcclusion())
-		{
-			return false;
-		}
 		BillboardProjectedQuad quad = draw.geometry == null ? null : draw.geometry.projectedQuad;
 		double nearest;
 		if (quad == null)
@@ -86,8 +74,7 @@ public final class BillboardFrameBuffer
 		}
 		else
 		{
-			nearest = Math.min(Math.min(quad.depthAt(0, 0), quad.depthAt(1, 0)),
-				Math.min(quad.depthAt(1, 1), quad.depthAt(0, 1)));
+			nearest = quad.nearestDepth();
 		}
 		return occlusionMask.fullyCovers(clipped, nearest, draw.occlusionIgnoredTileObject, draw.supportingGround);
 	}
@@ -103,47 +90,43 @@ public final class BillboardFrameBuffer
 		blit(draw, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels, false, false);
 	}
 
-	public void blit(PreparedBillboardDraw draw, int viewportX, int viewportY, int viewportWidth,
-		int viewportHeight, boolean drawOccludedPixels, boolean skipBody, boolean proveOcclusion)
+	public boolean blit(PreparedBillboardDraw draw, int viewportX, int viewportY, int viewportWidth,
+		int viewportHeight, boolean debug, boolean skipBody, boolean proveOcclusion)
 	{
 		if (draw == null || draw.image == null || draw.bounds == null || draw.bounds.isEmpty()
 			|| !(draw.image.getRaster().getDataBuffer() instanceof DataBufferInt))
-		{
-			return;
-		}
+			return false;
 
-		if (!skipBody)
+		boolean hidden = false;
+		for (PreparedBillboardDraw layer = draw; layer != null; layer = layer.shadowDraw())
 		{
-			blitLayer(draw, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels);
-			if (draw.highlightWidth > 0) blitHighlight(draw, viewportX, viewportY);
-		}
-		for (PreparedBillboardDraw shadow = draw.shadowDraw(); shadow != null; shadow = shadow.shadowDraw())
-		{
-			if (!proveOcclusion || !isFullyOccluded(shadow, new Rectangle(viewportX, viewportY, viewportWidth, viewportHeight)))
+			int left = Math.max(layer.bounds.x, viewportX);
+			int top = Math.max(layer.bounds.y, viewportY);
+			int right = Math.min(layer.bounds.x + layer.bounds.width, viewportX + viewportWidth);
+			int bottom = Math.min(layer.bounds.y + layer.bounds.height, viewportY + viewportHeight);
+			if (!debug) bottom = Math.min(bottom, layer.surfaceOcclusionRow);
+			clipped.setBounds(left, top, right - left, bottom - top);
+			boolean highlight = layer.highlightWidth > 0 && !(layer == draw && skipBody);
+			if (clipped.isEmpty() && !highlight) continue;
+			BillboardDepthSurface depth = occlusionMask.coveredCellCount() == 0 ? null : depthSurfaceFactory.create(layer);
+			if (proveOcclusion && layer.highlightWidth <= 0 && isFullyOccluded(layer, depth))
 			{
-				blitLayer(shadow, viewportX, viewportY, viewportWidth, viewportHeight, drawOccludedPixels);
+				skippedPixels += (long) clipped.width * clipped.height;
+				if (layer == draw) hidden = true;
+				continue;
 			}
+			if (layer == draw && skipBody) continue;
+			if (!clipped.isEmpty()) blitLayer(layer, viewportX, viewportY, viewportWidth, debug, depth);
+			if (highlight) blitHighlight(layer, viewportX, viewportY, depth);
 		}
+		return hidden;
 	}
 
 	private void blitLayer(PreparedBillboardDraw draw, int viewportX, int viewportY,
-		int viewportWidth, int viewportHeight, boolean drawOccludedPixels)
+		int viewportWidth, boolean drawOccludedPixels, BillboardDepthSurface billboardDepth)
 	{
-		int clipLeft = Math.max(draw.bounds.x, viewportX);
-		int clipTop = Math.max(draw.bounds.y, viewportY);
-		int clipRight = Math.min(draw.bounds.x + draw.bounds.width, viewportX + viewportWidth);
-		int clipBottom = Math.min(draw.bounds.y + draw.bounds.height, viewportY + viewportHeight);
-		if (!drawOccludedPixels)
-		{
-			// The water/ground plane is one row cutoff for this NPC. Skip entire
-			// submerged rows before any per-pixel depth or alpha work.
-			clipBottom = Math.min(clipBottom, draw.surfaceOcclusionRow);
-		}
-		if (clipLeft >= clipRight || clipTop >= clipBottom)
-		{
-			return;
-		}
-
+		int clipLeft = clipped.x, clipRight = clipLeft + clipped.width;
+		int clipTop = clipped.y, clipBottom = clipTop + clipped.height;
 		int[] sourcePixels = ((DataBufferInt) draw.image.getRaster().getDataBuffer()).getData();
 		int sourceWidth = draw.image.getWidth();
 		int sourceHeight = draw.image.getHeight();
@@ -152,17 +135,10 @@ public final class BillboardFrameBuffer
 			: BillboardDrawGeometry.rectangular(draw.bounds);
 		int drawWidth = geometry.unskewedBounds.width;
 		BillboardProjectedQuad quad = geometry.projectedQuad;
+		double nearestQuadDepth = quad == null ? Double.NaN : quad.nearestDepth();
 		int drawPaintOrder = draw.paintOrder;
 		TileObject ignoredTileObject = draw.occlusionIgnoredTileObject;
-		BillboardDepthSurface billboardDepth = occlusionMask.coveredCellCount() > 0 ? depthSurfaceFactory.create(draw) : null;
 		boolean hasActiveOcclusion = billboardDepth != null && billboardDepth.supportsWorldOcclusion();
-		int clippedHeight = clipBottom - clipTop;
-		if (hasActiveOcclusion)
-		{
-			ensureRowCapacity(clippedHeight);
-			Arrays.fill(rowHasDepth, 0, clippedHeight, false);
-		}
-
 		int occlusionSampleStep = hasActiveOcclusion ? occlusionMask.sampleStep() : 0;
 		if (occlusionSampleStep > 1 && sampleTransmittance.length < occlusionSampleStep)
 		{
@@ -180,13 +156,15 @@ public final class BillboardFrameBuffer
 			// Translate whole pixel rows, preserving the same nearest-neighbour
 			// sampling at every slope, including zero. Compute the shear once per row.
 			int rowLeft = geometry.rowLeftAt(y);
-			int clippedRow = y - clipTop;
+			boolean depthReady = false;
+			double rowDepth = Double.NaN;
 			boolean belowSurface = y >= draw.surfaceOcclusionRow;
 			boolean rowHasOcclusion = hasActiveOcclusion && occlusionMask.hasCoverageAt(y);
 			BillboardOcclusionMask.CellResult cachedSampleResult = BillboardOcclusionMask.CellResult.VISIBLE;
 			int cachedSampleX = Integer.MIN_VALUE;
 			int cachedSampleStartX = 0;
-			for (int x = clipLeft; x < clipRight; x++)
+			int endX = quad == null ? Math.min(clipRight, rowLeft + drawWidth) : clipRight;
+			for (int x = quad == null ? Math.max(clipLeft, rowLeft) : clipLeft; x < endX; x++)
 			{
 				int destinationIndex = destinationRow + (x - viewportX);
 				if (paintOrder[destinationIndex] > drawPaintOrder)
@@ -197,6 +175,21 @@ public final class BillboardFrameBuffer
 				int sourceX;
 				if (quad != null)
 				{
+					if (rowHasOcclusion && !drawOccludedPixels)
+					{
+						int sample = occlusionMask.sampleX(x);
+						if (sample != cachedSampleX)
+						{
+							cachedSampleX = sample;
+							if (occlusionMask.opaqueCell(sample, y, nearestQuadDepth, ignoredTileObject, draw.supportingGround))
+							{
+								int skip = Math.min(endX - x, occlusionSampleStep - occlusionMask.sampleOffset(x));
+								skippedPixels += skip;
+								x += skip - 1;
+								continue;
+							}
+						}
+					}
 					if (!quad.sample(x + 0.5d, y + 0.5d, projectedSample))
 					{
 						continue;
@@ -208,10 +201,6 @@ public final class BillboardFrameBuffer
 				else
 				{
 					int rowX = x - rowLeft;
-					if (rowX < 0 || rowX >= drawWidth)
-					{
-						continue;
-					}
 					sourceX = (int) (((long) rowX * sourceWidth) / drawWidth);
 				}
 				int sourcePixel = sourcePixels[sourceRow + sourceX];
@@ -228,12 +217,12 @@ public final class BillboardFrameBuffer
 
 				if (rowHasOcclusion)
 				{
-					if (quad == null && !rowHasDepth[clippedRow])
+					if (quad == null && !depthReady)
 					{
-						rowDepth[clippedRow] = billboardDepth.depthAtRow(sourceHeight, y);
-						rowHasDepth[clippedRow] = true;
+						rowDepth = billboardDepth.depthAtRow(sourceHeight, y);
+						depthReady = true;
 					}
-					double pixelDepth = quad != null ? projectedSample.depth : rowDepth[clippedRow];
+					double pixelDepth = quad != null ? projectedSample.depth : rowDepth;
 					int transmittance;
 					// A rotated plane varies in depth across the row. Do not reuse a
 					// cell classification made at a different point on that plane.
@@ -249,6 +238,13 @@ public final class BillboardFrameBuffer
 								occlusionMask.refinedSampleTransmittance(sampleX, y, pixelDepth, sampleTransmittance, ignoredTileObject, draw.supportingGround);
 								cachedSampleStartX = x - occlusionMask.sampleOffset(x);
 							}
+						}
+						if (!drawOccludedPixels && cachedSampleResult == BillboardOcclusionMask.CellResult.OCCLUDED)
+						{
+							int skip = Math.min(endX - x, occlusionSampleStep - occlusionMask.sampleOffset(x));
+							skippedPixels += skip;
+							x += skip - 1;
+							continue;
 						}
 						transmittance = cachedSampleResult == BillboardOcclusionMask.CellResult.OCCLUDED ? 0
 							: cachedSampleResult == BillboardOcclusionMask.CellResult.REFINE
@@ -293,7 +289,7 @@ public final class BillboardFrameBuffer
 	/** For each row, remember the nearest opaque sprite pixel to each column.
 	 * Searching the neighbouring rows then gives the exact screen-space distance
 	 * and the surface depth of the closest silhouette point. */
-	private void blitHighlight(PreparedBillboardDraw draw, int viewportX, int viewportY)
+	private void blitHighlight(PreparedBillboardDraw draw, int viewportX, int viewportY, BillboardDepthSurface depth)
 	{
 		int radius = draw.highlightWidth;
 		Rectangle viewport = new Rectangle(viewportX, viewportY, width, height);
@@ -316,7 +312,6 @@ public final class BillboardFrameBuffer
 			maskGeometry = geometry;
 		}
 		int sourceHeight = draw.image.getHeight();
-		BillboardDepthSurface depth = occlusionMask.coveredCellCount() == 0 ? null : depthSurfaceFactory.create(draw);
 		double fade = draw.highlightFeather * 0.25 * (radius - 0.5);
 		for (int y = output.y; y < output.y + output.height; y++)
 		{
@@ -421,12 +416,4 @@ public final class BillboardFrameBuffer
 		this.height = height;
 	}
 
-	private void ensureRowCapacity(int requiredHeight)
-	{
-		if (rowHasDepth.length < requiredHeight)
-		{
-			rowHasDepth = new boolean[requiredHeight];
-			rowDepth = new double[requiredHeight];
-		}
-	}
 }

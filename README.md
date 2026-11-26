@@ -1,17 +1,19 @@
 # 2DScape
+
 ![image](https://img.shields.io/endpoint?url=https://api.runelite.net/pluginhub/shields/rank/plugin/2dscape)
 ![image](https://img.shields.io/endpoint?url=https://api.runelite.net/pluginhub/shields/installs/plugin/2dscape)
 
+2DScape is a 3D-to-2D downsampler which emulates what Old School RuneScape might look like with RuneScape Classics graphics
+
 ![2DScape in Old School RuneScape](md_imgs/hero.png)
 
-2DScape is a 3D-to-2D downsampler that tries to show what Old School RuneScape might look like with RSC's graphics. It's all rendered as an overlay, with custom occlusion culling so the sprites actually sit in the world.
-
-**Heads up:** You need RuneLite's **GPU** plugin or **117 HD** enabled for 2DScape to render properly. Without a GPU renderer, it can't hide the original 3D models before drawing the 2D ones over them.
-
-There are a LOT of config options to play with, so have a go and find your favourite style.
+## Requierments
+- GPU renderer (GPU, 117HD, etc) must be enabled
+- A decent CPU as the rendering is all done via UI elements
 
 ## Doing bossing/raids?
 If you are doing content that requiers click precision, I'd suggest enabling "Improved click accuracy mode", it maps the sprite better to the clickbox, it looks a bit goofy, but it's MUCH better for reducing missclicks.
+
 ![Improved click accuracy mode](md_imgs/click_accuracy.jpg)
 
 ## Custom rendering features
@@ -20,7 +22,7 @@ If you are doing content that requiers click precision, I'd suggest enabling "Im
 - NPCs, Players, Pets and even thralls become flat 2D sprites
 - Projectiles and effects are also rendered in 2D
 - Even Ground items (stuff on the floor) is rendered in 2D, just at a slightly higher angle for visibility
-- You can also enable world objects being converted to 2D, it's really stupid
+- You can also enable world objects being converted to 2D, it's really stupid and laggy
 - You can export sprites, saving them to your computer
 
 ![Occlusion, crowds, combat effects, and Sailing](md_imgs/second_set.jpg)
@@ -31,37 +33,28 @@ If you are doing content that requiers click precision, I'd suggest enabling "Im
 - All Spells work, so yes, the Ice Barrage blocks show up as 2D.
 - Sailing partially works, the fascilities don't perform occlusion culling yet.
 
-# Custom shadows
+There are a LOT of config options to play with, so have a go and find your favourite style.
 
-Although RSC didn't have shadows, there are default options for shadows that give a bit more visual depth to the world; it is subtle.
+## Custom shadows
+
+Although RSC didn't have shadows, shadows have been added to make the sprites more readable, there are many config options to enhance or remove the shadows.
+
 ![Subtle shadows](md_imgs/shadow_subtle.jpg)
 
-But, maybe you're going for that RSC HD vibe? Got you covered, there are shadow options like "Point light" which create nice looking projected shadows
-![Subtle shadows](md_imgs/shadow_hd.jpg)
-
-Whatever way you want to play - no shadow, flat shadows, HD soft shadows, there will be an option for you that you like!
-
-## RSC features 
-![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
+## Retro config features 
 
 Skilling bubbles display whenever you gain non-combat XP, it will fade away after a few seconds. You can even stack them together for multi-skilling!
 
-Me getting a fat multi XP drop from Perdu after the recent quest XP changes.
-![Retro skilling bubbles](md_imgs/fat_xp.jpg)
+![Retro skilling bubbles](md_imgs/skilling_bubbles.jpg)
+
+Use old chat color codes like @red@, @blu@, @rand@, etc. (Enable "Use retro HP bar, overhead chat, hitsplats and prayers")
 
 ![RSC Chat color codes](md_imgs/chat.jpg)
 
-- Use old chat color codes like @red@, @blu@, @rand@, etc.
-- Use old hitsplats
+Compatability with [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
 
-Under the "Retro" section, enable "Use retro HP bar, overhead chat, hitsplats and prayers"
-![2D billboards on NPCs, players, pets, and more](md_imgs/retro_chat_config.jpg)
+![Retro NPC Swapper](md_imgs/retro.jpg)
 
-We have compatability with Retro NPC Swapper
-
-![Exported sprite frames](md_imgs/retro.jpg)
-
-Get extra retro wih classic NPC and object models using [Retro NPC Swapper](https://runelite.net/plugin-hub/show/retro-npc-swapper)
 
 ## Sprite export feature
 ![Exported sprite frames](md_imgs/sprite_export.jpg)
@@ -84,4 +77,5 @@ I want to acknowledge and disclose usage of AI agentic engineering in creating t
 - **GPT-5.5:** First implementation of blocky occlusion culling.
 - **GPT-5.6:** Code tidy-up and SO many optimisations. Sol handled orchestration, high-level planning, and a lot of cleanup; Terra and Luna handled implementation.
 - **GPT-6.0 Astra:** Made the occlusion culling truly shine by getting rid of the blockiness and adding composite transparency, so sprites can be seen behind transparent geometry like stained glass.
-- **GPT-6.1 Sol:** Workhorse, new retro hitsplats and new improved clickbox accuracy, boat occlusion culling, unified FPS 
+- **GPT-6.1 Sol:** Workhorse, new retro hitsplats and new improved clickbox accuracy, boat occlusion culling, unified FPS limiting
+- **GPT-6.2 Astra/Sol:** Code cleanup and optimisations, new shadows

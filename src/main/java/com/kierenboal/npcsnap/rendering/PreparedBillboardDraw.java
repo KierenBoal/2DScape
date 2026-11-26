@@ -13,6 +13,8 @@ public final class PreparedBillboardDraw
 	public final BillboardRenderResult result;
 	public BillboardRenderResult shadow;
 	public boolean shadowOnly;
+	public long stableCasterOrder;
+	public double shadowDistanceSquared;
 	public final int paintOrder;
 	public final BufferedImage image;
 	public final Rectangle bounds;

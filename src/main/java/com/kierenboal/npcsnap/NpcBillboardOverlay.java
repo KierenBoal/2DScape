@@ -102,6 +102,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import javax.inject.Inject;
 import net.runelite.api.Actor;
@@ -180,12 +184,16 @@ class NpcBillboardOverlay extends Overlay
 	private final Set<Actor> forceActorResizeRedraws = IdentitySets.create();
 	private final Map<Actor, Boolean> actorResizeObservations = new IdentityHashMap<>();
 	private final BillboardOutlineRenderer.Scratch outlineScratch = new BillboardOutlineRenderer.Scratch();
+	private volatile ExecutorService maskWorker;
+
 	private final BillboardOcclusionMask occlusionMask = new BillboardOcclusionMask();
 	private float[] spriteXScratch = new float[0];
 	private float[] spriteYScratch = new float[0];
 	private float[] spriteDepthScratch = new float[0];
 	private final BillboardFrameBuffer frameBuffer = new BillboardFrameBuffer(occlusionMask, this::billboardDepthSurface);
 	private final BillboardOcclusionDebugSampler occlusionDebugSampler = new BillboardOcclusionDebugSampler(occlusionMask, this::billboardDepthSurface);
+	private final Set<Renderable> shadowCasters = IdentitySets.create();
+	private final List<PreparedBillboardDraw> shadowCandidates = new ArrayList<>();
 	private final Set<Renderable> occludedActors = IdentitySets.create();
 	private final Map<Renderable, BillboardTarget> deferredActors = new IdentityHashMap<>();
 	private long frameSequence;
@@ -245,6 +253,28 @@ class NpcBillboardOverlay extends Overlay
 		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(PRIORITY_HIGHEST);
+	}
+
+	void startMaskWorker()
+	{
+		if (maskWorker == null && Runtime.getRuntime().availableProcessors() >= 4)
+		{
+			maskWorker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new SynchronousQueue<>(), task ->
+			{
+				Thread thread = new Thread(task, "2DScape occlusion");
+				thread.setDaemon(true);
+				return thread;
+			}, (task, stopped) -> task.run());
+		}
+	}
+
+	void stopMaskWorker()
+	{
+		if (maskWorker != null)
+		{
+			maskWorker.shutdownNow();
+			maskWorker = null;
+		}
 	}
 
 	@Override
@@ -492,6 +522,8 @@ class NpcBillboardOverlay extends Overlay
 
 	void clearBillboardCache()
 	{
+		shadowCasters.clear();
+		shadowCandidates.clear();
 		shadowScratch.clear();
 		billboardCache.clear();
 		forceActorResizeRedraws.clear();
@@ -1130,6 +1162,7 @@ class NpcBillboardOverlay extends Overlay
 			isReadyToRedrawDebug(target);
 			PreparedBillboardDraw draw = new PreparedBillboardDraw(request, result, paintOrder, null,
 				BillboardNpcSurfaceOcclusion.firstOccludedRow(client, depthCalculator, request));
+			draw.stableCasterOrder = target.targetKey.stableSortOrder();
 			draw.shadowOnly = deferredActors.containsKey(target.renderable);
 			preparedDraws.add(draw);
 		}
@@ -1172,7 +1205,9 @@ class NpcBillboardOverlay extends Overlay
 			}
 
 			isReadyToRedrawDebug(target);
-			preparedDraws.add(new PreparedBillboardDraw(request, result, paintOrder, target.tileObject));
+			PreparedBillboardDraw draw = new PreparedBillboardDraw(request, result, paintOrder, target.tileObject);
+			draw.stableCasterOrder = target.targetKey.stableSortOrder();
+			preparedDraws.add(draw);
 		}
 	}
 
@@ -1280,6 +1315,7 @@ class NpcBillboardOverlay extends Overlay
 				&& worldViewVisibility != null && !worldViewVisibility.isVisible(draw.request.sceneLocation.source));
 			if (preparedDraws.isEmpty())
 			{
+				shadowCasters.clear();
 				return;
 			}
 
@@ -1289,6 +1325,7 @@ class NpcBillboardOverlay extends Overlay
 			int viewportHeight = client.getViewportHeight();
 			if (viewportWidth <= 0 || viewportHeight <= 0)
 			{
+				shadowCasters.clear();
 				return;
 			}
 
@@ -1344,7 +1381,7 @@ class NpcBillboardOverlay extends Overlay
 			try (Timer maskTimer = performanceMetrics.time("Prepare occlusion mask"))
 			{
 				occlusionMask.prepare(worldOcclusionCollector.occluders(), quality, worldOcclusionCollector.interest(),
-					config.debugLogBillboardOcclusion());
+					config.debugLogBillboardOcclusion(), maskWorker);
 			}
 			occlusionDebugSampler.collect(preparedDraws, config.debugLogBillboardOcclusion());
 			worldOcclusionCollector.logDebugStats(occlusionMask, occlusionDebugSampler.samples());
@@ -1355,19 +1392,12 @@ class NpcBillboardOverlay extends Overlay
 				for (int i = preparedDraws.size() - 1; i >= 0; i--)
 				{
 					PreparedBillboardDraw draw = preparedDraws.get(i);
-					boolean hidden = proveOcclusion && draw.highlightWidth <= 0
-						&& frameBuffer.isFullyOccluded(draw, viewportBounds);
+					boolean hidden = frameBuffer.blit(draw, viewportX, viewportY, viewportWidth,
+						viewportHeight, debugPixels, draw.shadowOnly, proveOcclusion);
 					if (hidden && draw.request.renderable instanceof Actor)
 					{
 						occludedActors.add(draw.request.renderable);
 					}
-					frameBuffer.blit(
-						draw,
-						viewportX,
-						viewportY,
-						viewportWidth,
-						viewportHeight,
-						debugPixels, hidden || draw.shadowOnly, proveOcclusion);
 				}
 			}
 
@@ -1657,7 +1687,8 @@ class NpcBillboardOverlay extends Overlay
 		}
 		candidates.sort(Comparator
 			.<BillboardTarget>comparingInt(priorities::get).reversed()
-			.thenComparingDouble(BillboardTarget::getDepth));
+			.thenComparingDouble(BillboardTarget::getDepth)
+			.thenComparingLong(target -> target.targetKey.stableSortOrder()));
 		int limit = Math.max(1, config.billboardMaxEntities());
 		// Current scene depth is available only after RuneLite has drawn the scene.
 		// Previous proof changes slot allocation and leaves the native model eligible.
@@ -3191,14 +3222,18 @@ class NpcBillboardOverlay extends Overlay
 		Color color = config.shadowColor();
 		if (remaining == 0 || color.getAlpha() == 0 || config.shadowType() == SpriteShadowType.OFF)
 		{
+			shadowCasters.clear();
 			return;
 		}
 		ShadowLighting lighting = config.shadowLighting();
 		LocalPoint lantern = lanternPlayerLocation(lighting);
 		double yaw = cameraYawRadians();
-		for (int i = draws.size() - 1; i >= 0 && remaining > 0; i--)
+		boolean gpu = client.isGpu();
+		double cameraX = gpu ? client.getCameraFpX() : client.getCameraX();
+		double cameraY = gpu ? client.getCameraFpY() : client.getCameraY();
+		shadowCandidates.clear();
+		for (PreparedBillboardDraw draw : draws)
 		{
-			PreparedBillboardDraw draw = draws.get(i);
 			Renderable renderable = draw.request.renderable;
 			GroundItemPile pile = groundPiles.get(renderable);
 			if (pile != null && pile.top().renderable != renderable)
@@ -3210,12 +3245,37 @@ class NpcBillboardOverlay extends Overlay
 			{
 				continue;
 			}
-			draw.shadow = projectShadow(draw, cached, lighting, lantern, yaw, color, viewport);
+			LocalPoint point = draw.request.localPoint;
+			if (point == null) continue;
+			double dx = point.getX() - cameraX, dy = point.getY() - cameraY;
+			draw.shadowDistanceSquared = dx * dx + dy * dy;
+			shadowCandidates.add(draw);
+		}
+		if (shadowCandidates.size() > remaining)
+		{
+			shadowCandidates.sort(Comparator
+				.comparingDouble((PreparedBillboardDraw draw) -> draw.shadowDistanceSquared)
+				.thenComparing(draw -> !shadowCasters.contains(draw.request.renderable))
+				.thenComparingLong(draw -> draw.stableCasterOrder)
+				.thenComparingInt(draw -> System.identityHashCode(draw.request.renderable)));
+		}
+		shadowCasters.clear();
+		for (PreparedBillboardDraw draw : shadowCandidates)
+		{
+			Renderable renderable = draw.request.renderable;
+			draw.shadow = projectShadow(draw, billboardCache.get(renderable), lighting, lantern, yaw, color, viewport);
 			if (draw.shadow != null)
 			{
-				remaining--;
+				shadowCasters.add(renderable);
+				if (--remaining == 0) break;
 			}
 		}
+		shadowCandidates.clear();
+	}
+
+	boolean castsShadow(Renderable renderable)
+	{
+		return shadowCasters.contains(renderable);
 	}
 
 	private BillboardRenderResult projectShadow(PreparedBillboardDraw draw, CachedBillboard cached,

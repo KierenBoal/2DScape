@@ -158,6 +158,7 @@ public class NpcSnapPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		billboardOverlay.startMaskWorker();
 		migrateOcclusionQuality();
 		migrateSpriteShadows();
 		rendererAvailabilityWarning.reset();
@@ -316,6 +317,7 @@ public class NpcSnapPlugin extends Plugin
 		// PluginManager removes us from the event bus before calling this method. Keep
 		// the direct render hooks harmless even if one cleanup step below fails.
 		deactivateFeatures();
+		cleanupStep("occlusion worker", billboardOverlay::stopMaskWorker);
 		cleanupStep("PNG exporter", billboardPngExporter::shutDown);
 		log.debug("2DScape stopped");
 	}

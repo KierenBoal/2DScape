@@ -88,6 +88,14 @@ tasks.register('runWithProfiling', JavaExec) {
     args '--developer-mode', '--debug'
 }
 
+tasks.register('benchmarkCrowdRenderer', JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = 'com.kierenboal.npcsnap.occlusion.CrowdRenderBenchmark'
+	args providers.gradleProperty('benchmarkOccluders').map { it.split(',').toList() }.getOrElse([])
+	systemProperty 'java.awt.headless', 'true'
+}
+
 tasks.register('renderRetroHitsplatPreview', JavaExec) {
 	dependsOn testClasses
 	classpath = sourceSets.test.runtimeClasspath
