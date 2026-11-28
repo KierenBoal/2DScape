@@ -257,7 +257,7 @@ class NpcBillboardOverlay extends Overlay
 
 	void startMaskWorker()
 	{
-		if (maskWorker == null && Runtime.getRuntime().availableProcessors() >= 4)
+		if (maskWorker == null)
 		{
 			maskWorker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new SynchronousQueue<>(), task ->
 			{
